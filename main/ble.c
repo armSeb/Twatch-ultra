@@ -422,8 +422,29 @@ static uint32_t eco_backoff_ms(void)
     return ms < ECO_RETRY_MAX ? ms : ECO_RETRY_MAX;
 }
 
+/* Appli MeshCore connectée : intervalle court, sans latence, le temps de la
+ * synchro (contacts, messages : une trame par notification). Les paramètres
+ * éco (150-300 ms, latence 4) reviennent quand l'appli se désabonne. */
+static void mc_link_params(bool app)
+{
+    if (s_conn == BLE_HS_CONN_HANDLE_NONE) return;
+    if (app) {
+        ble_npl_callout_stop(&s_co_eco);
+        struct ble_gap_upd_params up = {
+            .itvl_min = 12, .itvl_max = 24, .latency = 0,       /* 15-30 ms */
+            .supervision_timeout = 400, .min_ce_len = 0, .max_ce_len = 0,
+        };
+        int rc = ble_gap_update_params(s_conn, &up);
+        ESP_LOGI(TAG, "appli MeshCore : params rapides, rc=%d", rc);
+    } else {
+        s_eco_tries = 0;
+        ble_npl_callout_reset(&s_co_eco, ble_npl_time_ms_to_ticks32(ECO_RETRY_MS));
+    }
+}
+
 static void co_eco_cb(struct ble_npl_event *ev)
 {
+    if (s_nus_sub) return;                                         /* appli MeshCore : on reste rapide */
     if (s_conn == BLE_HS_CONN_HANDLE_NONE || s_eco_pending) return;
     if (s_itvl >= ECO_ITVL_MIN && s_lat >= ECO_LATENCY) return;      /* déjà fait */
     if (!ancs_idle()) {                                                /* file ANCS occupée */
@@ -751,7 +772,11 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                       event->subscribe.conn_handle == s_conn &&
                       link_authenticated(event->subscribe.conn_handle);
             ble_diag("app MeshCore %s", up ? "abonnée" : "partie");
-            if (up != s_nus_sub) { s_nus_sub = up; mc_ble_link(up); }
+            if (up != s_nus_sub) {
+                s_nus_sub = up;
+                mc_ble_link(up);
+                mc_link_params(up);
+            }
         }
         return 0;
 
