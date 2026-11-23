@@ -1,0 +1,12 @@
+# Name,     Type, SubType,  Offset,   Size
+# Flash 16 Mo : deux emplacements OTA de 5 Mo, le pack d'émojis (Twemoji,
+# assets/emoji.bin, hors OTA), le coredump, puis une petite FAT interne.
+# Les fichiers lourds (historique MeshCore, journaux) vont sur la carte SD.
+nvs,        data, nvs,      0x9000,   0x6000
+phy_init,   data, phy,      0xf000,   0x1000
+otadata,    data, ota,      0x10000,  0x2000
+ota_0,      app,  ota_0,    0x20000,  0x500000
+ota_1,      app,  ota_1,    0x520000, 0x500000
+emoji,      data, 0x40,     0xa20000, 0x300000
+coredump,   data, coredump, 0xd20000, 0x10000
+storage,    data, fat,      0xd30000, 0x2d0000

@@ -1,0 +1,61 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+# contents: write lets the tag build publish the GitHub release
+permissions:
+  contents: write
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PC tests (ASan/UBSan) and translations
+        run: host_tests/run.sh
+
+  firmware:
+    runs-on: ubuntu-latest
+    # ESP-IDF 5.5.6 is mandatory: the 5.5.3 BT controller breaks the iPhone link
+    container: espressif/idf:v5.5.6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+      - name: Full image (0x0) and release files
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          mkdir -p dist
+          cd build
+          esptool.py --chip esp32s3 merge_bin -o ../dist/twatch-ultra-full.bin \
+            --flash_mode dio --flash_freq 80m --flash_size 16MB \
+            0x0 bootloader/bootloader.bin \
+            0x8000 partition_table/partition-table.bin \
+            0x10000 ota_data_initial.bin \
+            0x20000 twatch_ultra.bin \
+            0xa20000 ../assets/emoji.bin
+          cp twatch_ultra.bin ../dist/twatch-ultra-app.bin
+          cp bootloader/bootloader.bin partition_table/partition-table.bin ota_data_initial.bin ../assets/emoji.bin ../dist/
+          cp twatch_ultra.elf ../dist/twatch-ultra.elf
+          cp ../LICENSE ../THIRD_PARTY_NOTICES.md ../dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twatch-ultra-firmware
+          path: dist/
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/twatch-ultra-full.bin
+            dist/twatch-ultra-app.bin
+            dist/LICENSE
+            dist/THIRD_PARTY_NOTICES.md

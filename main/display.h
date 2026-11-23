@@ -1,0 +1,39 @@
+/*
+ * display.h — AMOLED CO5300 410x502 (esp_lcd, QSPI DMA) + CST9217 + glue LVGL 9.
+ *
+ * Pas d'esp_lvgl_port volontairement : son timer de tick périodique et sa
+ * tâche dédiée réveilleraient le CPU en permanence. Ici le tick LVGL est lu
+ * à la demande (esp_timer_get_time) et lv_timer_handler n'est appelé que
+ * par la tâche app, uniquement écran allumé.
+ */
+#pragma once
+#include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
+
+esp_err_t display_init(void);          /* LCD + tactile + lv_init + display/indev */
+void      display_set_on(bool on);      /* séquence complète veille/réveil */
+void      display_panel_brightness(uint8_t level);   /* registre 0x51 brut (power_backlight) */
+/* « coup d'œil » (lever le poignet) : luminosité réduite, CPU laissé au
+ * minimum (pas de verrou CPU max) ; le premier toucher n'est pas transmis à
+ * l'interface, il demande le réveil complet (display_glance_take_touch). */
+void      display_set_glance(uint8_t level);   /* allume en coup d'œil */
+bool      display_is_glance(void);
+void      display_glance_end(void);     /* passe en réveil complet (luminosité, CPU) */
+bool      display_glance_take_touch(void); /* true une fois si un toucher a demandé le réveil */
+bool      display_is_on(void);
+void      display_set_brightness(uint8_t level);
+void      display_perf_tick(void);
+/* réveil par double tap (écran éteint) */
+bool      display_tap_begin(void);      /* sur EV_TOUCH_INT : démarre l'analyse */
+int       display_tap_poll(void);       /* 1 = double tap, 0 = continuer, -1 = abandon */
+uint32_t  display_tap_sample_ms(void);
+/* Affichage direct pour les jeux, sans LVGL : fill() remplit des bandes de
+ * lignes (RGB565 natif) envoyées à l'écran au fur et à mesure, pendant que la
+ * suivante se prépare. Deux bandes de 26 lignes en RAM DMA, libérées par
+ * display_direct_end(). false si l'écran est éteint ou la mémoire manque.
+ * Chaque image commence sur le signal TE de la dalle. */
+typedef void (*display_strip_fn)(uint16_t *px, int y0, int lines, void *ctx);
+bool      display_direct(display_strip_fn fill, void *ctx);
+void      display_direct_end(void);
+void      display_tap_enable(bool en);  /* réglage modifié */      /* CPU max seulement pendant l'interaction */

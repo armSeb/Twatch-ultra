@@ -1,0 +1,60 @@
+/*
+ * ui_kit.h — briques d'interface partagées par l'UI système et les apps.
+ *
+ * Tout appel se fait depuis la tâche app (seule propriétaire de LVGL).
+ */
+#pragma once
+#include <stdbool.h>
+#include <stdint.h>
+#include "lvgl.h"
+#include "fonts/fonts.h"
+#include "ui_geom.h"
+
+/* palette système */
+#define C_BG    lv_color_hex(0x000000)
+#define C_FG    lv_color_hex(0xF2F2F2)
+#define C_DIM   lv_color_hex(0x8A8F98)
+#define C_OFF   lv_color_hex(0x3A3D44)
+#define C_CARD  lv_color_hex(0x1A1D23)
+#define C_ACC   lv_color_hex(0x3B82F6)
+#define C_OK    lv_color_hex(0x22C55E)
+#define C_WARN  lv_color_hex(0xF59E0B)
+#define C_BAD   lv_color_hex(0xEF4444)
+
+/* icônes (Font Awesome, présentes dans font_text et font_title) */
+#define SYM_COMMENTS  "\xEF\x82\x86"   /* U+F086 */
+#define SYM_EYE       "\xEF\x81\xAE"   /* U+F06E */
+#define SYM_STOPWATCH "\xEF\x8B\xB2"   /* U+F2F2 */
+#define SYM_HOURGLASS "\xEF\x89\x92"   /* U+F252 */
+#define SYM_BULB      "\xEF\x83\xAB"   /* U+F0EB */
+#define SYM_MOON      "\xEF\x86\x86"   /* U+F186 */
+#define SYM_SLIDERS   "\xEF\x87\x9E"   /* U+F1DE */
+#define SYM_GRID      "\xEF\x80\x8A"   /* U+F00A */
+#define SYM_TV        "\xEF\x89\xAC"   /* U+F26C */
+#define SYM_TOWER     "\xEF\x94\x99"   /* U+F519 */
+#define SYM_WIFI      "\xEF\x87\xAB"   /* U+F1EB */
+#define SYM_LOCK      "\xEF\x80\xA3"   /* U+F023 */
+#define SYM_CHART     "\xEF\x87\xBE"   /* U+F1FE */
+#define SYM_HEADPHONES "\xEF\x80\xA5"  /* U+F025 */
+#define SYM_PODCAST   "\xEF\x8B\x8E"   /* U+F2CE */
+#define SYM_WALK      "\xEF\x95\x94"   /* U+F554 */
+#define SYM_GHOST     "\xEF\x9B\xA2"   /* U+F6E2 */
+#define SYM_ROCKET    "\xEF\x84\xB5"   /* U+F135 */
+#define SYM_PLANE     "\xEF\x81\xB2"   /* U+F072 */
+#define SYM_KEYPAD    "\xEF\x80\x8A"   /* U+F00A */
+#define SYM_PEN       "\xEF\x8C\x84"   /* U+F304 */
+#define SYM_POINTER   "\xEF\x89\x85"   /* U+F245 */
+
+#define UI_ANIM_MS 140
+
+/* écran plein (fond noir, gestes de navigation système déjà branchés) */
+lv_obj_t *ui_screen(void);
+lv_obj_t *ui_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text);
+lv_obj_t *ui_button(lv_obj_t *parent, const char *text, lv_color_t bg, lv_event_cb_t cb, void *user_data);
+lv_obj_t *ui_container(lv_obj_t *parent);
+void      ui_bubble(lv_obj_t *obj);          /* laisse remonter les gestes au parent */
+void      ui_toast(const char *text);        /* message bref par-dessus n'importe quel écran */
+/* en-tête « ‹ Titre » qui ramène à l'écran d'origine ; renvoie la hauteur occupée */
+int       ui_header(lv_obj_t *scr, const char *title);
+/* choix exclusif (boutons segmentés) ; map terminée par "" ; LV_EVENT_VALUE_CHANGED */
+lv_obj_t *ui_segmented(lv_obj_t *parent, const char *const *map, lv_event_cb_t cb);

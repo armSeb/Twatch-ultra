@@ -1,0 +1,161 @@
+# =====================================================================
+#  T-Watch Ultra — sdkconfig.defaults (ESP-IDF 5.5, ESP32-S3)
+#  Après modification : supprimer sdkconfig puis rebuild.
+# =====================================================================
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---------- Flash / partitions ----------
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---------- Console : USB Serial/JTAG natif ----------
+# GPIO43/44 (UART0 par défaut) vont au GNSS : rien ne doit y être écrit.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# ---------- Coredump en flash (diagnostic de crash après coup) ----------
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+
+# ---------- CPU / compilation ----------
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# ---------- Horloge lente : quartz 32,768 kHz de la carte ----------
+# Base de temps précise en light sleep et horloge basse consommation du
+# contrôleur BLE : la montre dort entre deux événements de connexion.
+CONFIG_RTC_CLK_SRC_EXT_CRYS=y
+CONFIG_RTC_CLK_CAL_CYCLES=3000
+CONFIG_BT_CTRL_LPCLK_SEL_EXT_32K_XTAL=y
+CONFIG_BT_CTRL_MODEM_SLEEP=y
+CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1=y
+CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=n
+
+# ---------- Gestion d'énergie ----------
+CONFIG_PM_ENABLE=y
+CONFIG_PM_DFS_INIT_AUTO=n
+CONFIG_PM_SLP_IRAM_OPT=y
+CONFIG_PM_RTOS_IDLE_OPT=y
+CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=n
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP=3
+CONFIG_FREERTOS_HZ=100
+CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND=y
+
+# ---------- Logs ----------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+
+# ---------- Bluetooth : BLE + NimBLE ----------
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_CTRL_BLE_MAX_ACT=4
+CONFIG_BT_CTRL_PINNED_TO_CORE_0=y
+
+CONFIG_BT_NIMBLE_PINNED_TO_CORE_0=y
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=5120
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MAX_BONDS=3
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_SM_LEGACY=y
+CONFIG_BT_NIMBLE_SM_SC=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+# Le client GATT (indispensable pour ANCS) dépend du rôle Central dans
+# ESP-IDF 5.5 : le désactiver supprimerait ble_gattc_* silencieusement.
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_GATT_CLIENT=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=185
+CONFIG_BT_NIMBLE_GATT_MAX_PROCS=4
+CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="T-Watch"
+CONFIG_BT_NIMBLE_SVC_GAP_APPEARANCE=0x00C1
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+# Mémoire de la pile hôte en PSRAM : la RAM interne reste au contrôleur,
+# au Wi-Fi et aux tampons DMA de l'écran
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+
+# ---------- Confidentialité (RPA) ----------
+# Résolution des RPA de l'iPhone par la liste de résolution du CONTRÔLEUR
+# (défaut NimBLE). La résolution « host based » échouait dès que l'iPhone
+# changeait d'adresse privée (~15 min) : reconnexion impossible, SMP timeout.
+CONFIG_BT_NIMBLE_HOST_BASED_PRIVACY=n
+
+# ---------- LVGL 9.2 (Kconfig, pas de lv_conf.h) ----------
+CONFIG_LV_CONF_SKIP=y
+CONFIG_LV_COLOR_DEPTH_16=y
+# Objets LVGL alloués en PSRAM (main/lv_mem_psram.c) plutôt qu'un pool statique
+# ou la RAM interne : celle-ci reste au Bluetooth, au Wi-Fi et au serveur web.
+CONFIG_LV_USE_CUSTOM_MALLOC=y
+CONFIG_LV_DEF_REFR_PERIOD=16
+CONFIG_LV_DPI_DEF=220
+CONFIG_LV_OS_NONE=y
+CONFIG_LV_USE_DRAW_SW=y
+CONFIG_LV_DRAW_SW_COMPLEX=y
+CONFIG_LV_DRAW_SW_ASM_NONE=y
+CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM=y
+CONFIG_LV_USE_LOG=n
+CONFIG_LV_USE_ASSERT_NULL=y
+CONFIG_LV_USE_ASSERT_MALLOC=y
+# Glyphes image : émojis en couleur (main/emoji.c)
+CONFIG_LV_USE_IMGFONT=y
+CONFIG_LV_USE_THEME_DEFAULT=y
+CONFIG_LV_THEME_DEFAULT_DARK=y
+CONFIG_LV_FONT_MONTSERRAT_12=n
+CONFIG_LV_FONT_MONTSERRAT_14=n
+CONFIG_LV_FONT_MONTSERRAT_16=n
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_DEFAULT_MONTSERRAT_24=y
+CONFIG_LV_USE_SYSMON=n
+CONFIG_LV_BUILD_EXAMPLES=n
+CONFIG_LV_USE_DEMO_WIDGETS=n
+
+# ---------- RF ----------
+# Calibration RF complète à chaque boot, sans réutiliser de données en NVS :
+# une calibration héritée d'un ancien firmware (autre version du PHY) peut
+# rendre la radio sourde.
+CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=n
+CONFIG_ESP_PHY_RF_CAL_FULL=y
+
+# ---------- Mise à jour OTA (Wi-Fi, point d'accès de la montre) ----------
+# Retour automatique à l'ancien firmware si le nouveau ne se valide pas
+# (plantage avant esp_ota_mark_app_valid_cancel_rollback).
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# ---------- Wi-Fi (mise à jour, WebRX, Radio, analyseur) ----------
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=24
+# TX : tampons statiques, placés en PSRAM (SPIRAM_TRY_ALLOCATE_WIFI_LWIP)
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
+CONFIG_ESP_WIFI_RX_BA_WIN=8
+CONFIG_LWIP_TCP_WND_DEFAULT=23040
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=24
+CONFIG_ESP_WIFI_ENABLE_WPA3_SAE=y
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# ---------- PSRAM 8 Mo (QSPI, 80 MHz) ----------
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=49152
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# CONFIG_SPIRAM_MEMTEST is not set
+
+# ---------- TLS (WebRX wss://, Radio https://) ----------
+# Tampons TLS (≈ 40 Ko par connexion) en PSRAM. Certificats : paquet de
+# racines d'ESP-IDF (défaut).
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# ---------- Cache : instructions 32 Ko, données 64 Ko ----------
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
