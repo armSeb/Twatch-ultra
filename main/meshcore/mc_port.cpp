@@ -94,7 +94,13 @@ void TWatchRadio::stop() { sx_stop(); }
  * puce n'est reconfigurée qu'une fois, au tour de boucle suivant */
 void TWatchRadio::apply()
 {
-    if (!dirty || sending || !sx_tx_idle()) return;
+    if (!dirty) return;
+    if (sending || !sx_tx_idle()) {
+        static int64_t warned;
+        int64_t now = esp_timer_get_time();
+        if (now - warned > 5000000) { warned = now; ESP_LOGW(TAG, "réglages radio en attente : émission en cours"); }
+        return;
+    }
     dirty = false;
     sx_cfg_t c = radio_cfg(freq, bw, sf, cr, power);
     if (sx_set_config(&c) != ESP_OK) ESP_LOGE(TAG, "reconfiguration radio impossible");
@@ -105,6 +111,7 @@ void TWatchRadio::setParams(float f, float b, uint8_t s, uint8_t c)
     if (f == freq && b == bw && s == sf && c == cr) return;
     freq = f; bw = b; sf = s; cr = c;
     dirty = true;
+    ESP_LOGI(TAG, "réglages radio demandés : %.3f MHz, BW %.1f kHz, SF%d, CR 4/%d", f, b, s, c);
 }
 
 void TWatchRadio::setTxPower(int8_t dbm)

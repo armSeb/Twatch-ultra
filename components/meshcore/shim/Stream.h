@@ -24,6 +24,12 @@ public:
     size_t print(unsigned v) { char b[16]; snprintf(b, sizeof b, "%u", v); return write(b); }
     size_t print(long v) { char b[24]; snprintf(b, sizeof b, "%ld", v); return write(b); }
     size_t print(unsigned long v) { char b[24]; snprintf(b, sizeof b, "%lu", v); return write(b); }
+    /* print(n, base) d'Arduino (ConfigSerializer : print((int32_t)v, 10)).
+     * Sans ces surcharges, l'appel tombait sur print(double, décimales). */
+    size_t print(long v, int base) { return base == 16 ? printf("%lx", v) : print(v); }
+    size_t print(unsigned long v, int base) { return base == 16 ? printf("%lx", v) : print(v); }
+    size_t print(int v, int base) { return print((long)v, base); }
+    size_t print(unsigned v, int base) { return print((unsigned long)v, base); }
     size_t print(double v, int d = 2) { char b[32]; snprintf(b, sizeof b, "%.*f", d, v); return write(b); }
     size_t println() { return write("\n"); }
     template <typename T> size_t println(T v) { size_t n = print(v); return n + println(); }
