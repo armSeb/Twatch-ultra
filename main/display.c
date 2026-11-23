@@ -394,7 +394,12 @@ void display_tap_enable(bool en)
 esp_err_t display_init(void)
 {
     /* alimentation de la dalle (ALDO2 déjà allumé par axp_init) puis reset */
+    /* coupure franche de l'alimentation de la dalle : l'XL9555 garde son
+     * état à travers les resets de l'ESP, la dalle n'est jamais repartie de zéro */
+    xl9555_output(XIO_DISP_EN, false);
+    vTaskDelay(pdMS_TO_TICKS(300));
     xl9555_output(XIO_DISP_EN, true);
+    vTaskDelay(pdMS_TO_TICKS(50));
     gpio_config_t rst = { .pin_bit_mask = 1ULL << BOARD_LCD_RST, .mode = GPIO_MODE_OUTPUT };
     gpio_config(&rst);
     gpio_set_level(BOARD_LCD_RST, 1);
