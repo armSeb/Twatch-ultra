@@ -2,6 +2,11 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.8 — 2026-11-23
+
+- *Pub* face: rounder corners (brass rims radius 135 instead of following the panel's 100,
+  rounder minute track) and a slightly darker bottle green.
+
 ## 0.2.7 — 2026-11-23
 
 - MeshCore app: the status line no longer runs off the rounded edge (frequency, SF and app

@@ -5,7 +5,7 @@
 #include "ui_geom.h"
 
 /* ---------- palette « pub irlandais » ---------- */
-#define C_GREEN      lv_color_hex(0x174A30)   /* vert bouteille */
+#define C_GREEN      lv_color_hex(0x123E28)   /* vert bouteille */
 #define C_SUB        lv_color_hex(0x0C2B1B)   /* compteurs creusés */
 #define C_BRASS      lv_color_hex(0xC9A24A)   /* laiton */
 #define C_BRASS_D    lv_color_hex(0x8C6A2A)
@@ -26,7 +26,8 @@
 #define PANEL_H   (BOARD_LCD_H / UI_K)
 #define TRACK_A   (PANEL_W / 2 - 18)              /* demi-largeur de la piste */
 #define TRACK_B   (PANEL_H / 2 - 18)              /* demi-hauteur */
-#define TRACK_P   5.0f        /* exposant du « squircle » de la piste */
+#define TRACK_P   4.0f        /* exposant du « squircle » de la piste (plus bas = plus rond) */
+#define RIM_R     135         /* rayon des cerclages au bord de l'écran : plus rond que la dalle */
 #define IDX_LEN   18
 
 /* complications */
@@ -341,7 +342,7 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
         lv_obj_set_size(r, BOARD_LCD_W - 2 * (BOARD_LCD_VIS_X + RIM[i].inset),
                         BOARD_LCD_H - BOARD_LCD_VIS_T - BOARD_LCD_VIS_B - 2 * RIM[i].inset);
         lv_obj_set_pos(r, BOARD_LCD_VIS_X + RIM[i].inset, BOARD_LCD_VIS_T + RIM[i].inset);
-        lv_obj_set_style_radius(r, BOARD_LCD_VIS_R - RIM[i].inset, 0);
+        lv_obj_set_style_radius(r, RIM_R - RIM[i].inset, 0);
         lv_obj_set_style_border_width(r, RIM[i].w, 0);
         lv_obj_set_style_border_color(r, i ? C_CREAM : C_BRASS, 0);
         lv_obj_set_style_border_opa(r, RIM[i].opa, 0);
