@@ -1708,6 +1708,14 @@ static int8_t parse_fifo(enum bhy2_fifo_type source, struct bhy2_fifo_buffer *fi
                 fifo_p->read_pos += 6;
                 break;
             default:
+                /* twatch : identifiant de taille inconnue (0) → la position
+                 * n'avancerait plus et la boucle tournerait sans fin (chien de
+                 * garde). On abandonne le reste de ce bloc. */
+                if (dev->event_size[tmp_sensor_id] == 0)
+                {
+                    fifo_p->read_pos = fifo_p->read_length;
+                    break;
+                }
                 rslt = get_callback_info(tmp_sensor_id, &info, dev);
                 rslt = check_return_value(rslt);
                 rslt = get_buffer_status(fifo_p, dev->event_size[tmp_sensor_id], &status); /*lint !e838 suppressing

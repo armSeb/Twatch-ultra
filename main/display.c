@@ -48,9 +48,10 @@ static int64_t s_slpin_us;     /* dernier SLPIN : la dalle exige 120 ms avant SL
  * à zéro. */
 #define TURBO_IDLE_MS 1500
 
-/* 2 × 410 × 40 × 2 = 64 Ko de RAM DMA : une bande de 40 lignes part en
- * ~0,8 ms à 80 MHz sur 4 lignes */
-#define BUF_LINES 40
+/* 2 × 410 × 20 × 2 = 32 Ko de RAM DMA (40 lignes, 64 Ko, privaient le Wi-Fi
+ * et l'I2S de mémoire interne pendant la radio). Une bande part en ~0,8 ms
+ * à 40 MHz sur 4 lignes. */
+#define BUF_LINES 20
 
 /* ------------------------------------------------------------------ */
 /* CO5300                                                               */

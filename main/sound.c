@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "axp2101.h"
 #include "board.h"
 
@@ -132,7 +133,9 @@ esp_err_t sound_stream_open(int rate)
     esp_err_t e = i2s_open(rate, &s_stream);
     s_last_err = e;
     if (e != ESP_OK) {
-        ESP_LOGW(TAG, "flux I2S indisponible : %s", esp_err_to_name(e));
+        ESP_LOGW(TAG, "flux I2S indisponible : %s (RAM DMA libre %u o, plus grand bloc %u o)", esp_err_to_name(e),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
         amp_off(NULL);
         s_stream = NULL;
         s_busy = false;
