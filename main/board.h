@@ -72,6 +72,11 @@
 #define BOARD_LORA_CS           GPIO_NUM_36
 #define BOARD_LORA_RST          GPIO_NUM_47
 #define BOARD_LORA_BUSY         GPIO_NUM_48
+/* module SX1262 : TCXO piloté par DIO3, commutateur d'antenne par DIO2
+ * (comme la T-Watch S3 ; à confirmer sur la montre) */
+#define BOARD_LORA_TCXO_MV      1800
+#define BOARD_LORA_DIO2_RF_SW   1
+#define BOARD_LORA_SPI_HZ       (8 * 1000 * 1000)
 
 /* ---------- Audio ---------- */
 #define BOARD_I2S_BCLK          GPIO_NUM_9
