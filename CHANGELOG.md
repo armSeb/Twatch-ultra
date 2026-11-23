@@ -2,6 +2,17 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.11 — 2026-11-23
+
+- MeshCore app over Bluetooth: light sleep is held off while the app exchanges frames with
+  the watch, on a fast link (15–30 ms). Before, the watch slept between connection events
+  at that interval, screen off, and the link with the app could drop. After 15 s without a
+  frame, the link goes back to the economical parameters (as for iPhone notifications) and
+  light sleep resumes, so an app left connected in the background no longer keeps the fast
+  link (and its battery cost) forever. Any write from the app switches back to fast.
+- BLE journal (*About*): fast/economical switches of the MeshCore link, and frames from the
+  app the watch had to refuse.
+
 ## 0.2.10 — 2026-11-23
 
 - Raise to wake works again: the motion sensor goes back to LilyGoLib's orientation (180°
