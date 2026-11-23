@@ -2,7 +2,7 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
-## 0.2.11 — 2026-11-23
+## 0.2.12 — 2026-11-23
 
 - MeshCore app over Bluetooth: light sleep is held off while the app exchanges frames with
   the watch, on a fast link (15–30 ms). Before, the watch slept between connection events
