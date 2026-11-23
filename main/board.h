@@ -25,12 +25,21 @@
 #define BOARD_LCD_GAP_X         22
 #define BOARD_LCD_GAP_Y         0
 /* 80 MHz : valeur de LilyGoLib (4 lignes → 40 Mo/s, une image pleine en ~10 ms) */
-#define BOARD_LCD_PCLK_HZ       (80 * 1000 * 1000)
+#define BOARD_LCD_PCLK_HZ       (40 * 1000 * 1000)   /* 80 MHz : barres de couleur (MCLite), via la matrice GPIO */
 /* Rayon des coins de la dalle (px, estimé : à mesurer sur la montre). Le
  * contenu utile reste dans le rectangle inset de X à gauche/droite et de Y en
  * haut/bas : son coin (X, Y) est à √((R−X)² + (R−Y)²) ≈ 80 px du centre de
  * l'arrondi, donc à l'intérieur (< R). Zone utile 360 × 442. */
 #define BOARD_LCD_CORNER_R      84
+/* Partie visible mesurée sur la montre (mire, 23/11/2026) : les premières
+ * lignes du haut et colonnes des côtés sont sous le masque de la dalle.
+ * Les décors pleine dalle (filet du cadran pub) suivent ce rectangle, dont
+ * les coins ont un rayon d'environ BOARD_LCD_CORNER_R. */
+#define BOARD_LCD_VIS_T         6
+#define BOARD_LCD_VIS_B         2
+#define BOARD_LCD_VIS_X         4
+/* rayon des coins de ce rectangle visible (photo du cadran, ~90 px) */
+#define BOARD_LCD_VIS_R         100
 #define BOARD_SAFE_INSET_X      25
 #define BOARD_SAFE_INSET_Y      30
 

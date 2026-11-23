@@ -49,7 +49,7 @@ void      wrx_state_save(const wrx_state_t *s);
 
 /* ---------------- webradios (app Radio), espace NVS « radio » ---------------- */
 #define RAD_MAX 12
-#define VOL_DEF 15                       /* % : première écoute, ou si le dernier était 0 */
+#define VOL_DEF 50                       /* % : première écoute, ou si le dernier était 0 */
 
 typedef struct {
     char name[32];

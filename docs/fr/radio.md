@@ -12,7 +12,7 @@ cours (métadonnées ICY) s'affiche quand la station le diffuse.
 ## Réglages (depuis le téléphone)
 
 Même page que pour WebRX : ouvrir **Radio** et toucher **Configurer** (plus tard : toucher
-*Radio · 1/4* en haut → *Wi-Fi et radios*). La montre crée le réseau **T-Watch-OTA** ; sur le
+*Radio · 1/4* en haut → *Wi-Fi et radios*). La montre crée le réseau **twatch-ultra-OTA** ; sur le
 téléphone, le rejoindre et ouvrir **http://192.168.4.1**. Saisir jusqu'à 3 réseaux Wi-Fi et
 jusqu'à **12 webradios** (nom facultatif + adresse du flux ; *+ Ajouter une radio* ouvre une
 ligne de plus), puis **Enregistrer** : la montre redémarre directement dans l'app.

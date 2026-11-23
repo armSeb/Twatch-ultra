@@ -479,6 +479,8 @@ static int stream(const char *start_url)
     s_streaming = true;
     set_state(RAD_BUFFER, N_("Mise en mémoire…"), "");
     ESP_LOGI(TAG, "flux %s, %s, metaint %d, %d kbit/s", url, codec == C_MP3 ? "MP3" : "AAC", s_metaint, s_icy_br);
+    ESP_LOGI(TAG, "RAM interne libre %u o (plus grand bloc %u o)", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
     /* lecture : audio vers le tampon, métadonnées ICY à part */
     int audio_left = s_metaint, meta_left = 0, meta_len = 0, idle = 0;

@@ -2,6 +2,7 @@
 #include "xl9555.h"
 #include "board.h"
 #include "i2c_bus.h"
+#include "esp_log.h"
 
 #define REG_IN0   0x00
 #define REG_OUT0  0x02
@@ -23,6 +24,7 @@ esp_err_t xl9555_init(void)
     uint8_t b[2];
     if (i2c_reg_read(s_dev, REG_OUT0, b, 2) == ESP_OK) s_out = b[0] | (b[1] << 8);
     if (i2c_reg_read(s_dev, REG_CFG0, b, 2) == ESP_OK) s_cfg = b[0] | (b[1] << 8);
+    ESP_LOGI("xl9555", "sorties 0x%04x, config 0x%04x", s_out, s_cfg);
     return ESP_OK;
 }
 

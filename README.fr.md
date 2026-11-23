@@ -121,7 +121,7 @@ Cela efface tout (appairages compris). Les mises à jour suivantes passent par l
 ### 3. Mettre à jour par Wi-Fi (sans câble)
 
 1. Montre : *Réglages › Mise à jour › Démarrer*. Le Bluetooth se coupe ; la montre crée le
-   réseau Wi-Fi **T-Watch-OTA** et affiche son mot de passe.
+   réseau Wi-Fi **twatch-ultra-OTA** et affiche son mot de passe.
 2. iPhone ou ordinateur : rejoindre ce réseau, ouvrir **http://192.168.4.1**, choisir
    `twatch-ultra-app.bin`, *Envoyer*.
 3. La montre vérifie l'image (nom du projet, SHA-256), l'active et redémarre.

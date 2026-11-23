@@ -48,9 +48,10 @@ static int64_t s_slpin_us;     /* dernier SLPIN : la dalle exige 120 ms avant SL
  * à zéro. */
 #define TURBO_IDLE_MS 1500
 
-/* 2 × 410 × 40 × 2 = 64 Ko de RAM DMA : une bande de 40 lignes part en
- * ~0,8 ms à 80 MHz sur 4 lignes */
-#define BUF_LINES 40
+/* 2 × 410 × 20 × 2 = 32 Ko de RAM DMA (40 lignes, 64 Ko, privaient le Wi-Fi
+ * et l'I2S de mémoire interne pendant la radio). Une bande part en ~0,8 ms
+ * à 40 MHz sur 4 lignes. */
+#define BUF_LINES 20
 
 /* ------------------------------------------------------------------ */
 /* CO5300                                                               */
@@ -80,6 +81,56 @@ static void lcd_pixels(int x1, int y1, int x2, int y2, const void *px)
     lcd_window(x1, y1, x2, y2);
     esp_lcd_panel_io_tx_color(s_io, QSPI_PIXELS, px, (size_t)(x2 - x1 + 1) * (y2 - y1 + 1) * 2);
 }
+
+#ifndef DISPLAY_GEOM_TEST
+#define DISPLAY_GEOM_TEST 0   /* 1 : mire de géométrie au démarrage */
+#endif
+#if DISPLAY_GEOM_TEST
+/* Mire : bords (lignes/colonnes 0, 2, 4, 6 en blanc, rouge, vert, bleu, puis
+ * 10 en jaune) et arcs de coin de rayon 84 (rouge), 96 (vert), 108 (bleu),
+ * 120 (blanc). Croix grise au centre. */
+static uint16_t geom_px(int x, int y)
+{
+    static const uint16_t edge[] = { 0xFFFF, 0xF800, 0x07E0, 0x001F };
+    int W = BOARD_LCD_W, H = BOARD_LCD_H;
+    int e = x < W - 1 - x ? x : W - 1 - x;
+    int f = y < H - 1 - y ? y : H - 1 - y;
+    int m = e < f ? e : f;
+    if (m <= 6 && !(m & 1)) return edge[m / 2];
+    if (m == 10) return 0xFFE0;
+    static const struct { int r; uint16_t c; } arc[] = {
+        { 84, 0xF800 }, { 96, 0x07E0 }, { 108, 0x001F }, { 120, 0xFFFF } };
+    for (int i = 0; i < 4; i++) {
+        int r = arc[i].r;
+        if (e >= r || f >= r) continue;
+        int dx = r - e, dy = r - f, d2 = dx * dx + dy * dy;
+        if (d2 <= r * r && d2 >= (r - 2) * (r - 2)) return arc[i].c;
+    }
+    if ((x == W / 2 || y == H / 2) && m > 20) return 0x8410;
+    return 0;
+}
+
+static void geom_test(void)
+{
+    const int L = 2;
+    uint16_t *b = heap_caps_malloc(BOARD_LCD_W * L * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!b) return;
+    for (int y = 0; y < BOARD_LCD_H; y += L) {
+        for (int j = 0; j < L; j++)
+            for (int x = 0; x < BOARD_LCD_W; x++) {
+                uint16_t c = geom_px(x, y + j);
+                b[j * BOARD_LCD_W + x] = (uint16_t)((c >> 8) | (c << 8));
+            }
+        lcd_pixels(0, y, BOARD_LCD_W - 1, y + L - 1, b);
+        esp_lcd_panel_io_tx_param(s_io, -1, NULL, 0);      /* fin du transfert */
+    }
+    free(b);
+    lcd_cmd1(0x51, 0xC0);
+    ESP_LOGW(TAG, "mire de géométrie : 15 s");
+    vTaskDelay(pdMS_TO_TICKS(15000));
+    lcd_cmd1(0x51, 0x00);
+}
+#endif
 
 /* Séquence d'initialisation de LilyGoLib (dalle 2,06" de l'Ultra) */
 static void lcd_init_seq(void)
@@ -150,23 +201,32 @@ static void rounder_cb(lv_event_t *e)
 /* ------------------------------------------------------------------ */
 /* Affichage direct (jeux)                                              */
 /* ------------------------------------------------------------------ */
-#define STRIP_LINES 26     /* 502 = 19 × 26 + 8 : bandes paires */
+/* bandes paires (fenêtre du CO5300) : 502 = 19 × 26 + 8, repli 50 × 10 + 2
+ * si la RAM interne DMA manque (Wi-Fi, LVGL) */
+static const int STRIP_TRY[] = { 26, 10 };
 static uint16_t *s_strip[2];
+static int s_strip_lines;
 
 bool display_direct(display_strip_fn fill, void *ctx)
 {
     if (!s_on) return false;
-    if (!s_strip[0]) {
+    for (int t = 0; !s_strip[0] && t < 2; t++) {
+        s_strip_lines = STRIP_TRY[t];
         for (int i = 0; i < 2; i++)
-            s_strip[i] = heap_caps_malloc(BOARD_LCD_W * STRIP_LINES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-        if (!s_strip[0] || !s_strip[1]) { display_direct_end(); return false; }
+            s_strip[i] = heap_caps_malloc(BOARD_LCD_W * s_strip_lines * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        if (!s_strip[0] || !s_strip[1]) display_direct_end();
+    }
+    if (!s_strip[0]) {
+        ESP_LOGE(TAG, "affichage direct : RAM DMA insuffisante (plus grand bloc %u o)",
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        return false;
     }
     /* début d'image calé sur le TE : la dalle relit la GRAM derrière nous,
      * pas de déchirure horizontale. La bande k se remplit pendant que k−1
      * part à l'écran (esp_lcd attend la fin de la précédente). */
     wait_te();
-    for (int y = 0, k = 0; y < BOARD_LCD_H; y += STRIP_LINES, k ^= 1) {
-        int n = BOARD_LCD_H - y < STRIP_LINES ? BOARD_LCD_H - y : STRIP_LINES;
+    for (int y = 0, k = 0; y < BOARD_LCD_H; y += s_strip_lines, k ^= 1) {
+        int n = BOARD_LCD_H - y < s_strip_lines ? BOARD_LCD_H - y : s_strip_lines;
         fill(s_strip[k], y, n, ctx);
         lv_draw_sw_rgb565_swap(s_strip[k], BOARD_LCD_W * n);
         lcd_pixels(0, y, BOARD_LCD_W - 1, y + n - 1, s_strip[k]);
@@ -357,7 +417,12 @@ void display_tap_enable(bool en)
 esp_err_t display_init(void)
 {
     /* alimentation de la dalle (ALDO2 déjà allumé par axp_init) puis reset */
+    /* coupure franche de l'alimentation de la dalle : l'XL9555 garde son
+     * état à travers les resets de l'ESP, la dalle n'est jamais repartie de zéro */
+    xl9555_output(XIO_DISP_EN, false);
+    vTaskDelay(pdMS_TO_TICKS(300));
     xl9555_output(XIO_DISP_EN, true);
+    vTaskDelay(pdMS_TO_TICKS(50));
     gpio_config_t rst = { .pin_bit_mask = 1ULL << BOARD_LCD_RST, .mode = GPIO_MODE_OUTPUT };
     gpio_config(&rst);
     gpio_set_level(BOARD_LCD_RST, 1);
@@ -412,6 +477,9 @@ esp_err_t display_init(void)
         lcd_cmd(0x29, NULL, 0);          /* DISPON */
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+#if DISPLAY_GEOM_TEST
+    geom_test();
+#endif
 
     size_t bsz = BOARD_LCD_W * BUF_LINES * 2;
     void *b1 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);

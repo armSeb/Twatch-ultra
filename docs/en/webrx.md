@@ -12,7 +12,7 @@ frequency, an S-meter and a small waterfall.
 
 1. Open **WebRX** on the watch and tap **Set up** (later: tap the profile name at the top →
    *Wi-Fi and servers*). Bluetooth pauses; the watch creates the Wi-Fi network
-   **T-Watch-OTA** (same network and password as the firmware update).
+   **twatch-ultra-OTA** (same network and password as the firmware update).
 2. On the phone, join that network and open **http://192.168.4.1**.
 3. Enter up to **3 Wi-Fi networks** (in order of preference; visible networks are suggested)
    and up to **4 OpenWebRX servers** (optional name + address). Saved passwords are not shown;
