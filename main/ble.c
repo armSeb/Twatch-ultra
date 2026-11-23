@@ -24,7 +24,7 @@ static const char *TAG = "ble";
 
 void ble_store_config_init(void);   /* fourni par NimBLE (store NVS), non exporté en .h */
 
-#define DEVICE_NAME "T-Watch"
+#define DEVICE_NAME "T-Watch-Ultra"
 
 /* 1 = passkey affiché sur la montre (SC + MITM), comme l'ancien firmware.
  * 0 = « Just Works ». Les deux fonctionnent avec le contrôleur d'IDF 5.5.6 ;

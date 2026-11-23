@@ -108,7 +108,7 @@ This erases everything (including pairings). Later updates go over Wi-Fi.
 ### 2. Pair the iPhone
 
 1. Watch: swipe ← → *Settings* → *Bluetooth* → **Pair an iPhone**.
-2. iPhone: *Settings › Bluetooth* → **T-Watch**.
+2. iPhone: *Settings › Bluetooth* → **T-Watch-Ultra**.
 3. Type the **6-digit code shown on the watch** on the iPhone.
 4. Accept *Allow notifications*.
 

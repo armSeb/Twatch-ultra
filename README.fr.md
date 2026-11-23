@@ -114,7 +114,7 @@ Cela efface tout (appairages compris). Les mises à jour suivantes passent par l
 ### 2. Appairer l'iPhone
 
 1. Montre : glisser ← → *Réglages* → *Bluetooth* → **Appairer un iPhone**.
-2. iPhone : *Réglages › Bluetooth* → **T-Watch**.
+2. iPhone : *Réglages › Bluetooth* → **T-Watch-Ultra**.
 3. Saisir sur l'iPhone le **code à 6 chiffres affiché par la montre**.
 4. Accepter *Autoriser les notifications*.
 

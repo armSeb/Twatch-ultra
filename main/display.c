@@ -389,6 +389,13 @@ esp_err_t display_init(void)
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)BOARD_LCD_HOST, &io_cfg, &s_io));
 
+    /* light sleep : IDF isole toutes les broches (contournement d'un reset
+     * sur décharge électrostatique). Celles de la dalle doivent garder leur
+     * état, sinon CS et reset flottent et l'écran reste noir. */
+    const gpio_num_t keep[] = { BOARD_LCD_CS, BOARD_LCD_SCLK, BOARD_LCD_D0, BOARD_LCD_D1,
+                                BOARD_LCD_D2, BOARD_LCD_D3, BOARD_LCD_RST, BOARD_LCD_TE };
+    for (size_t i = 0; i < sizeof keep / sizeof keep[0]; i++) gpio_sleep_sel_dis(keep[i]);
+
     lcd_init_seq();
     lcd_cmd(0x11, NULL, 0);              /* SLPOUT */
     vTaskDelay(pdMS_TO_TICKS(120));

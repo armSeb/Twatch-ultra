@@ -192,6 +192,17 @@ bool power_last_discharge(power_hist_t *out)
     return s_last_valid;
 }
 
+/* Câble USB branché : pas de light sleep. La console USB Serial/JTAG se
+ * coupe à chaque sommeil (journal haché, port qui disparaît) ; sur
+ * chargeur, la consommation n'importe pas. */
+static bool s_usb_hold;
+static void usb_hold_update(void)
+{
+    if (s_vbus == s_usb_hold) return;
+    s_usb_hold = s_vbus;
+    power_hold_nosleep(s_vbus);
+}
+
 uint32_t power_handle_irq(void)
 {
     uint32_t m = axp_irq_read_and_clear();
@@ -206,6 +217,7 @@ uint32_t power_handle_irq(void)
             period_restart();
         }
         if (was_vbus && !s_vbus) period_restart();   /* début d'une période sur batterie */
+        usb_hold_update();
     }
     gpio_intr_enable(BOARD_PMU_INT);
     return m;
@@ -339,6 +351,7 @@ esp_err_t power_init(void)
 void power_update(void)
 {
     s_vbus = axp_vbus_present();
+    usb_hold_update();
     s_charging = axp_is_charging();
     int p = axp_percent();
     if (p >= 0) s_percent = p;
