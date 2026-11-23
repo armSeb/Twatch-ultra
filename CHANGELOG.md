@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.5 — 2026-11-23
+
+- Display: LVGL renders into a full frame in PSRAM; two small internal DMA strips stream it to
+  the panel (byte swap during the copy). A full frame leaves in one go, started on TE and
+  faster than the panel scan, so tearing no longer depends on render time. 13 KB of internal
+  RAM freed (19.7 KB of strips instead of 32 KB of draw buffers).
+- *Pub* face 4 px smaller again (rims and minute track).
+
 ## 0.2.4 — 2026-11-23
 
 - *Pub* face slightly smaller: brass rims 4 px further in, minute track 6 px further in.

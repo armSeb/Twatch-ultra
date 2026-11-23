@@ -24,8 +24,8 @@
  * centré (repère « dessin », mis à l'échelle par UI_K). */
 #define PANEL_W   (BOARD_LCD_W / UI_K)            /* dalle en unités du dessin */
 #define PANEL_H   (BOARD_LCD_H / UI_K)
-#define TRACK_A   (PANEL_W / 2 - 16)              /* demi-largeur de la piste */
-#define TRACK_B   (PANEL_H / 2 - 16)              /* demi-hauteur */
+#define TRACK_A   (PANEL_W / 2 - 18)              /* demi-largeur de la piste */
+#define TRACK_B   (PANEL_H / 2 - 18)              /* demi-hauteur */
 #define TRACK_P   5.0f        /* exposant du « squircle » de la piste */
 #define IDX_LEN   18
 
@@ -334,7 +334,7 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
     lv_obj_set_style_bg_color(s_root, C_GREEN, 0);
     lv_obj_set_style_bg_opa(s_root, LV_OPA_COVER, 0);
     bubble(s_root);
-    static const struct { int inset, w; lv_opa_t opa; } RIM[2] = { { 5, 4, LV_OPA_COVER }, { 15, 1, LV_OPA_40 } };
+    static const struct { int inset, w; lv_opa_t opa; } RIM[2] = { { 9, 4, LV_OPA_COVER }, { 19, 1, LV_OPA_40 } };
     for (int i = 0; i < 2; i++) {
         lv_obj_t *r = lv_obj_create(s_root);
         lv_obj_remove_style_all(r);
