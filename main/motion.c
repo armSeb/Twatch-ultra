@@ -181,7 +181,11 @@ static void on_steps(const struct bhy2_fifo_parse_data_info *info, void *ref)
     if (info->data_size >= 5) s_sensor = BHY2_LE2U32(info->data_ptr);
 }
 
-static void on_gesture(const struct bhy2_fifo_parse_data_info *info, void *ref) { s_gesture_seen = true; }
+static void on_gesture(const struct bhy2_fifo_parse_data_info *info, void *ref)
+{
+    s_gesture_seen = true;
+    ESP_LOGI(TAG, "geste du poignet détecté par le capteur");
+}
 
 static void on_acc(const struct bhy2_fifo_parse_data_info *info, void *ref)
 {
@@ -252,11 +256,12 @@ static bool boot(void)
         return false;
     }
     bhy2_update_virtual_sensor_list(&s_dev);
-    /* Ultra : puce montée face dessous, tournée de 180° autour de Y
-     * (X inversé, Y conservé, Z inversé). Vérifié sur la montre : avec
-     * la matrice de LilyGoLib, haut/bas et la position à plat étaient
-     * inversés, ce qui gênait aussi le geste de levée de poignet. */
-    struct bhy2_orient_matrix m = { .c = { -1, 0, 0, 0, 1, 0, 0, 0, -1 } };
+    /* Ultra : puce tournée de 180° autour de Z (LilyGoLib,
+     * TOP_LAYER_BOTTOM_RIGHT_CORNER). Le geste de poignet de Bosch dépend de
+     * ce repère (Z positif écran vers le haut) : la variante « 180° autour
+     * de Y » de la 0.2.6 l'a cassé. Le sens haut/bas du jeu de vol se règle
+     * dans l'app, pas ici. */
+    struct bhy2_orient_matrix m = { .c = { -1, 0, 0, 0, -1, 0, 0, 0, 1 } };
     bhy2_set_orientation_matrix(BHY2_PHYS_SENSOR_ID_ACCELEROMETER, m, &s_dev);
     bhy2_set_orientation_matrix(BHY2_PHYS_SENSOR_ID_GYROSCOPE, m, &s_dev);
 
@@ -352,7 +357,7 @@ bool motion_wrist_confirm(int sens)
         int az = iabs(z);
         ok = az >= c->zmin && az <= c->zmax;
         if (ok && i && (iabs(x - px) > c->still || iabs(y - py) > c->still || iabs(z - pz) > c->still)) ok = false;
-        if (!ok) ESP_LOGI(TAG, "geste refusé (x %d y %d z %d, échantillon %d)", x, y, z, i);
+        ESP_LOGI(TAG, "geste %s (x %d y %d z %d, échantillon %d)", ok ? "accepté" : "refusé", x, y, z, i);
         px = x; py = y; pz = z;
     }
     motion_accel_end();

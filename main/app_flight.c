@@ -213,7 +213,9 @@ static void read_tilt(float *tx, float *ty)
     tilt0_x += (fx - tilt0_x) * 0.002f;              /* le neutre suit lentement la pose */
     tilt0_y += (fy - tilt0_y) * 0.002f;
     *tx = clampf((fx - tilt0_x) * 2.4f, -1, 1);
-    *ty = clampf((fy - tilt0_y) * 3.0f, -1, 1);
+    /* repère du capteur (Z vers le haut écran dessus) : Y pointe à
+     * l'opposé du sens « tirer » du jeu, d'où le signe */
+    *ty = clampf((tilt0_y - fy) * 3.0f, -1, 1);
 }
 
 static void calibrate(void)

@@ -80,10 +80,10 @@ uploaded into its RAM at boot (about 1 s), then the step counter and the wrist-t
 run inside it. Its step counter cannot be reset without restarting that firmware, so the
 watch keeps the value at its last software reset and subtracts it.
 
-The chip is mounted face down, turned 180° about Y: the orientation matrix given to the
-accelerometer and gyroscope is `{ -1, 0, 0,  0, 1, 0,  0, 0, -1 }` (X and Z inverted, Y kept),
-checked on the watch with the flight game and with the watch lying flat. LilyGoLib's matrix
-inverts Y instead of Z, which swaps up/down and face up/face down and spoils the wrist gesture.
+The chip is turned 180° about Z (LilyGoLib's `TOP_LAYER_BOTTOM_RIGHT_CORNER`): the orientation
+matrix given to the accelerometer and gyroscope is `{ -1, 0, 0,  0, -1, 0,  0, 0, 1 }`. Bosch's
+wrist gesture relies on that frame (Z positive with the screen facing up); 0.2.6 tried a 180°
+turn about Y instead, which broke it. The flight game's pitch sign is set in the app.
 
 ## Pitfalls
 

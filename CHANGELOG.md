@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.10 — 2026-11-23
+
+- Raise to wake works again: the motion sensor goes back to LilyGoLib's orientation (180°
+  about Z), which Bosch's wrist gesture relies on; 0.2.6's change had broken it. The flight
+  game's up/down is now set in the app, so steering stays as in 0.2.9.
+- Serial log: each wrist gesture seen by the sensor, and the accelerometer values that
+  accepted or refused it.
+
 ## 0.2.9 — 2026-11-23
 
 - *Pub* face: rim radius 118, between the panel's 100 and 0.2.8's 135.
