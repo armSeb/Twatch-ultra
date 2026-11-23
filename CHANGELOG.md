@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.3 — 2026-11-23
+
+- Leaving or returning to the watch face switches at once instead of sliding: a full frame
+  takes about 21 ms at 40 MHz, longer than one panel scan, so the slide stuttered and tore.
+- Large redraws start on the panel's TE signal, which limits tearing on the other screens.
+
 ## 0.2.2 — 2026-11-23
 
 - WebRX: the waterfall stops just above the − ■ + buttons instead of running under them.

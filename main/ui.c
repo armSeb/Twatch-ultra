@@ -336,6 +336,10 @@ static void show(scr_id_t id, lv_screen_load_anim_t anim)
     crashlog_mark(anim == LV_SCR_LOAD_ANIM_NONE ? 'S' : 'A', s_cur, id);
     scr_anim_settle();                                 /* jamais deux animations empilées */
     if (!display_is_on() || lv_screen_active() == s_scr[id]) anim = LV_SCR_LOAD_ANIM_NONE;
+    /* cadran : bascule nette. Une image pleine fait 400 Ko à 40 MHz (≈ 21 ms,
+     * plus que les 16,7 ms d'un balayage de la dalle) : glisser le cadran
+     * donnait 4-5 images saccadées et déchirées. */
+    if (id == SCR_WATCH || lv_screen_active() == s_scr[SCR_WATCH]) anim = LV_SCR_LOAD_ANIM_NONE;
     if (anim == LV_SCR_LOAD_ANIM_NONE) lv_screen_load(s_scr[id]);
     else lv_screen_load_anim(s_scr[id], anim, ANIM_MS, 0, false);
 }

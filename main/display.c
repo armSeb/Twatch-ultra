@@ -161,6 +161,7 @@ static void IRAM_ATTR te_isr(void *arg)
  * continu, elle réveillerait le CPU du light sleep pour rien */
 static void wait_te(void)
 {
+    if (!s_te_sem) return;
     xSemaphoreTake(s_te_sem, 0);                  /* vieux front */
     gpio_intr_enable(BOARD_LCD_TE);
     xSemaphoreTake(s_te_sem, pdMS_TO_TICKS(20));
@@ -184,6 +185,16 @@ static bool on_trans_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_d
 
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
 {
+    /* grand rafraîchissement (bande pleine largeur et pleine hauteur de
+     * tampon) : première bande calée sur le TE, la dalle part du haut avec
+     * nous au lieu de couper l'image en deux. Les petites mises à jour
+     * (heure, compteurs) n'attendent pas. */
+    static bool frame_open;
+    if (!frame_open) {
+        frame_open = true;
+        if (lv_area_get_width(a) >= BOARD_LCD_W && lv_area_get_height(a) >= BUF_LINES) wait_te();
+    }
+    if (lv_display_flush_is_last(d)) frame_open = false;
     lv_draw_sw_rgb565_swap(px, lv_area_get_size(a));
     lcd_pixels(a->x1, a->y1, a->x2, a->y2, px);
 }
