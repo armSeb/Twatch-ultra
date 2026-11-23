@@ -45,6 +45,10 @@ uint32_t  sx_airtime_ms(size_t len);
 /* bruit de fond mesuré entre deux paquets (dBm), INT16_MIN si inconnu */
 int16_t   sx_noise_floor(void);
 
+/* antenne : intégrée (défaut) ou externe sur le connecteur USB-C ;
+ * appliqué tout de suite si la radio tourne */
+void      sx_set_antenna(bool external);
+
 /* compteurs (diagnostic) */
 typedef struct { uint32_t rx_ok, rx_crc, tx_ok, tx_fail; } sx_stats_t;
 void      sx_get_stats(sx_stats_t *out);

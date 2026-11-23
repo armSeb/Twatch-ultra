@@ -11,6 +11,7 @@
 #include "power.h"
 #include "ble.h"
 #include "meshcore/mc_port.h"
+#include "sx1262.h"
 #include "ancs.h"
 #include "media.h"
 #include "ota.h"
@@ -75,7 +76,7 @@ static lv_obj_t *b_card, *b_icon, *b_app, *b_title, *b_msg;
 static lv_timer_t *b_timer;
 static uint32_t b_hash;
 static void banner_hide(bool anim);
-static lv_obj_t *m_sw_nwake, *m_sw_tap, *m_sw_steps, *m_sw_wrist, *m_sw_mesh;
+static lv_obj_t *m_sw_nwake, *m_sw_tap, *m_sw_steps, *m_sw_wrist, *m_sw_mesh, *m_sw_ant;
 static lv_obj_t *m_bm_wsens, *m_sw_glance, *m_bm_gpct, *m_bm_gdur;
 static const uint8_t GPCT_VALUES[] = { 10, 25, 50 };
 static const uint8_t GDUR_VALUES[] = { 3, 4, 6 };
@@ -872,6 +873,15 @@ static void menu_mesh_cb(lv_event_t *ev)
     }
 }
 
+static void menu_ant_cb(lv_event_t *ev)
+{
+    bool ext = lv_obj_has_state(m_sw_ant, LV_STATE_CHECKED);
+    settings_get()->lora_ext_ant = ext;
+    settings_save();
+    sx_set_antenna(ext);
+    toast(ext ? _("Antenne LoRa externe") : _("Antenne LoRa intégrée"));
+}
+
 /* Faces dans l'ordre du sélecteur → valeur settings.watchface */
 static const uint8_t FACE_ORDER[3] = { FACE_CLASSIC, FACE_PUB, FACE_DIGITAL };
 static const char *const FACE_NAMES[3] = { N_("Rétro"), N_("Pub"), N_("Digital") };
@@ -1418,6 +1428,7 @@ static void build_menu(void)
     col = mk_page(SCR_SET_BT, _("Bluetooth"));
     m_sw_bt = mk_switch_row(col, _("Bluetooth"), _("Coupé = mode avion"), menu_bt_cb);
     m_sw_mesh = mk_switch_row(col, _("MeshCore"), _("Radio LoRa, app MeshCore"), menu_mesh_cb);
+    m_sw_ant = mk_switch_row(col, _("Antenne LoRa externe"), _("Sur le connecteur USB-C"), menu_ant_cb);
     m_bt_info = mk_label(col, &font_small, C_DIM, "");
     lv_obj_set_style_pad_bottom(m_bt_info, S(4), 0);
     lv_obj_t *pb = mk_button(col, with_sym(LV_SYMBOL_BLUETOOTH, _("Appairer un iPhone")), C_CARD, menu_nav_cb,
@@ -1684,6 +1695,7 @@ static void menu_sync_from_settings(void)
     lv_obj_set_state(m_sw_steps, LV_STATE_CHECKED, st->step_count);
     lv_obj_set_state(m_sw_wrist, LV_STATE_CHECKED, st->wrist_wake);
     lv_obj_set_state(m_sw_mesh, LV_STATE_CHECKED, st->meshcore);
+    lv_obj_set_state(m_sw_ant, LV_STATE_CHECKED, st->lora_ext_ant);
     lv_buttonmatrix_set_button_ctrl(m_bm_wsens, st->wrist_sens <= 2 ? st->wrist_sens : 1, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_obj_set_state(m_sw_glance, LV_STATE_CHECKED, st->glance);
     for (size_t i = 0; i < sizeof(GPCT_VALUES); i++)
@@ -2461,7 +2473,7 @@ static void release_menu(void)
     }
     /* plus aucun pointeur vers des objets détruits */
     m_slider = m_sw_vib = m_sw_bt = m_sw_tap = m_sw_nwake = m_bm_tmo = m_bm_face = m_bm_lang = NULL;
-    m_sw_steps = m_sw_wrist = m_sw_mesh = NULL;
+    m_sw_steps = m_sw_wrist = m_sw_mesh = m_sw_ant = NULL;
     m_bm_wsens = m_sw_glance = m_bm_gpct = m_bm_gdur = NULL;
     m_bt_info = m_confirm = NULL;
     o_info = o_bar = o_status = o_btn = o_pw = o_prev = o_prev_modal = NULL;

@@ -20,6 +20,7 @@ typedef struct {
     uint8_t glance_pct;       /* luminosité du coup d'œil, % */
     uint8_t glance_s;         /* durée du coup d'œil, s */
     bool    meshcore;         /* radio LoRa MeshCore (app compagnon iPhone) */
+    bool    lora_ext_ant;     /* antenne LoRa externe (USB-C) au lieu de l'intégrée */
 } settings_t;
 
 void        settings_load(void);

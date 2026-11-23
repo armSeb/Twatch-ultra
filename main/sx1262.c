@@ -77,6 +77,7 @@ static sx_stats_t s_stats;
 static int16_t s_noise = INT16_MIN;
 static volatile int64_t s_rx_busy_until;   /* préambule ou en-tête vu : réception en cours */
 static volatile bool s_tx_busy;            /* paquet sorti de la file, pas encore émis */
+static bool s_ext_ant;                     /* antenne externe (connecteur USB-C) */
 
 /* ------------------------------------------------------------------ SPI */
 static bool wait_busy(int ms)
@@ -138,6 +139,20 @@ static uint16_t irq_get(void)
 {
     uint8_t v[2] = { 0 };
     cmd_read(C_GET_IRQ, v, 2);
+    return (uint16_t)(v[0] << 8 | v[1]);
+}
+
+static uint8_t status(void)
+{
+    uint8_t tx[2] = { C_GET_STATUS, 0 }, rx[2] = { 0 };
+    xfer(tx, rx, 2);
+    return rx[1];
+}
+
+static uint16_t errors(void)
+{
+    uint8_t v[2] = { 0 };
+    cmd_read(C_GET_ERRORS, v, 2);
     return (uint16_t)(v[0] << 8 | v[1]);
 }
 
@@ -251,7 +266,11 @@ static void IRAM_ATTR dio1_isr(void *arg)
 
 static void handle_rx(uint16_t irq)
 {
-    if (irq & (IRQ_CRC_ERR | IRQ_HEADER_ERR)) { s_stats.rx_crc++; return; }
+    if (irq & (IRQ_CRC_ERR | IRQ_HEADER_ERR)) {
+        s_stats.rx_crc++;
+        ESP_LOGW(TAG, "paquet reçu corrompu (%s)", irq & IRQ_CRC_ERR ? "CRC" : "en-tête");
+        return;
+    }
     if (!(irq & IRQ_RX_DONE)) return;
     uint8_t st[2], ps[3];
     cmd_read(C_GET_RX_BUF, st, 2);
@@ -265,6 +284,7 @@ static void handle_rx(uint16_t irq)
     s_stats.rx_ok++;
     int16_t rssi = -(int16_t)ps[0] / 2;
     int8_t snr = (int8_t)ps[1];                                 /* ×4 */
+    ESP_LOGI(TAG, "reçu %u o, RSSI %d dBm, SNR %.1f dB", len, rssi, snr / 4.0f);
     if (s_cb) s_cb(rx + 3, len, rssi, snr);
 }
 
@@ -279,7 +299,8 @@ static bool transmit(const txreq_t *r)
     irq_clear(0xFFFF);
     uint8_t to[3] = { 0, 0, 0 };                                /* pas de délai matériel */
     cmd(C_SET_TX, to, 3);
-    uint32_t lim = sx_airtime_ms(r->len) + 500;
+    uint32_t air = sx_airtime_ms(r->len), lim = air + 500;
+    int64_t t0 = esp_timer_get_time();
     ulTaskNotifyTake(pdTRUE, 0);
     bool ok = false;
     int64_t end = esp_timer_get_time() + lim * 1000LL;
@@ -289,7 +310,13 @@ static bool transmit(const txreq_t *r)
     }
     irq_clear(0xFFFF);
     gpio_intr_enable(BOARD_LORA_IRQ);
-    if (ok) s_stats.tx_ok++; else { s_stats.tx_fail++; ESP_LOGW(TAG, "émission sans TxDone"); }
+    if (ok) {
+        s_stats.tx_ok++;
+        ESP_LOGI(TAG, "émis %u o en %d ms (prévu %u)", r->len, (int)((esp_timer_get_time() - t0) / 1000), (unsigned)air);
+    } else {
+        s_stats.tx_fail++;
+        ESP_LOGW(TAG, "émission sans TxDone (statut 0x%02x, erreurs 0x%04x)", status(), errors());
+    }
     return ok;
 }
 
@@ -400,7 +427,7 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
     s_cfg = *cfg;
     s_cb = cb;
     axp_rail(AXP_RAIL_LORA, true);
-    xl9555_output(XIO_LORA_RF_SW, true);                        /* antenne intégrée */
+    xl9555_output(XIO_LORA_RF_SW, !s_ext_ant);                  /* haut : antenne intégrée, bas : USB-C */
     vTaskDelay(pdMS_TO_TICKS(5));
     esp_err_t e = spi_shared_get();
     if (e != ESP_OK) goto off;
@@ -416,6 +443,8 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
         spi_bus_remove_device(s_dev); s_dev = NULL; spi_shared_put();
         goto off;
     }
+    uint8_t st0 = status();                                     /* avant la tâche, seule à parler ensuite */
+    uint16_t er0 = errors();
     if (!s_txq) s_txq = xQueueCreate(TXQ_LEN, sizeof(txreq_t));
     xQueueReset(s_txq);
 
@@ -432,8 +461,9 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
         sx_stop();
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "%.3f MHz, BW %.1f kHz, SF%d, CR 4/%d, %d dBm", s_cfg.freq_hz / 1e6,
-             s_cfg.bw_hz / 1e3, s_cfg.sf, s_cfg.cr, s_cfg.power_dbm);
+    ESP_LOGI(TAG, "%.3f MHz, BW %.1f kHz, SF%d, CR 4/%d, %d dBm, synchro 0x%02x, préambule %u, antenne %s, "
+             "statut 0x%02x, erreurs 0x%04x", s_cfg.freq_hz / 1e6, s_cfg.bw_hz / 1e3, s_cfg.sf, s_cfg.cr,
+             s_cfg.power_dbm, s_cfg.sync_word, s_cfg.preamble, s_ext_ant ? "externe" : "intégrée", st0, er0);
     return ESP_OK;
 off:
     xl9555_output(XIO_LORA_RF_SW, false);
@@ -494,3 +524,9 @@ bool sx_rx_active(void) { return s_run && esp_timer_get_time() < s_rx_busy_until
 bool sx_tx_idle(void) { return !s_run || (!s_tx_busy && (!s_txq || !uxQueueMessagesWaiting(s_txq))); }
 
 void sx_get_stats(sx_stats_t *out) { *out = s_stats; }
+
+void sx_set_antenna(bool external)
+{
+    s_ext_ant = external;
+    if (s_run) xl9555_output(XIO_LORA_RF_SW, !external);
+}

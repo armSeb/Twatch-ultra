@@ -22,13 +22,14 @@
 #include "fonts/fonts.h"
 #include "wclock.h"
 #include "meshcore/mc_port.h"
+#include "sx1262.h"
 
 #define SHOW_MAX 30             /* objets LVGL bornés : 30 bulles au plus */
 #define EV_NEW   1
 
 extern const app_t app_mesh;
 
-static lv_obj_t *v_status, *v_list, *v_off;
+static lv_obj_t *v_status, *v_diag, *v_list, *v_off;
 static uint32_t v_seq;          /* dernier message affiché */
 static lv_timer_t *v_tmr;
 
@@ -50,8 +51,20 @@ static void refresh_status(void)
     char b[96];
     if (!mc_running()) {
         lv_label_set_text(v_status, _("MeshCore coupé"));
+        lv_label_set_text(v_diag, "");
         return;
     }
+    /* compteurs radio : de quoi voir d'un coup d'œil si la LoRa émet et reçoit */
+    sx_stats_t x;
+    sx_get_stats(&x);
+    int16_t nf = sx_noise_floor();
+    char d[96];
+    int k = snprintf(d, sizeof d, "TX %lu", (unsigned long)x.tx_ok);
+    if (x.tx_fail) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.tx_fail, _("ratés"));
+    k += snprintf(d + k, sizeof d - k, " · RX %lu", (unsigned long)x.rx_ok);
+    if (x.rx_crc) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.rx_crc, _("abîmés"));
+    if (nf != INT16_MIN) snprintf(d + k, sizeof d - k, " · %s %d dBm", _("bruit"), nf);
+    lv_label_set_text(v_diag, d);
     mc_status_t s;
     mc_get_status(&s);
     char f[16];
@@ -135,7 +148,12 @@ static void create(lv_obj_t *scr)
     lv_label_set_long_mode(v_status, LV_LABEL_LONG_DOT);
     lv_obj_set_width(v_status, UI_W - S(16));
     lv_obj_align(v_status, LV_ALIGN_TOP_MID, 0, y);
-    y += S(24);
+    y += S(20);
+    v_diag = ui_label(scr, &font_small, C_DIM, "");
+    lv_label_set_long_mode(v_diag, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(v_diag, UI_W - S(16));
+    lv_obj_align(v_diag, LV_ALIGN_TOP_MID, 0, y);
+    y += S(22);
 
     v_list = ui_container(scr);
     lv_obj_set_size(v_list, UI_W, UI_H - y);
@@ -161,13 +179,13 @@ static void create(lv_obj_t *scr)
 
     v_seq = UINT32_MAX;
     rebuild();
-    v_tmr = lv_timer_create(tick_cb, 5000, NULL);
+    v_tmr = lv_timer_create(tick_cb, 2000, NULL);
 }
 
 static void destroy(void)
 {
     if (v_tmr) { lv_timer_delete(v_tmr); v_tmr = NULL; }
-    v_status = v_list = v_off = NULL;
+    v_status = v_diag = v_list = v_off = NULL;
 }
 
 static void on_show(void) { if (v_tmr) lv_timer_resume(v_tmr); rebuild(); }

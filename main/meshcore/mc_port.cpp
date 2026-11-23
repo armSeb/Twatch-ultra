@@ -21,6 +21,7 @@ extern "C" {
 #include "axp2101.h"
 #include "wclock.h"
 #include "ble.h"
+#include "settings.h"
 }
 
 static const char *TAG = "mesh";
@@ -85,6 +86,7 @@ void TWatchRadio::start()
     dirty = false;
     sending = false;
     sx_cfg_t c = radio_cfg(freq, bw, sf, cr, power);
+    sx_set_antenna(settings_get()->lora_ext_ant);
     if (sx_start(&c, radio_rx_cb) != ESP_OK) ESP_LOGE(TAG, "radio absente");
 }
 
