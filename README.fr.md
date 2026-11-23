@@ -77,7 +77,7 @@ arrondis de la dalle)*
 
 - **MeshCore** sur la radio LoRa (SX1262), préréglage EU/UK Narrow par défaut. L'appli
   MeshCore officielle s'appaire en Bluetooth comme compagnon et règle la radio ; un message lu
-  sur la montre est quand même transmis à l'appli. À activer dans Réglages › Sans fil ›
+  sur la montre est quand même transmis à l'appli. À activer dans Réglages ›
   MeshCore.
 
 **En cours** : alertes des messages MeshCore, historique sur la carte SD, réception LoRa

@@ -40,7 +40,7 @@
 #define ANIM_MS UI_ANIM_MS
 
 typedef enum {
-    SCR_WATCH, SCR_LIST, SCR_DETAIL, SCR_CALL, SCR_MENU, SCR_POWER, SCR_PAIR, SCR_ABOUT, SCR_MEDIA, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_OTA,
+    SCR_WATCH, SCR_LIST, SCR_DETAIL, SCR_CALL, SCR_MENU, SCR_POWER, SCR_PAIR, SCR_ABOUT, SCR_MEDIA, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI, SCR_SET_MESH, SCR_OTA,
     SCR_LAUNCHER, SCR_QUICK, SCR_APP, SCR_COUNT
 } scr_id_t;
 
@@ -84,7 +84,7 @@ static const uint8_t GDUR_VALUES[] = { 3, 4, 6 };
 static lv_obj_t *m_slider, *m_sw_vib, *m_sw_bt, *m_bm_tmo, *m_bm_face, *m_bm_lang, *m_toast;
 static void menu_lang_cb(lv_event_t *ev);
 static lv_timer_t *w_clock_t;
-static lv_obj_t *m_sum[7], *m_bt_info, *m_confirm;
+static lv_obj_t *m_sum[9], *m_bt_info, *m_confirm;
 static lv_obj_t *o_info, *o_bar, *o_status, *o_btn, *o_pw, *o_prev, *o_prev_modal, *o_title;
 static int o_app = -1;           /* ≥ 0 : session « réglages » de cette app (WebRX), sinon mise à jour */
 static void ota_ui_idle(void);
@@ -278,7 +278,7 @@ enum { G_NONE = 0, G_MENU, G_MEDIA, G_LAUNCHER, G_QUICK, G_APP };
 static int group_of(scr_id_t id)
 {
     switch (id) {
-    case SCR_MENU: case SCR_SET_DISP: case SCR_SET_ALERT: case SCR_SET_MOTION: case SCR_SET_BT: case SCR_OTA:
+    case SCR_MENU: case SCR_SET_DISP: case SCR_SET_ALERT: case SCR_SET_MOTION: case SCR_SET_BT: case SCR_SET_WIFI: case SCR_SET_MESH: case SCR_OTA:
         return G_MENU;
     case SCR_MEDIA:    return G_MEDIA;
     case SCR_LAUNCHER: return G_LAUNCHER;
@@ -1206,6 +1206,13 @@ static void menu_refresh_summaries(void)
     else if (st->step_count) snprintf(b, sizeof(b), "%s", _("Compteur de pas"));
     else snprintf(b, sizeof(b), "%s", _("Capteur en veille"));
     lv_label_set_text(m_sum[6], b);
+
+    static const uint8_t WDBM[4] = { 8, 13, 17, 20 };
+    snprintf(b, sizeof(b), _("Puissance %u dBm"), WDBM[st->wifi_pwr <= 3 ? st->wifi_pwr : 3]);
+    lv_label_set_text(m_sum[7], b);
+    if (!st->meshcore) snprintf(b, sizeof(b), "%s", _("Coupé"));
+    else snprintf(b, sizeof(b), "%s · %s", _("Actif"), st->lora_ext_ant ? _("antenne externe") : _("antenne intégrée"));
+    lv_label_set_text(m_sum[8], b);
 }
 
 static void build_toast(void)
@@ -1371,7 +1378,9 @@ static void build_menu(void)
     mk_entry(col, SYM_EYE, _("Affichage"), SCR_SET_DISP, &m_sum[0]);
     mk_entry(col, LV_SYMBOL_BELL, _("Alertes et réveil"), SCR_SET_ALERT, &m_sum[1]);
     mk_entry(col, SYM_WALK, _("Mouvement"), SCR_SET_MOTION, &m_sum[6]);
-    mk_entry(col, LV_SYMBOL_WIFI, _("Sans fil"), SCR_SET_BT, &m_sum[2]);
+    mk_entry(col, LV_SYMBOL_BLUETOOTH, _("Bluetooth"), SCR_SET_BT, &m_sum[2]);
+    mk_entry(col, LV_SYMBOL_WIFI, _("Wi-Fi"), SCR_SET_WIFI, &m_sum[7]);
+    mk_entry(col, SYM_COMMENTS, _("MeshCore"), SCR_SET_MESH, &m_sum[8]);
     mk_entry(col, LV_SYMBOL_CHARGE, _("Énergie"), SCR_POWER, &m_sum[3]);
     mk_entry(col, LV_SYMBOL_LIST, _("À propos"), SCR_ABOUT, &m_sum[4]);
     mk_entry(col, LV_SYMBOL_REFRESH, _("Mise à jour"), SCR_OTA, &m_sum[5]);
@@ -1434,15 +1443,29 @@ static void build_menu(void)
     lv_label_set_long_mode(mn, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(mn, lv_pct(100));
 
-    /* ---- bluetooth ---- */
-    col = mk_page(SCR_SET_BT, _("Sans fil"));
-    m_sw_bt = mk_switch_row(col, _("Bluetooth"), _("Coupé = mode avion"), menu_bt_cb);
-    m_sw_mesh = mk_switch_row(col, _("MeshCore"), _("Radio LoRa, app MeshCore"), menu_mesh_cb);
-    m_sw_ant = mk_switch_row(col, _("Antenne LoRa externe"), _("Sur le connecteur USB-C"), menu_ant_cb);
-    mk_section(col, _("PUISSANCE WI-FI"));
+    /* ---- Wi-Fi ---- */
+    col = mk_page(SCR_SET_WIFI, _("Wi-Fi"));
+    mk_section(col, _("PUISSANCE D'ÉMISSION"));
     static const char *wpwr_map[4 + 1];
     wpwr_map[0] = "8"; wpwr_map[1] = "13"; wpwr_map[2] = "17"; wpwr_map[3] = "20 dBm"; wpwr_map[4] = "";
     m_bm_wpwr = mk_segmented(col, wpwr_map, menu_wpwr_cb);
+    lv_obj_t *wn = mk_label(col, &font_small, C_DIM,
+                            _("Moins de puissance : moins de batterie, portée plus courte. Pris en compte tout de suite."));
+    lv_label_set_long_mode(wn, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(wn, lv_pct(100));
+
+    /* ---- MeshCore ---- */
+    col = mk_page(SCR_SET_MESH, _("MeshCore"));
+    m_sw_mesh = mk_switch_row(col, _("MeshCore"), _("Radio LoRa, app MeshCore"), menu_mesh_cb);
+    m_sw_ant = mk_switch_row(col, _("Antenne LoRa externe"), _("Sur le connecteur USB-C"), menu_ant_cb);
+    lv_obj_t *mn2 = mk_label(col, &font_small, C_DIM,
+                             _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
+    lv_label_set_long_mode(mn2, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(mn2, lv_pct(100));
+
+    /* ---- bluetooth ---- */
+    col = mk_page(SCR_SET_BT, _("Bluetooth"));
+    m_sw_bt = mk_switch_row(col, _("Bluetooth"), _("Coupé = mode avion"), menu_bt_cb);
     m_bt_info = mk_label(col, &font_small, C_DIM, "");
     lv_obj_set_style_pad_bottom(m_bt_info, S(4), 0);
     lv_obj_t *pb = mk_button(col, with_sym(LV_SYMBOL_BLUETOOTH, _("Appairer un iPhone")), C_CARD, menu_nav_cb,
@@ -2482,7 +2505,8 @@ void ui_init(void)
 static void release_menu(void)
 {
     if (!s_scr[SCR_MENU] || is_menu_group(s_cur)) return;
-    static const scr_id_t grp[] = { SCR_MENU, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_OTA };
+    static const scr_id_t grp[] = { SCR_MENU, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI,
+                                    SCR_SET_MESH, SCR_OTA };
     for (size_t i = 0; i < sizeof(grp) / sizeof(grp[0]); i++) {
         if (s_scr[grp[i]]) { scr_delete(s_scr[grp[i]]); s_scr[grp[i]] = NULL; }
     }

@@ -8,8 +8,8 @@ All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
   stacks of the radio, WebRX audio, LoRa, sound, flight-sim, demo and DNS tasks in PSRAM
   (`task_psram.h`: tasks that never touch flash); MeshCore packet pool, queues and BLE buffer
   in PSRAM; large static buffers moved to PSRAM.
-- Wi-Fi transmit power setting (8, 13, 17 or 20 dBm). The *Bluetooth* settings page becomes
-  *Wireless*.
+- Settings: new *Wi-Fi* page (transmit power 8, 13, 17 or 20 dBm, applied at once) and
+  *MeshCore* page (on/off, built-in or external LoRa antenna).
 - MeshCore task logs its stack margin and free internal RAM every 2 minutes.
 
 ## 0.2.0 — 2026-11-23

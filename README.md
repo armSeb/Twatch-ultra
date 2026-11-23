@@ -71,7 +71,7 @@ corners)*
 
 - **MeshCore** on the LoRa radio (SX1262), EU/UK Narrow preset by default. The official
   MeshCore app pairs over Bluetooth as a companion and sets the radio; messages read on the
-  watch are still delivered to the app. Turn it on in Settings › Wireless › MeshCore.
+  watch are still delivered to the app. Turn it on in Settings › MeshCore.
 
 **In progress**: MeshCore message alerts, history on the SD card, low-power LoRa receive.
 
