@@ -55,15 +55,19 @@ static void refresh_status(void)
         return;
     }
     /* compteurs radio : de quoi voir d'un coup d'œil si la LoRa émet et reçoit */
-    sx_stats_t x;
-    sx_get_stats(&x);
-    int16_t nf = sx_noise_floor();
     char d[96];
-    int k = snprintf(d, sizeof d, "TX %lu", (unsigned long)x.tx_ok);
-    if (x.tx_fail) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.tx_fail, _("ratés"));
-    k += snprintf(d + k, sizeof d - k, " · RX %lu", (unsigned long)x.rx_ok);
-    if (x.rx_crc) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.rx_crc, _("abîmés"));
-    if (nf != INT16_MIN) snprintf(d + k, sizeof d - k, " · %s %d dBm", _("bruit"), nf);
+    if (!sx_running()) {
+        snprintf(d, sizeof d, "%s : %s", _("Radio LoRa arrêtée"), esp_err_to_name(sx_last_error()));
+    } else {
+        sx_stats_t x;
+        sx_get_stats(&x);
+        int16_t nf = sx_noise_floor();
+        int k = snprintf(d, sizeof d, "TX %lu", (unsigned long)x.tx_ok);
+        if (x.tx_fail) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.tx_fail, _("ratés"));
+        k += snprintf(d + k, sizeof d - k, " · RX %lu", (unsigned long)x.rx_ok);
+        if (x.rx_crc) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.rx_crc, _("abîmés"));
+        if (nf != INT16_MIN) snprintf(d + k, sizeof d - k, " · %s %d dBm", _("bruit"), nf);
+    }
     lv_label_set_text(v_diag, d);
     mc_status_t s;
     mc_get_status(&s);
@@ -146,12 +150,12 @@ static void create(lv_obj_t *scr)
     int y = ui_header(scr, _("MeshCore"));
     v_status = ui_label(scr, &font_small, C_DIM, "");
     lv_label_set_long_mode(v_status, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(v_status, UI_W - S(16));
+    lv_obj_set_size(v_status, UI_W - S(16), lv_font_get_line_height(&font_small));   /* une ligne */
     lv_obj_align(v_status, LV_ALIGN_TOP_MID, 0, y);
     y += S(20);
     v_diag = ui_label(scr, &font_small, C_DIM, "");
     lv_label_set_long_mode(v_diag, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(v_diag, UI_W - S(16));
+    lv_obj_set_size(v_diag, UI_W - S(16), lv_font_get_line_height(&font_small));
     lv_obj_align(v_diag, LV_ALIGN_TOP_MID, 0, y);
     y += S(22);
 

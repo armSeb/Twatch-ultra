@@ -49,6 +49,9 @@ int16_t   sx_noise_floor(void);
  * appliqué tout de suite si la radio tourne */
 void      sx_set_antenna(bool external);
 
+/* cause du dernier démarrage raté (ESP_OK si la radio a démarré) */
+esp_err_t sx_last_error(void);
+
 /* compteurs (diagnostic) */
 typedef struct { uint32_t rx_ok, rx_crc, tx_ok, tx_fail; } sx_stats_t;
 void      sx_get_stats(sx_stats_t *out);

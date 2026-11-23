@@ -77,7 +77,8 @@ static sx_stats_t s_stats;
 static int16_t s_noise = INT16_MIN;
 static volatile int64_t s_rx_busy_until;   /* préambule ou en-tête vu : réception en cours */
 static volatile bool s_tx_busy;            /* paquet sorti de la file, pas encore émis */
-static bool s_ext_ant;                     /* antenne externe (connecteur USB-C) */
+static bool s_ext_ant;
+static esp_err_t s_last_err = ESP_OK;      /* dernier échec de démarrage */                     /* antenne externe (connecteur USB-C) */
 
 /* ------------------------------------------------------------------ SPI */
 static bool wait_busy(int ms)
@@ -322,7 +323,8 @@ static bool transmit(const txreq_t *r)
 
 static void lora_task(void *arg)
 {
-    txreq_t *r = heap_caps_malloc(sizeof *r, MALLOC_CAP_INTERNAL);
+    static txreq_t tx_slot;                                     /* une seule tâche lora à la fois */
+    txreq_t *r = &tx_slot;
     rx_continuous();
     int64_t beat = esp_timer_get_time();
     while (s_run) {
@@ -368,7 +370,6 @@ static void lora_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(20));
         }
     }
-    heap_caps_free(r);
     s_task = NULL;
     vTaskDelete(NULL);
 }
@@ -466,9 +467,12 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
     gpio_wakeup_enable(BOARD_LORA_IRQ, GPIO_INTR_HIGH_LEVEL);
 
     s_run = true;
+    s_last_err = ESP_OK;
     if (xTaskCreatePinnedToCore(lora_task, "lora", 4096, NULL, 6, &s_task, 0) != pdPASS) {
         s_run = false;
         sx_stop();
+        ESP_LOGE(TAG, "tâche lora : mémoire insuffisante");
+        s_last_err = ESP_ERR_NO_MEM;
         return ESP_ERR_NO_MEM;
     }
     ESP_LOGI(TAG, "%.3f MHz, BW %.1f kHz, SF%d, CR 4/%d, %d dBm, synchro 0x%02x, préambule %u, antenne %s, "
@@ -480,6 +484,7 @@ off:
     axp_rail(AXP_RAIL_LORA, false);
     pins_idle();
     ESP_LOGE(TAG, "démarrage impossible : %s", esp_err_to_name(e));
+    s_last_err = e;
     return e;
 }
 
@@ -540,3 +545,5 @@ void sx_set_antenna(bool external)
     s_ext_ant = external;
     if (s_run) xl9555_output(XIO_LORA_RF_SW, !external);
 }
+
+esp_err_t sx_last_error(void) { return s_last_err; }
