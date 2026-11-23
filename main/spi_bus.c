@@ -36,6 +36,12 @@ esp_err_t spi_shared_get(void)
             .max_transfer_sz = 4096,
         };
         e = spi_bus_initialize(BOARD_SPI_HOST, &bus, SPI_DMA_CH_AUTO);
+        /* bus en service : ses lignes gardent leur état en light sleep */
+        if (e == ESP_OK) {
+            gpio_sleep_sel_dis(BOARD_SPI_MOSI);
+            gpio_sleep_sel_dis(BOARD_SPI_MISO);
+            gpio_sleep_sel_dis(BOARD_SPI_SCK);
+        }
     }
     if (e == ESP_OK) s_users++;
     xSemaphoreGive(s_mux);
@@ -52,6 +58,7 @@ void spi_shared_put(void)
             gpio_reset_pin(p[i]);
             gpio_set_pull_mode(p[i], GPIO_FLOATING);
             gpio_set_direction(p[i], GPIO_MODE_DISABLE);
+            gpio_sleep_sel_en(p[i]);
         }
     }
     xSemaphoreGive(s_mux);

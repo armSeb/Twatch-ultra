@@ -23,5 +23,5 @@ idf_component_register(
 )
 target_compile_definitions(${COMPONENT_LIB} PRIVATE ${MESHCORE_DEFS})
 # code d'origine : on ne le réécrit pas pour des avertissements
-target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-reorder -Wno-unused-variable -Wno-unused-but-set-variable
+target_compile_options(${COMPONENT_LIB} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wno-reorder> -Wno-unused-variable -Wno-unused-but-set-variable
     -Wno-sign-compare -Wno-format -Wno-missing-field-initializers -Wno-unused-function)

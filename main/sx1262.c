@@ -344,11 +344,16 @@ static void pins_idle(void)
         gpio_reset_pin(p[i]);
         gpio_set_pull_mode(p[i], GPIO_FLOATING);
         gpio_set_direction(p[i], GPIO_MODE_DISABLE);
+        gpio_sleep_sel_en(p[i]);
     }
 }
 
 static esp_err_t chip_init(void)
 {
+    /* light sleep : CS et reset doivent rester hauts, BUSY et DIO1 lisibles
+     * (IDF isole sinon toutes les broches pendant le sommeil) */
+    const gpio_num_t keep[] = { BOARD_LORA_CS, BOARD_LORA_RST, BOARD_LORA_BUSY, BOARD_LORA_IRQ };
+    for (int i = 0; i < 4; i++) gpio_sleep_sel_dis(keep[i]);
     gpio_config_t o = { .pin_bit_mask = 1ULL << BOARD_LORA_RST, .mode = GPIO_MODE_OUTPUT };
     gpio_config(&o);
     gpio_config_t in = { .pin_bit_mask = 1ULL << BOARD_LORA_BUSY, .mode = GPIO_MODE_INPUT };
