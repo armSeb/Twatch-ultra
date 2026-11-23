@@ -30,13 +30,13 @@ external 32.768 kHz crystal used as the Bluetooth low-power clock.
 | Rail | Feeds | Firmware |
 |---|---|---|
 | DCDC1 3.3 V | ESP32-S3 | always on, never touched |
-| ALDO1 3.3 V | SD card | off until used |
+| ALDO1 3.3 V | SD card | off until used; on while the LoRa radio runs (shared SPI bus) |
 | ALDO2 3.3 V | display | on |
-| ALDO3 3.3 V | SX1262 LoRa | off until used |
+| ALDO3 3.3 V | SX1262 LoRa | on only while MeshCore runs |
 | ALDO4 1.8 V | BHI260AP | on only if raise to wake or the step counter is on |
 | BLDO1 3.3 V | GNSS | off until used |
 | BLDO2 3.3 V | MAX98357A amplifier | on only while a sound plays |
-| DLDO1 3.3 V | NFC | off until used |
+| DLDO1 3.3 V | NFC | off until used; on while the LoRa radio runs (shared SPI bus) |
 | VRTC | GNSS backup | always on |
 | DCDC2–5 | not used | off |
 
@@ -80,6 +80,11 @@ uploaded into its RAM at boot (about 1 s), then the step counter and the wrist-t
 run inside it. Its step counter cannot be reset without restarting that firmware, so the
 watch keeps the value at its last software reset and subtracts it.
 
+The chip is mounted face down, turned 180° about Y: the orientation matrix given to the
+accelerometer and gyroscope is `{ -1, 0, 0,  0, 1, 0,  0, 0, -1 }` (X and Z inverted, Y kept),
+checked on the watch with the flight game and with the watch lying flat. LilyGoLib's matrix
+inverts Y instead of Z, which swaps up/down and face up/face down and spoils the wrist gesture.
+
 ## Pitfalls
 
 - **NimBLE host-based privacy**: reconnection fails after the iPhone rotates its private
@@ -92,6 +97,15 @@ watch keeps the value at its last software reset and subtracts it.
   while iOS changes them: retried with back-off until accepted.
 - **Cancelling an OTA upload**: `httpd_stop()` waits for the upload handler, which keeps
   receiving while the phone sends, and the watch freezes. It restarts directly instead.
+- **The XL9555 keeps its outputs across ESP32 resets**: the panel can stay black after a
+  reset. The display power pin (7) is cut and restored at boot.
+- **LoRa antenna switch (XL9555 pin 11)**: LOW selects the built-in antenna, HIGH the external
+  one on the USB-C connector, the opposite of LilyGoLib's comments (checked on the watch).
+- **SX1262, SD card and NFC share SPI3**: an unpowered SD card or NFC chip pulls the bus down
+  through its protection diodes and the SX1262 never answers (status 0x00). While the radio
+  runs, both rails stay on with their chip selects held high.
+- **SX1262 settings** (as Meshtastic's t-watch-ultra variant): TCXO at 1.8 V on DIO3, DIO2 as
+  RF switch, DC-DC regulator, boosted receive gain.
 - **Full image at 0x0 erases NVS** (pairings). For USB updates, write the app at `0x20000`
   with `ota_data_initial.bin`.
 

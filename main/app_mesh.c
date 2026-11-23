@@ -66,7 +66,7 @@ static void refresh_status(void)
         if (x.tx_fail) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.tx_fail, _("ratés"));
         k += snprintf(d + k, sizeof d - k, " · RX %lu", (unsigned long)x.rx_ok);
         if (x.rx_crc) k += snprintf(d + k, sizeof d - k, " (%lu %s)", (unsigned long)x.rx_crc, _("abîmés"));
-        if (nf != INT16_MIN) snprintf(d + k, sizeof d - k, " · %s %d dBm", _("bruit"), nf);
+        if (nf != INT16_MIN) snprintf(d + k, sizeof d - k, " · %d dBm", nf);
     }
     lv_label_set_text(v_diag, d);
     mc_status_t s;
@@ -74,8 +74,9 @@ static void refresh_status(void)
     char f[16];
     snprintf(f, sizeof f, "%.3f", s.freq_mhz);
     if (i18n_get() == LANG_FR) for (char *p = f; *p; p++) if (*p == '.') *p = ',';
-    if (s.app_connected) snprintf(b, sizeof b, "%s · %s MHz · SF%u · %s", s.name, f, s.sf, _("app connectée"));
-    else if (s.app_queue) snprintf(b, sizeof b, "%s · %s MHz · %d %s", s.name, f, s.app_queue, _("pour l'app"));
+    /* le nom du nœud cède la place quand la ligne est longue (écran arrondi) */
+    if (s.app_connected) snprintf(b, sizeof b, "%s MHz · SF%u · %s", f, s.sf, _("app connectée"));
+    else if (s.app_queue) snprintf(b, sizeof b, "%s MHz · %d %s", f, s.app_queue, _("pour l'app"));
     else snprintf(b, sizeof b, "%s · %s MHz · SF%u", s.name, f, s.sf);
     emoji_label_set_text(v_status, b);
 }

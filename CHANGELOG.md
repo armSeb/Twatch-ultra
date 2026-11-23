@@ -2,6 +2,16 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.7 — 2026-11-23
+
+- MeshCore app: the status line no longer runs off the rounded edge (frequency, SF and app
+  state; the node name is left out), the radio line shows the noise floor without a label.
+- Settings: *External antenna* label fits on one line; Wi-Fi power buttons show plain numbers,
+  the unit moves to the section title.
+- Documentation: MeshCore guide (en/fr) with screenshots, settings, hardware pitfalls (shared
+  SPI bus, antenna switch polarity, XL9555 state, sensor orientation), versioning, MeshCore in
+  the third-party notices; watch face and screen captures refreshed.
+
 ## 0.2.6 — 2026-11-23
 
 - Motion sensor: orientation fixed (front/back and face up/down were inverted). Tilt in the

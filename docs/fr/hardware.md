@@ -31,13 +31,13 @@ tactile (8), détection de la carte SD (10), commutateur d'antenne LoRa (11).
 | Rail | Alimente | Firmware |
 |---|---|---|
 | DCDC1 3,3 V | ESP32-S3 | toujours allumé, jamais touché |
-| ALDO1 3,3 V | carte SD | coupé tant qu'inutilisé |
+| ALDO1 3,3 V | carte SD | coupé tant qu'inutilisé ; allumé pendant que la radio LoRa tourne (bus SPI partagé) |
 | ALDO2 3,3 V | écran | allumé |
-| ALDO3 3,3 V | LoRa SX1262 | coupé tant qu'inutilisé |
+| ALDO3 3,3 V | LoRa SX1262 | allumé seulement quand MeshCore tourne |
 | ALDO4 1,8 V | BHI260AP | allumé seulement si lever le poignet ou le compteur de pas est activé |
 | BLDO1 3,3 V | GNSS | coupé tant qu'inutilisé |
 | BLDO2 3,3 V | ampli MAX98357A | allumé seulement pendant un son |
-| DLDO1 3,3 V | NFC | coupé tant qu'inutilisé |
+| DLDO1 3,3 V | NFC | coupé tant qu'inutilisé ; allumé pendant que la radio LoRa tourne (bus SPI partagé) |
 | VRTC | sauvegarde du GNSS | toujours allumé |
 | DCDC2–5 | inutilisés | coupés |
 
@@ -82,6 +82,12 @@ Le BHI260AP est un concentrateur de capteurs programmable : le firmware Bosch
 pas et le geste du poignet tournent dedans. Son compteur de pas ne se remet pas à zéro sans
 redémarrer ce firmware : la montre garde sa valeur au dernier zéro logiciel et la soustrait.
 
+La puce est montée face dessous, tournée de 180° autour de Y : la matrice d'orientation
+donnée à l'accéléromètre et au gyroscope est `{ -1, 0, 0,  0, 1, 0,  0, 0, -1 }` (X et Z
+inversés, Y conservé), vérifiée sur la montre avec le jeu de vol et la montre posée à plat.
+Celle de LilyGoLib inverse Y au lieu de Z : haut/bas et face dessus/dessous sont alors
+échangés, et le geste du poignet en souffre.
+
 ## Pièges
 
 - **Confidentialité gérée par l'hôte NimBLE** : la reconnexion échoue quand l'iPhone change
@@ -97,6 +103,18 @@ redémarrer ce firmware : la montre garde sa valeur au dernier zéro logiciel et
 - **Annuler un envoi OTA** : `httpd_stop()` attend le gestionnaire d'envoi, qui continue de
   recevoir tant que le téléphone envoie, et la montre se fige. Elle redémarre directement à
   la place.
+- **Le XL9555 garde ses sorties d'un reset de l'ESP32 à l'autre** : la dalle peut rester
+  noire après un reset. La broche d'alimentation de l'écran (7) est coupée puis rétablie au
+  démarrage.
+- **Commutateur d'antenne LoRa (broche 11 du XL9555)** : niveau bas = antenne intégrée, haut
+  = antenne externe sur le connecteur USB-C, l'inverse des commentaires de LilyGoLib
+  (vérifié sur la montre).
+- **SX1262, carte SD et NFC partagent SPI3** : une carte SD ou une puce NFC non alimentée
+  tire le bus vers le bas par ses diodes de protection et le SX1262 ne répond jamais (statut
+  0x00). Tant que la radio tourne, les deux rails restent allumés, sélections de puce au
+  niveau haut.
+- **Réglages du SX1262** (comme la variante t-watch-ultra de Meshtastic) : TCXO 1,8 V sur
+  DIO3, DIO2 en commutateur RF, régulateur DC-DC, gain de réception renforcé.
 - **L'image complète à 0x0 efface la NVS** (appairages). Pour une mise à jour USB, écrivez
   l'application à `0x20000` avec `ota_data_initial.bin`.
 

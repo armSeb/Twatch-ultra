@@ -1445,9 +1445,9 @@ static void build_menu(void)
 
     /* ---- Wi-Fi ---- */
     col = mk_page(SCR_SET_WIFI, _("Wi-Fi"));
-    mk_section(col, _("PUISSANCE D'ÉMISSION"));
+    mk_section(col, _("PUISSANCE D'ÉMISSION (dBm)"));
     static const char *wpwr_map[4 + 1];
-    wpwr_map[0] = "8"; wpwr_map[1] = "13"; wpwr_map[2] = "17"; wpwr_map[3] = "20 dBm"; wpwr_map[4] = "";
+    wpwr_map[0] = "8"; wpwr_map[1] = "13"; wpwr_map[2] = "17"; wpwr_map[3] = "20"; wpwr_map[4] = "";
     m_bm_wpwr = mk_segmented(col, wpwr_map, menu_wpwr_cb);
     lv_obj_t *wn = mk_label(col, &font_small, C_DIM,
                             _("Moins de puissance : moins de batterie, portée plus courte. Pris en compte tout de suite."));
@@ -1457,7 +1457,7 @@ static void build_menu(void)
     /* ---- MeshCore ---- */
     col = mk_page(SCR_SET_MESH, _("MeshCore"));
     m_sw_mesh = mk_switch_row(col, _("MeshCore"), _("Radio LoRa, app MeshCore"), menu_mesh_cb);
-    m_sw_ant = mk_switch_row(col, _("Antenne LoRa externe"), _("Sur le connecteur USB-C"), menu_ant_cb);
+    m_sw_ant = mk_switch_row(col, _("Antenne externe"), _("Sur le connecteur USB-C"), menu_ant_cb);
     lv_obj_t *mn2 = mk_label(col, &font_small, C_DIM,
                              _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
     lv_label_set_long_mode(mn2, LV_LABEL_LONG_WRAP);

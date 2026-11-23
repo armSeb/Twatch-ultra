@@ -26,6 +26,7 @@ tiers suivants, chacun sous sa propre licence.*
 | BHY2 Sensor API 1.6.0 and the BHI260AP firmware image, in [`components/bhy2/`](components/bhy2/) (see its `NOTICE.md`), from [boschsensortec/BHY2_SensorAPI](https://github.com/boschsensortec/BHY2_SensorAPI) | linked and embedded (step counter, raise to wake) | Bosch Sensortec GmbH | BSD-3-Clause |
 | Helix MP3 decoder, in [`components/helix_mp3/`](components/helix_mp3/) (see its `NOTICE.md`), from [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio) | linked (Radio app) | RealNetworks, Inc.; ESP adaptation Earle F. Philhower III | **RPSL 1.0** or RCSL 1.0 |
 | Helix AAC / HE-AAC decoder, in [`components/helix_aac/`](components/helix_aac/) (see its `NOTICE.md`), from ESP8266Audio | linked (Radio app) | RealNetworks, Inc.; ESP adaptation Earle F. Philhower III | **RPSL 1.0** or RCSL 1.0 |
+| [MeshCore](https://github.com/meshcore-dev/MeshCore) companion firmware v1.18.0, in [`components/meshcore/upstream/`](components/meshcore/upstream/) (Arduino calls mapped onto ESP-IDF by `components/meshcore/shim/`) | linked (MeshCore) | Scott Powell / rippleradios.com | MIT |
 
 Tools used to build, not shipped in the firmware: [lv_font_conv](https://github.com/lvgl/lv_font_conv)
 (MIT), [esptool](https://github.com/espressif/esptool) (GPL-2.0-or-later, used as a separate
