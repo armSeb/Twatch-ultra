@@ -38,6 +38,8 @@
 #define BOARD_LCD_VIS_T         6
 #define BOARD_LCD_VIS_B         2
 #define BOARD_LCD_VIS_X         4
+/* rayon des coins de ce rectangle visible (photo du cadran, ~90 px) */
+#define BOARD_LCD_VIS_R         100
 #define BOARD_SAFE_INSET_X      25
 #define BOARD_SAFE_INSET_Y      30
 

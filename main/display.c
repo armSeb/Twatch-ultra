@@ -196,23 +196,32 @@ static void rounder_cb(lv_event_t *e)
 /* ------------------------------------------------------------------ */
 /* Affichage direct (jeux)                                              */
 /* ------------------------------------------------------------------ */
-#define STRIP_LINES 26     /* 502 = 19 × 26 + 8 : bandes paires */
+/* bandes paires (fenêtre du CO5300) : 502 = 19 × 26 + 8, repli 50 × 10 + 2
+ * si la RAM interne DMA manque (Wi-Fi, LVGL) */
+static const int STRIP_TRY[] = { 26, 10 };
 static uint16_t *s_strip[2];
+static int s_strip_lines;
 
 bool display_direct(display_strip_fn fill, void *ctx)
 {
     if (!s_on) return false;
-    if (!s_strip[0]) {
+    for (int t = 0; !s_strip[0] && t < 2; t++) {
+        s_strip_lines = STRIP_TRY[t];
         for (int i = 0; i < 2; i++)
-            s_strip[i] = heap_caps_malloc(BOARD_LCD_W * STRIP_LINES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-        if (!s_strip[0] || !s_strip[1]) { display_direct_end(); return false; }
+            s_strip[i] = heap_caps_malloc(BOARD_LCD_W * s_strip_lines * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        if (!s_strip[0] || !s_strip[1]) display_direct_end();
+    }
+    if (!s_strip[0]) {
+        ESP_LOGE(TAG, "affichage direct : RAM DMA insuffisante (plus grand bloc %u o)",
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        return false;
     }
     /* début d'image calé sur le TE : la dalle relit la GRAM derrière nous,
      * pas de déchirure horizontale. La bande k se remplit pendant que k−1
      * part à l'écran (esp_lcd attend la fin de la précédente). */
     wait_te();
-    for (int y = 0, k = 0; y < BOARD_LCD_H; y += STRIP_LINES, k ^= 1) {
-        int n = BOARD_LCD_H - y < STRIP_LINES ? BOARD_LCD_H - y : STRIP_LINES;
+    for (int y = 0, k = 0; y < BOARD_LCD_H; y += s_strip_lines, k ^= 1) {
+        int n = BOARD_LCD_H - y < s_strip_lines ? BOARD_LCD_H - y : s_strip_lines;
         fill(s_strip[k], y, n, ctx);
         lv_draw_sw_rgb565_swap(s_strip[k], BOARD_LCD_W * n);
         lcd_pixels(0, y, BOARD_LCD_W - 1, y + n - 1, s_strip[k]);
