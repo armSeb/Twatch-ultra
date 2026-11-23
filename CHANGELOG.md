@@ -2,6 +2,10 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.2 — 2026-11-23
+
+- WebRX: the waterfall stops just above the − ■ + buttons instead of running under them.
+
 ## 0.2.1 — 2026-11-23
 
 - Internal RAM freed for audio (web radio and WebRX had no DMA memory left with MeshCore on):
