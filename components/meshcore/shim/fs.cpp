@@ -86,13 +86,32 @@ File FS::open(const char *path, const char *mode, bool create)
     if (strlen(p) + 2 > sizeof p) return File();
     snprintf(t, sizeof t, "%s~", p);
     if (mode[0] == 'w') {
+        /* SPIFFS (cible d'origine) a un espace de noms plat : « /identity/x.id »
+         * s'y écrit sans dossier. Sur FAT, on crée les dossiers parents,
+         * sinon l'identité du nœud n'était jamais sauvée (nouvelle clé à
+         * chaque démarrage, l'appli relançait son assistant). */
+        (void)create;
+        for (char *q = strchr(p + strlen(root) + 1, '/'); q; q = strchr(q + 1, '/')) {
+            *q = 0;
+            ::mkdir(p, 0775);
+            *q = '/';
+        }
         FILE *f = fopen(t, "wb");
+        if (!f) ESP_LOGW("mc_fs", "ouverture de %s impossible (errno %d)", p, errno);
         return f ? File(f, p, t) : File();
     }
     struct stat st;
     if (stat(p, &st) != 0 && stat(t, &st) == 0)    /* coupure entre remove et rename */
         ::rename(t, p);
     FILE *f = fopen(p, mode[0] == 'a' ? "ab" : strchr(mode, '+') ? "r+b" : "rb");
+    if (!f && mode[0] == 'a' && errno == ENOENT) {      /* dossier parent absent */
+        for (char *q = strchr(p + strlen(root) + 1, '/'); q; q = strchr(q + 1, '/')) {
+            *q = 0;
+            ::mkdir(p, 0775);
+            *q = '/';
+        }
+        f = fopen(p, "ab");
+    }
     return f ? File(f, p) : File();
 }
 bool FS::exists(const char *path)
