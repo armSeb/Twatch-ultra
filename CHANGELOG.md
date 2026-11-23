@@ -19,7 +19,13 @@ First version tested on the real watch.
 - Internal RAM: LVGL renders from flash, 20-line draw buffers. Web radio and WebRX play again
   (the I2S and Wi-Fi ran out of memory).
 - BHI260AP: no more endless FIFO loop (task watchdog) on an event of unknown size.
-- LoRa RF switch on the built-in antenna. Light sleep keeps display, SPI and LoRa pins.
+- LoRa: the SD card and NFC rails are powered (chip selects held high) while the radio runs.
+  Unpowered, they clamped the shared SPI bus and the SX1262 never answered.
+- LoRa antenna selectable in Settings › Bluetooth: built-in (XL9555 pin 11 low, checked on
+  the watch) or external. MeshCore app shows TX/RX counters and the noise floor.
+- Emoji: the decompressor state no longer sits on the UI task stack (overflow on the first
+  emoji drawn).
+- Light sleep keeps display, SPI and LoRa pins.
 - USB plugged in: no light sleep, the serial console stays alive.
 - WebRX waterfall fills the screen height. Default radio volume 50 %.
 - Bluetooth name `T-Watch-Ultra`, Wi-Fi access point `twatch-ultra-OTA`.
