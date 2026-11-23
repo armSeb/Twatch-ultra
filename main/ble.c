@@ -120,20 +120,15 @@ static uint16_t s_nus_tx_handle;
 static volatile bool s_nus_sub;         /* l'app est abonnée sur le lien courant */
 static volatile bool s_mc_on;           /* MeshCore actif : visible pour l'app */
 
-/* Échanges avec l'app MeshCore : lien rapide (15-30 ms, sans latence) et
- * light sleep suspendu tant que des trames passent ; après MC_IDLE_MS de
- * calme, retour aux paramètres éco (ceux d'ANCS, stables en light sleep).
- * À 15-30 ms, la montre entrait et sortait du light sleep à chaque
- * événement de connexion, écran éteint : cause suspectée des décrochages
- * de l'app (le lien éco d'ANCS, lui, tient en light sleep). */
+/* Appli MeshCore connectée (abonnée) : lien rapide (15-30 ms, sans
+ * latence), pas de light sleep et CPU >= 80 MHz, quel que soit l'état de
+ * la montre, pour qu'elle réponde comme un vrai compagnon. L'appli n'est
+ * lancée que ponctuellement (l'écran affiche les messages) ; à son départ,
+ * retour aux paramètres éco d'ANCS et au light sleep. */
 #define MC_ITVL_MIN     12      /* 15 ms */
 #define MC_ITVL_MAX     24      /* 30 ms */
-#define MC_IDLE_MS      15000
-#define MC_CHECK_MS     2000
-static volatile uint32_t s_mc_last_ms;  /* dernière trame (écrite par l'hôte et la tâche mesh) */
-static bool s_mc_fast;                  /* lien rapide + verrou nosleep tenus (tâche hôte) */
-static struct ble_npl_event s_ev_mcfast;
-static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+#define MC_RETRY_MS     2000
+static bool s_mc_fast;                  /* lien rapide + verrous tenus (tâche hôte) */
 static void mc_set_fast(bool on);
 
 /* Table GATT : à incrémenter à chaque service ajouté ou retiré. iOS garde en
@@ -175,8 +170,6 @@ static int nus_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt 
         ble_diag("app MeshCore : trame refusée");
         return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
-    s_mc_last_ms = now_ms();
-    if (!s_mc_fast) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_mcfast);
     return 0;
 }
 
@@ -191,9 +184,7 @@ bool ble_mc_notify(const uint8_t *buf, size_t len)
     }
     struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, len);
     if (!om) return false;                  /* plus de tampons : réessai plus tard */
-    if (ble_gatts_notify_custom(conn, s_nus_tx_handle, om) != 0) return false;   /* om libéré par NimBLE */
-    s_mc_last_ms = now_ms();
-    return true;
+    return ble_gatts_notify_custom(conn, s_nus_tx_handle, om) == 0;
 }
 
 static const struct ble_gatt_svc_def s_svcs[] = {
@@ -458,45 +449,41 @@ static void mc_request_fast(void)
     if (rc) ESP_LOGW(TAG, "appli MeshCore : params rapides rc=%d (nouvel essai)", rc);
 }
 
-/* Tâche hôte uniquement. on : lien rapide + pas de light sleep ;
- * off : verrou rendu, paramètres éco redemandés. */
+/* Tâche hôte uniquement. on : lien rapide, ni light sleep ni CPU à
+ * 40 MHz ; off : verrous rendus, paramètres éco redemandés. */
 static void mc_set_fast(bool on)
 {
-    if (on && (s_conn == BLE_HS_CONN_HANDLE_NONE || !s_nus_sub)) return;
+    if (on && s_conn == BLE_HS_CONN_HANDLE_NONE) return;
     if (on == s_mc_fast) return;
     s_mc_fast = on;
     power_hold_nosleep(on);
+    power_hold_cpu_floor(on);
     if (on) {
-        s_mc_last_ms = now_ms();
         ble_npl_callout_stop(&s_co_eco);
         mc_request_fast();
-        ble_npl_callout_reset(&s_co_mc, ble_npl_time_ms_to_ticks32(MC_CHECK_MS));
+        ble_npl_callout_reset(&s_co_mc, ble_npl_time_ms_to_ticks32(MC_RETRY_MS));
         ble_diag("app MeshCore : lien rapide");
     } else {
         ble_npl_callout_stop(&s_co_mc);
         if (s_conn == BLE_HS_CONN_HANDLE_NONE) return;
         s_eco_tries = 0;
         ble_npl_callout_reset(&s_co_eco, ble_npl_time_ms_to_ticks32(ECO_RETRY_MS));
-        if (s_nus_sub) ble_diag("app MeshCore : calme, éco");
     }
 }
 
-/* Lien rapide : retour en éco après MC_IDLE_MS sans trame ; sinon, si
- * l'iPhone n'a pas (encore) appliqué l'intervalle court, on redemande. */
+/* L'iPhone n'a pas (encore) appliqué l'intervalle court (collision avec
+ * une autre mise à jour, ou il a rallongé de lui-même) : on redemande. */
 static void co_mc_cb(struct ble_npl_event *ev)
 {
-    if (!s_mc_fast) return;
-    if (s_conn == BLE_HS_CONN_HANDLE_NONE || !s_nus_sub) { mc_set_fast(false); return; }
-    if (now_ms() - s_mc_last_ms >= MC_IDLE_MS) { mc_set_fast(false); return; }
-    if (s_itvl > MC_ITVL_MAX && !s_eco_pending) mc_request_fast();
-    ble_npl_callout_reset(&s_co_mc, ble_npl_time_ms_to_ticks32(MC_CHECK_MS));
+    if (!s_mc_fast || s_conn == BLE_HS_CONN_HANDLE_NONE) return;
+    if (s_itvl <= MC_ITVL_MAX) return;
+    if (!s_eco_pending) mc_request_fast();
+    ble_npl_callout_reset(&s_co_mc, ble_npl_time_ms_to_ticks32(MC_RETRY_MS));
 }
-
-static void ev_mcfast_cb(struct ble_npl_event *ev) { mc_set_fast(true); }
 
 static void co_eco_cb(struct ble_npl_event *ev)
 {
-    if (s_mc_fast) return;                                         /* échanges avec l'appli MeshCore */
+    if (s_mc_fast) return;                                         /* appli MeshCore connectée : on reste rapide */
     if (s_conn == BLE_HS_CONN_HANDLE_NONE || s_eco_pending) return;
     if (s_itvl >= ECO_ITVL_MIN && s_lat >= ECO_LATENCY) return;      /* déjà fait */
     if (!ancs_idle()) {                                                /* file ANCS occupée */
@@ -829,7 +816,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             if (up != s_nus_sub) {
                 s_nus_sub = up;
                 mc_ble_link(up);
-                mc_set_fast(up);     /* synchro au départ : lien rapide */
+                mc_set_fast(up);     /* rapide tant que l'appli reste connectée */
             }
         }
         return 0;
@@ -843,6 +830,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         bool was_eco = s_itvl >= ECO_ITVL_MIN && s_lat >= ECO_LATENCY;
         s_eco_pending = false;
         refresh_conn_params(event->conn_update.conn_handle);
+        if (s_mc_fast && s_itvl > MC_ITVL_MAX)       /* appli connectée : on veut le rapide */
+            ble_npl_callout_reset(&s_co_mc, ble_npl_time_ms_to_ticks32(MC_RETRY_MS));
         bool is_eco = s_itvl >= ECO_ITVL_MIN && s_lat >= ECO_LATENCY;
         if (is_eco && !was_eco) {
             ble_diag("éco %u ms lat %u (essai %d)", (unsigned)(s_itvl * 5 / 4), s_lat, s_eco_tries);
@@ -982,7 +971,6 @@ esp_err_t ble_start(void)
     ble_npl_event_init(&s_ev_forget, ev_forget_cb, NULL);
     ble_npl_event_init(&s_ev_pair, ev_pair_cb, NULL);
     ble_npl_event_init(&s_ev_mc, ev_mc_cb, NULL);
-    ble_npl_event_init(&s_ev_mcfast, ev_mcfast_cb, NULL);
     s_ancs_up = !s_hid;
     if (s_ancs_up) ancs_host_init();
 
@@ -1022,7 +1010,11 @@ void ble_stop(void)
     s_stopping = false;
     s_conn = BLE_HS_CONN_HANDLE_NONE;
     if (s_nus_sub) { s_nus_sub = false; mc_ble_link(false); }
-    if (s_mc_fast) { s_mc_fast = false; power_hold_nosleep(false); }   /* tâche hôte arrêtée */
+    if (s_mc_fast) {                      /* tâche hôte arrêtée */
+        s_mc_fast = false;
+        power_hold_nosleep(false);
+        power_hold_cpu_floor(false);
+    }
     s_itvl = s_lat = s_tmo = 0;
     set_state(BLE_ST_OFF);
 }

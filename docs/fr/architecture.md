@@ -192,7 +192,7 @@ connexion, donc **le light sleep automatique reste possible iPhone connecté**.
 |---|---|
 | Fréquence | CPU à **40 MHz** au repos ; **240 MHz** seulement pendant l'interaction ; apps radio plafonnées à 160 MHz (80 MHz écran éteint) |
 | Light sleep | automatique (tickless idle), avec les interruptions PMU, tactile et capteur en niveau comme sources de réveil |
-| Liaison BLE | une fois ANCS prêt, des paramètres économes sont demandés (intervalle 150–300 ms, latence 4, timeout 6 s, dans les règles d'Apple) et **redemandés jusqu'à acceptation**, avec un délai croissant. Pendant les échanges avec l'app MeshCore, lien à 15–30 ms sans latence et light sleep suspendu ; après 15 s sans trame, retour aux paramètres économes et au light sleep |
+| Liaison BLE | une fois ANCS prêt, des paramètres économes sont demandés (intervalle 150–300 ms, latence 4, timeout 6 s, dans les règles d'Apple) et **redemandés jusqu'à acceptation**, avec un délai croissant. Tant que l'app MeshCore est connectée, quel que soit l'état de la montre : lien à 15–30 ms sans latence, pas de light sleep, CPU à 80 MHz minimum ; au départ de l'app, retour aux paramètres économes et au light sleep |
 | Tâches | aucun timer périodique écran éteint ; la tâche app dort jusqu'à un événement (60 s max) ; tick LVGL lu à la demande |
 | Écran | CO5300 en veille (SLPIN) ; tactile en balayage lent si le double tap réveille la montre, sinon en veille profonde (réveil par reset) |
 | AXP2101 | tout rail inutilisé coupé (GNSS, DCDC2–5 ; LoRa, SD et NFC sauf quand MeshCore tourne) ; rail de l'ampli allumé seulement pendant un son ; rail du BHI260AP coupé si ni lever le poignet ni les pas ne sont activés |

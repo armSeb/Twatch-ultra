@@ -105,6 +105,7 @@
  * le relais entre deux événements, BLE compris, grâce au quartz 32 kHz. */
 #define POWER_CPU_MAX_MHZ       240
 #define POWER_CPU_MIN_MHZ       40
+#define POWER_CPU_FLOOR_MHZ     80    /* plancher quand l'appli MeshCore est connectée */
 
 /* Batterie d'origine T-Watch Ultra */
 #define BATTERY_CAPACITY_MAH    1100

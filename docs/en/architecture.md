@@ -178,7 +178,7 @@ The ESP32-S3 takes its Bluetooth low-power clock from the external 32.768 kHz cr
 |---|---|
 | Frequency scaling | CPU at **40 MHz** at rest; **240 MHz** only during interaction; radio apps capped at 160 MHz (80 MHz screen off) |
 | Light sleep | automatic (tickless idle), with the PMU, touch and motion interrupts as level-triggered wake sources |
-| BLE link | after ANCS is ready, economical parameters are requested (150–300 ms interval, latency 4, 6 s timeout, within Apple's rules) and **re-requested until accepted**, with growing back-off. While the MeshCore app exchanges frames, the link switches to 15–30 ms with no latency and light sleep is held off; after 15 s without a frame it goes back to the economical parameters and light sleep |
+| BLE link | after ANCS is ready, economical parameters are requested (150–300 ms interval, latency 4, 6 s timeout, within Apple's rules) and **re-requested until accepted**, with growing back-off. While the MeshCore app is connected, whatever the watch is doing: 15–30 ms link with no latency, no light sleep and CPU kept at 80 MHz or more; when the app leaves, back to the economical parameters and light sleep |
 | Tasks | no periodic timer with the screen off; the app task sleeps until an event (60 s max); LVGL tick read on demand |
 | Display | CO5300 in sleep mode (SLPIN); touch controller left scanning slowly when double tap wakes the watch, otherwise in deep sleep (woken by reset) |
 | AXP2101 | every unused rail off (GNSS, DCDC2–5; LoRa, SD and NFC unless MeshCore runs); speaker amplifier rail on only while a sound plays; BHI260AP rail off when neither raise to wake nor steps are on |
