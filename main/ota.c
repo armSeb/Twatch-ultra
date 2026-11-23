@@ -28,7 +28,7 @@
 
 static const char *TAG = "ota";
 
-#define OTA_SSID          "T-Watch-OTA"
+#define OTA_SSID          "twatch-ultra-OTA"
 #define VALIDATE_AFTER_US (30LL * 1000000)
 #define IDLE_TIMEOUT_US   (5LL * 60 * 1000000)
 #define MIN_BATT_PCT      30

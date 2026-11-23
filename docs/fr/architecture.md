@@ -230,7 +230,7 @@ désactivés : le rail est coupé et le capteur ne consomme rien.
 
 ## Mise à jour Wi-Fi (OTA)
 
-- La montre coupe le Bluetooth, démarre un point d'accès WPA2 (`T-Watch-OTA`, mot de passe
+- La montre coupe le Bluetooth, démarre un point d'accès WPA2 (`twatch-ultra-OTA`, mot de passe
   tiré une fois et gardé en NVS), un petit serveur DNS qui répond 192.168.4.1 à tout, et un
   serveur HTTP. Les sondes de connectivité Apple et Android reçoivent une réponse « succès »
   pour que le téléphone reste sur le réseau.

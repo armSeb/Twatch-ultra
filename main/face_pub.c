@@ -5,8 +5,7 @@
 #include "ui_geom.h"
 
 /* ---------- palette « pub irlandais » ---------- */
-#define C_GREEN_TOP  lv_color_hex(0x1E5A3C)   /* vert bouteille */
-#define C_GREEN_BOT  lv_color_hex(0x0F3522)
+#define C_GREEN      lv_color_hex(0x174A30)   /* vert bouteille */
 #define C_SUB        lv_color_hex(0x0C2B1B)   /* compteurs creusés */
 #define C_BRASS      lv_color_hex(0xC9A24A)   /* laiton */
 #define C_BRASS_D    lv_color_hex(0x8C6A2A)
@@ -330,17 +329,18 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
     lv_obj_set_size(s_root, BOARD_LCD_W, BOARD_LCD_H);
     lv_obj_set_pos(s_root, -UI_PAD_X, -UI_PAD_Y);       /* hors de la marge de l'écran */
     lv_obj_set_style_radius(s_root, BOARD_LCD_CORNER_R, 0);
-    lv_obj_set_style_bg_color(s_root, C_GREEN_TOP, 0);
-    lv_obj_set_style_bg_grad_color(s_root, C_GREEN_BOT, 0);
-    lv_obj_set_style_bg_grad_dir(s_root, LV_GRAD_DIR_VER, 0);
+    /* fond uni : un dégradé en RGB565 (sans tramage dans LVGL 9) fait des
+     * bandes de teinte, les trois canaux ne changeant pas aux mêmes lignes */
+    lv_obj_set_style_bg_color(s_root, C_GREEN, 0);
     lv_obj_set_style_bg_opa(s_root, LV_OPA_COVER, 0);
     bubble(s_root);
-    static const struct { int inset, w; lv_opa_t opa; } RIM[2] = { { 3, 4, LV_OPA_COVER }, { 13, 1, LV_OPA_40 } };
+    static const struct { int inset, w; lv_opa_t opa; } RIM[2] = { { 1, 4, LV_OPA_COVER }, { 11, 1, LV_OPA_40 } };
     for (int i = 0; i < 2; i++) {
         lv_obj_t *r = lv_obj_create(s_root);
         lv_obj_remove_style_all(r);
-        lv_obj_set_size(r, BOARD_LCD_W - 2 * RIM[i].inset, BOARD_LCD_H - 2 * RIM[i].inset);
-        lv_obj_center(r);
+        lv_obj_set_size(r, BOARD_LCD_W - 2 * (BOARD_LCD_VIS_X + RIM[i].inset),
+                        BOARD_LCD_H - BOARD_LCD_VIS_T - BOARD_LCD_VIS_B - 2 * RIM[i].inset);
+        lv_obj_set_pos(r, BOARD_LCD_VIS_X + RIM[i].inset, BOARD_LCD_VIS_T + RIM[i].inset);
         lv_obj_set_style_radius(r, BOARD_LCD_CORNER_R - RIM[i].inset, 0);
         lv_obj_set_style_border_width(r, RIM[i].w, 0);
         lv_obj_set_style_border_color(r, i ? C_CREAM : C_BRASS, 0);

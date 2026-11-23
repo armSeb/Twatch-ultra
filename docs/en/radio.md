@@ -12,7 +12,7 @@ is shown when the station sends it.
 ## Setup (from the phone)
 
 Same page as WebRX: open **Radio** and tap **Set up** (later: tap *Radio · 1/4* at the top →
-*Wi-Fi and radios*). The watch creates the **T-Watch-OTA** network; join it on the phone and
+*Wi-Fi and radios*). The watch creates the **twatch-ultra-OTA** network; join it on the phone and
 open **http://192.168.4.1**. Enter up to 3 Wi-Fi networks and up to **12 web radios**
 (optional name + stream address; *+ Add a radio* opens one more row), then **Save**: the
 watch restarts straight into the app.

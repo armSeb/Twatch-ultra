@@ -315,6 +315,15 @@ esp_err_t power_init(void)
                    AXP_IRQ_CHG_DONE | AXP_IRQ_PEK_SHORT | AXP_IRQ_PEK_LONG |
                    AXP_IRQ_SOC_WARN1 | AXP_IRQ_SOC_WARN2);
 
+    /* Après un esp_restart (fin d'OTA), la matrice GPIO garde la config de
+     * l'ancien firmware : interruptions TE (60 Hz), tactile, capteur encore
+     * armées. On repart d'un état neutre avant d'installer le service. */
+    for (int i = 0; i < GPIO_NUM_MAX; i++) {
+        if (!GPIO_IS_VALID_GPIO(i)) continue;
+        gpio_intr_disable(i);
+        gpio_set_intr_type(i, GPIO_INTR_DISABLE);
+    }
+
     /* GPIO7 : IRQ niveau bas + source de réveil du light sleep */
     gpio_config_t io = {
         .pin_bit_mask = 1ULL << BOARD_PMU_INT,

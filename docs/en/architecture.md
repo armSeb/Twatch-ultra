@@ -215,7 +215,7 @@ nothing.
 
 ## Wi-Fi update (OTA)
 
-- The watch stops Bluetooth, starts a WPA2 access point (`T-Watch-OTA`, password drawn once
+- The watch stops Bluetooth, starts a WPA2 access point (`twatch-ultra-OTA`, password drawn once
   and stored in NVS), a small DNS server answering 192.168.4.1 to everything, and an HTTP
   server. Apple and Android connectivity probes get "success" answers so phones stay on the
   network.

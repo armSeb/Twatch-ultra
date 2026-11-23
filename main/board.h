@@ -31,6 +31,13 @@
  * haut/bas : son coin (X, Y) est à √((R−X)² + (R−Y)²) ≈ 80 px du centre de
  * l'arrondi, donc à l'intérieur (< R). Zone utile 360 × 442. */
 #define BOARD_LCD_CORNER_R      84
+/* Partie visible mesurée sur la montre (mire, 23/11/2026) : les premières
+ * lignes du haut et colonnes des côtés sont sous le masque de la dalle.
+ * Les décors pleine dalle (filet du cadran pub) suivent ce rectangle, dont
+ * les coins ont un rayon d'environ BOARD_LCD_CORNER_R. */
+#define BOARD_LCD_VIS_T         6
+#define BOARD_LCD_VIS_B         2
+#define BOARD_LCD_VIS_X         4
 #define BOARD_SAFE_INSET_X      25
 #define BOARD_SAFE_INSET_Y      30
 

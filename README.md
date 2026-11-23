@@ -115,7 +115,7 @@ This erases everything (including pairings). Later updates go over Wi-Fi.
 ### 3. Update over Wi-Fi (no cable)
 
 1. Watch: *Settings › Update › Start*. Bluetooth turns off; the watch creates the Wi-Fi
-   network **T-Watch-OTA** and shows its password.
+   network **twatch-ultra-OTA** and shows its password.
 2. iPhone or computer: join that network, open **http://192.168.4.1**, choose
    `twatch-ultra-app.bin`, *Send*.
 3. The watch checks the image (project name, SHA-256), activates it and restarts.

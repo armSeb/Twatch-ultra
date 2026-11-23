@@ -81,6 +81,56 @@ static void lcd_pixels(int x1, int y1, int x2, int y2, const void *px)
     esp_lcd_panel_io_tx_color(s_io, QSPI_PIXELS, px, (size_t)(x2 - x1 + 1) * (y2 - y1 + 1) * 2);
 }
 
+#ifndef DISPLAY_GEOM_TEST
+#define DISPLAY_GEOM_TEST 0   /* 1 : mire de géométrie au démarrage */
+#endif
+#if DISPLAY_GEOM_TEST
+/* Mire : bords (lignes/colonnes 0, 2, 4, 6 en blanc, rouge, vert, bleu, puis
+ * 10 en jaune) et arcs de coin de rayon 84 (rouge), 96 (vert), 108 (bleu),
+ * 120 (blanc). Croix grise au centre. */
+static uint16_t geom_px(int x, int y)
+{
+    static const uint16_t edge[] = { 0xFFFF, 0xF800, 0x07E0, 0x001F };
+    int W = BOARD_LCD_W, H = BOARD_LCD_H;
+    int e = x < W - 1 - x ? x : W - 1 - x;
+    int f = y < H - 1 - y ? y : H - 1 - y;
+    int m = e < f ? e : f;
+    if (m <= 6 && !(m & 1)) return edge[m / 2];
+    if (m == 10) return 0xFFE0;
+    static const struct { int r; uint16_t c; } arc[] = {
+        { 84, 0xF800 }, { 96, 0x07E0 }, { 108, 0x001F }, { 120, 0xFFFF } };
+    for (int i = 0; i < 4; i++) {
+        int r = arc[i].r;
+        if (e >= r || f >= r) continue;
+        int dx = r - e, dy = r - f, d2 = dx * dx + dy * dy;
+        if (d2 <= r * r && d2 >= (r - 2) * (r - 2)) return arc[i].c;
+    }
+    if ((x == W / 2 || y == H / 2) && m > 20) return 0x8410;
+    return 0;
+}
+
+static void geom_test(void)
+{
+    const int L = 2;
+    uint16_t *b = heap_caps_malloc(BOARD_LCD_W * L * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!b) return;
+    for (int y = 0; y < BOARD_LCD_H; y += L) {
+        for (int j = 0; j < L; j++)
+            for (int x = 0; x < BOARD_LCD_W; x++) {
+                uint16_t c = geom_px(x, y + j);
+                b[j * BOARD_LCD_W + x] = (uint16_t)((c >> 8) | (c << 8));
+            }
+        lcd_pixels(0, y, BOARD_LCD_W - 1, y + L - 1, b);
+        esp_lcd_panel_io_tx_param(s_io, -1, NULL, 0);      /* fin du transfert */
+    }
+    free(b);
+    lcd_cmd1(0x51, 0xC0);
+    ESP_LOGW(TAG, "mire de géométrie : 15 s");
+    vTaskDelay(pdMS_TO_TICKS(15000));
+    lcd_cmd1(0x51, 0x00);
+}
+#endif
+
 /* Séquence d'initialisation de LilyGoLib (dalle 2,06" de l'Ultra) */
 static void lcd_init_seq(void)
 {
@@ -413,6 +463,9 @@ esp_err_t display_init(void)
         lcd_cmd(0x29, NULL, 0);          /* DISPON */
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+#if DISPLAY_GEOM_TEST
+    geom_test();
+#endif
 
     size_t bsz = BOARD_LCD_W * BUF_LINES * 2;
     void *b1 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
