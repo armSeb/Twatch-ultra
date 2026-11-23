@@ -450,25 +450,27 @@ esp_err_t display_init(void)
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     ESP_LOGI(TAG, "après init, dalle 0x%02x, TE %d fronts/100 ms", lcd_power_mode(), te_edges());
+    /* DIAG 4 : la dalle exécute-t-elle nos commandes ? (TE s'arrête ou non) */
+    lcd_cmd(0x34, NULL, 0);                                  /* TEOFF */
+    ESP_LOGW(TAG, "DIAG : TEOFF -> TE %d (attendu 0)", te_edges());
+    lcd_cmd1(0x35, 0x00);                                    /* TEON */
+    ESP_LOGW(TAG, "DIAG : TEON  -> TE %d (attendu 6)", te_edges());
+    lcd_cmd1(0x51, 0xFF);
+    lcd_cmd(0x23, NULL, 0);                                  /* ALLPON : tout blanc, sans la RAM */
+    ESP_LOGW(TAG, "DIAG : ALLPON, luminosité max, 4 s");
+    vTaskDelay(pdMS_TO_TICKS(4000));
+    lcd_cmd(0x22, NULL, 0);                                  /* ALLPOFF */
+    lcd_cmd(0x13, NULL, 0);                                  /* NORON */
     diag_white();
-    ESP_LOGW(TAG, "DIAG : écran blanc 3 s (luminosité max), TE %d", te_edges());
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    {
-        /* variante LilyGoLib : sans reset matériel, broche RST relâchée */
-        gpio_set_level(BOARD_LCD_RST, 1);
-        lcd_cmd(0x01, NULL, 0);          /* SWRESET */
-        vTaskDelay(pdMS_TO_TICKS(150));
-        for (int k = 0; k < 2; k++) {
-            lcd_init_seq();
-            lcd_cmd(0x11, NULL, 0);
-            vTaskDelay(pdMS_TO_TICKS(120));
-            lcd_cmd(0x29, NULL, 0);
-            vTaskDelay(pdMS_TO_TICKS(20));
-        }
-        diag_white();
-        ESP_LOGW(TAG, "DIAG : après SWRESET, écran blanc 3 s, TE %d", te_edges());
-        vTaskDelay(pdMS_TO_TICKS(3000));
-    }
+    ESP_LOGW(TAG, "DIAG : RAM blanche, luminosité max, 4 s");
+    vTaskDelay(pdMS_TO_TICKS(4000));
+    lcd_cmd(0x10, NULL, 0);                                  /* SLPIN */
+    vTaskDelay(pdMS_TO_TICKS(130));
+    ESP_LOGW(TAG, "DIAG : SLPIN -> TE %d", te_edges());
+    lcd_cmd(0x11, NULL, 0);                                  /* SLPOUT */
+    vTaskDelay(pdMS_TO_TICKS(130));
+    lcd_cmd(0x29, NULL, 0);
+    ESP_LOGW(TAG, "DIAG : SLPOUT -> TE %d", te_edges());
 
     size_t bsz = BOARD_LCD_W * BUF_LINES * 2;
     void *b1 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
