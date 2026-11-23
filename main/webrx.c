@@ -16,6 +16,7 @@
  *    valeurs en centièmes de dB.
  */
 #include "webrx.h"
+#include "task_psram.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -289,7 +290,7 @@ static void play_task(void *arg)
     }
     if (open) sound_stream_close();
     xEventGroupSetBits(s_evg, BIT_PLAYEND);
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1095,7 +1096,7 @@ esp_err_t webrx_start(void)
         webrx_stop();
         return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreatePinnedToCore(play_task, "wrxplay", 3584, NULL, 6, NULL, 1) != pdPASS) {
+    if (task_psram(play_task, "wrxplay", 3584, NULL, 6, NULL, 1) != pdPASS) {
         xEventGroupSetBits(s_evg, BIT_PLAYEND);
     }
     return ESP_OK;

@@ -39,7 +39,7 @@ static bool s_steps, s_wrist;          /* fonctions actuellement actives */
 static bool s_isr;
 static uint8_t s_gesture_id;           /* capteur virtuel du geste (selon le firmware) */
 static volatile bool s_gesture_seen;
-static uint8_t s_fifo[2048];
+EXT_RAM_BSS_ATTR static uint8_t s_fifo[2048];
 
 /* pas */
 static uint32_t s_day;                 /* AAAAMMJJ local du compteur, 0 = inconnu */

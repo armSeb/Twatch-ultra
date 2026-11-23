@@ -1,5 +1,6 @@
 /* demo_synth.c — voir demo_synth.h */
 #include "demo_synth.h"
+#include "task_psram.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -437,7 +438,7 @@ static void synth_task(void *arg)
     }
     if (open) { sound_stream_write(NULL, CHUNK * 4, 0); sound_stream_close(); }
     s_task = false;
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 void demo_synth_start(demo_song_t song, bool sound)
@@ -450,7 +451,7 @@ void demo_synth_start(demo_song_t song, bool sound)
     s_sound = sound;
     s_run = true;
     s_task = true;
-    if (xTaskCreatePinnedToCore(synth_task, "demosnd", 4096, NULL, 6, NULL, 0) != pdPASS) s_task = false;
+    if (task_psram(synth_task, "demosnd", 4096, NULL, 6, NULL, 0) != pdPASS) s_task = false;
 }
 
 void demo_synth_stop(void)

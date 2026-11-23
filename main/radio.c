@@ -7,6 +7,7 @@
  * Décodage Helix (MP3 ; AAC-LC et HE-AAC/SBR en ADTS), sortie mono.
  */
 #include "radio.h"
+#include "task_psram.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -263,7 +264,7 @@ static void play_task(void *arg)
     free(in);
     free(pcm);
     xEventGroupSetBits(s_evg, BIT_PLAYEND);
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 /* ------------------------------------------------------------------ */
@@ -611,7 +612,7 @@ static void net_task(void *arg)
     s_streaming = false;
     wsta_stop();
     xEventGroupSetBits(s_evg, BIT_NETEND);
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 /* ------------------------------------------------------------------ */
@@ -655,13 +656,13 @@ esp_err_t radio_start(void)
     if (e != ESP_OK) return e;
     s_run = true;
     set_state(RAD_WIFI, N_("Recherche du Wi-Fi…"), "");
-    if (xTaskCreatePinnedToCore(net_task, "rad", 7168, NULL, 5, NULL, 0) != pdPASS) {
+    if (task_psram(net_task, "rad", 7168, NULL, 5, NULL, 0) != pdPASS) {
         s_run = false;
         wsta_deinit();
         return ESP_ERR_NO_MEM;
     }
     /* décodeur : pile assez grande pour le HE-AAC (SBR) */
-    if (xTaskCreatePinnedToCore(play_task, "radplay", 8192, NULL, 6, NULL, 1) != pdPASS)
+    if (task_psram(play_task, "radplay", 8192, NULL, 6, NULL, 1) != pdPASS)
         xEventGroupSetBits(s_evg, BIT_PLAYEND);
     return ESP_OK;
 }

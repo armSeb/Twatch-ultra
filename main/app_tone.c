@@ -13,6 +13,7 @@
  * alimente le flux I2S de sound.c.
  */
 #include <math.h>
+#include "task_psram.h"
 #include <stdio.h>
 #include "app.h"
 #include "ui_kit.h"
@@ -95,7 +96,7 @@ static void tone_task(void *arg)
         sound_stream_close();
     } while (s_hold);
     s_task = false;
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 static void tone_on(void)
@@ -104,7 +105,7 @@ static void tone_on(void)
     s_until = esp_timer_get_time() + TONE_MIN_MS * 1000LL;
     if (!s_task) {
         s_task = true;
-        if (xTaskCreatePinnedToCore(tone_task, "tone", 3072, NULL, 6, NULL, 1) != pdPASS) s_task = false;
+        if (task_psram(tone_task, "tone", 3072, NULL, 6, NULL, 1) != pdPASS) s_task = false;
     }
 }
 

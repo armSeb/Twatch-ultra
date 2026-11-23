@@ -1,5 +1,7 @@
 /* voxel.c — voir voxel.h */
 #include "voxel.h"
+#include "esp_attr.h"
+#include "task_psram.h"
 #include <math.h>
 #include <string.h>
 #include "esp_heap_caps.h"
@@ -216,7 +218,7 @@ static void gen_task(void *arg)
 {
     generate();
     s_task = false;
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 #endif
 
@@ -234,7 +236,7 @@ bool vox_gen_start(uint32_t seed)
     s_prog = 0;
 #ifdef ESP_PLATFORM
     s_task = true;
-    if (xTaskCreatePinnedToCore(gen_task, "voxgen", 4096, NULL, 2, NULL, 0) != pdPASS) {
+    if (task_psram(gen_task, "voxgen", 4096, NULL, 2, NULL, 0) != pdPASS) {
         s_task = false;
         generate();
     }
@@ -299,7 +301,7 @@ void vox_find_valley(float *x, float *y, float *dir)
 /* ------------------------------------------------------------------ rendu */
 #define ZMAX 340.0f
 
-static float s_sin[256];
+EXT_RAM_BSS_ATTR static float s_sin[256];
 static inline float fsin(float x)                    /* sinus approché par table */
 {
     return s_sin[(int)(x * (256 / 6.2831853f)) & 255];
@@ -429,7 +431,7 @@ static void worker_task(void *arg)
         xSemaphoreGive(s_done);
     }
     xSemaphoreGive(s_done);
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 static void worker_stop(void)
@@ -452,7 +454,7 @@ void vox_render(gsurf_t *s, uint8_t *occ, const vox_cam_t *c, float fy, float t)
         s_go = xSemaphoreCreateBinary();
         s_done = xSemaphoreCreateBinary();
         s_worker_quit = false;
-        if (s_go && s_done && xTaskCreatePinnedToCore(worker_task, "voxrend", 6144, NULL, 5, &s_worker, 0) != pdPASS) s_worker = NULL;
+        if (s_go && s_done && task_psram(worker_task, "voxrend", 6144, NULL, 5, &s_worker, 0) != pdPASS) s_worker = NULL;
         if (!s_worker) {
             if (s_go) vSemaphoreDelete(s_go);
             if (s_done) vSemaphoreDelete(s_done);

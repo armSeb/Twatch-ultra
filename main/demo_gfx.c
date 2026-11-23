@@ -1,5 +1,6 @@
 /* demo_gfx.c — voir demo_gfx.h */
 #include "demo_gfx.h"
+#include "esp_attr.h"
 #include <string.h>
 
 static uint32_t s_rng = 0x1234567;
@@ -58,7 +59,7 @@ static const struct { char c; const char *r[7]; } FONT[] = {
     { '\x01', { " ####", "# #  ", "# #  ", "# ###", "# #  ", "# #  ", " ####" } },
     { '/', { "    #", "    #", "   # ", "  #  ", " #   ", "#    ", "#    " } },
 };
-static uint8_t s_font[128][7];             /* bits 4..0 = colonnes */
+EXT_RAM_BSS_ATTR static uint8_t s_font[128][7];             /* bits 4..0 = colonnes */
 
 static void font_init(void)
 {

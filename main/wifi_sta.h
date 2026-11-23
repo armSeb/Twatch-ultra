@@ -20,6 +20,7 @@ esp_err_t wsta_init(const char *who);       /* who : préfixe du journal (« WRX
 void      wsta_deinit(void);                /* rend aussi le Bluetooth s'il avait été suspendu */
 bool      wsta_ble_paused(void);
 bool      wsta_start(wifi_ps_type_t ps);
+void      wsta_apply_power(void);           /* réglage « puissance Wi-Fi » (settings) */
 bool      wsta_connect(const wrx_cfg_t *cfg, volatile bool *quit, wsta_status_cb cb);
 bool      wsta_up(void);                    /* adresse IP obtenue */
 bool      wsta_lost(void);                  /* déconnecté depuis la dernière connexion */

@@ -12,6 +12,7 @@
 #include "i18n.h"
 #include "net.h"
 #include "ble.h"
+#include "settings.h"
 
 static const char *TAG = "wsta";
 
@@ -88,11 +89,22 @@ void wsta_deinit(void)
 
 bool wsta_ble_paused(void) { return s_ble_paused; }
 
+/* puissance d'émission (quarts de dBm) : 8, 13, 17, 20 dBm */
+static const int8_t PWR_QDBM[4] = { 32, 52, 68, 80 };
+
+void wsta_apply_power(void)
+{
+    uint8_t i = settings_get()->wifi_pwr;
+    esp_wifi_set_max_tx_power(PWR_QDBM[i <= 3 ? i : 3]);    /* sans effet si le Wi-Fi est éteint */
+}
+
 bool wsta_start(wifi_ps_type_t ps)
 {
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_set_ps(ps);
-    return esp_wifi_start() == ESP_OK;
+    if (esp_wifi_start() != ESP_OK) return false;
+    wsta_apply_power();
+    return true;
 }
 
 void wsta_stop(void)

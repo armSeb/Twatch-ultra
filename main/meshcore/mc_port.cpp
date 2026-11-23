@@ -7,6 +7,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -431,7 +432,15 @@ static void offq_load(void)
 static void mesh_task(void *arg)
 {
     radio_driver.start();
+    int64_t beat = esp_timer_get_time();
     while (s_run) {
+        if (esp_timer_get_time() - beat > 120000000) {     /* toutes les 2 min : marge de pile, RAM */
+            beat = esp_timer_get_time();
+            ESP_LOGI(TAG, "pile libre %u o, RAM interne libre %u o (bloc %u o)",
+                     (unsigned)uxTaskGetStackHighWaterMark(NULL),
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+        }
         s_mesh->loop();
         rtc_clock.tick();
 
@@ -458,11 +467,18 @@ extern "C" esp_err_t mc_start(void)
     if (s_run) return ESP_OK;
     if (!s_mesh) {
         if (!SPIFFS.begin(true)) return ESP_FAIL;
+        /* tout ce que MeshCore alloue ici (16 paquets, files, tampon BLE)
+         * n'est touché que par les tâches mesh et lora : en PSRAM. Le seuil
+         * global (petits blocs en interne) est rétabli juste après. */
+        heap_caps_malloc_extmem_enable(16);
         s_hist_mx = xSemaphoreCreateMutex();
         s_rxq = xQueueCreate(RXQ_LEN, sizeof(rxpkt_t));
         s_ble_rxq = xQueueCreate(6, sizeof(frame_t));
         s_ble = new (std::nothrow) BleCompanion();
-        if (!s_hist_mx || !s_rxq || !s_ble_rxq || !s_ble) return ESP_ERR_NO_MEM;
+        if (!s_hist_mx || !s_rxq || !s_ble_rxq || !s_ble) {
+            heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
+            return ESP_ERR_NO_MEM;
+        }
         auto *tables = new (s_tables_mem) SimpleMeshTables();
         s_store = new (s_store_mem) DataStore(SPIFFS, rtc_clock);
         s_mesh = new (s_mesh_mem) MyMesh(radio_driver, s_fast_rng, rtc_clock, *tables, *s_store);
@@ -471,6 +487,7 @@ extern "C" esp_err_t mc_start(void)
         offq_load();
         s_mesh->startInterface(*s_ble);
         s_mesh->setListener(&s_listener);
+        heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
         update_status();
         ESP_LOGI(TAG, "MeshCore %s, nœud « %s »", FIRMWARE_VERSION, s_mesh->getNodeName());
     }

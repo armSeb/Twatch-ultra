@@ -2,6 +2,20 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.2 — 2026-11-23
+
+- WebRX: the waterfall stops just above the − ■ + buttons instead of running under them.
+
+## 0.2.1 — 2026-11-23
+
+- Internal RAM freed for audio (web radio and WebRX had no DMA memory left with MeshCore on):
+  stacks of the radio, WebRX audio, LoRa, sound, flight-sim, demo and DNS tasks in PSRAM
+  (`task_psram.h`: tasks that never touch flash); MeshCore packet pool, queues and BLE buffer
+  in PSRAM; large static buffers moved to PSRAM.
+- Settings: new *Wi-Fi* page (transmit power 8, 13, 17 or 20 dBm, applied at once) and
+  *MeshCore* page (on/off, built-in or external LoRa antenna).
+- MeshCore task logs its stack margin and free internal RAM every 2 minutes.
+
 ## 0.2.0 — 2026-11-23
 
 First version tested on the real watch.
