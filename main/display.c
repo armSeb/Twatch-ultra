@@ -252,7 +252,7 @@ static bool cst_read(uint16_t *x, uint16_t *y, int *count)
     if (i2c_master_transmit_receive(s_touch, reg, 2, b, sizeof b, 50) != ESP_OK) return false;
     uint8_t ack[3] = { 0xD0, 0x00, CST_ACK };
     i2c_master_transmit(s_touch, ack, 3, 50);
-    if (b[6] != CST_ACK || b[0] == CST_ACK || b[0] == 0x00) return true;   /* rien de neuf */
+    if (b[6] != CST_ACK || b[0] == CST_ACK || b[0] == 0x00) { *count = -1; return true; }   /* rien de neuf */
     int n = b[5] & 0x7F;
     if (n < 1 || n > 2 || (b[0] & 0x0F) != 0x06) return true;              /* 0x06 = appuyé */
     *x = (uint16_t)((b[1] << 4) | (b[3] >> 4));
@@ -293,19 +293,28 @@ static void touch_power(bool screen_on)
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
     static int16_t last_x, last_y;
-    static bool pressed;
-    data->state = LV_INDEV_STATE_RELEASED;
+    static bool down;
+    static int64_t last_us;
     uint16_t x, y;
     int n;
-    /* INT haute = aucun doigt : pas d'I2C pour rien à 30 Hz */
-    if ((pressed || gpio_get_level(BOARD_TOUCH_INT) == 0) && cst_read(&x, &y, &n)) {
+    /* Lecture à chaque passage, écran allumé : le CST9217 n'abaisse INT que
+     * par impulsions brèves, la tester à 60 Hz manquait des appuis. Entre
+     * deux rapports (« rien de neuf »), le doigt est tenu pour posé encore
+     * 80 ms : pas de relâchements parasites au milieu d'un glissement. */
+    int64_t now = esp_timer_get_time();
+    if (cst_read(&x, &y, &n)) {
         if (n > 0 && x < BOARD_LCD_W && y < BOARD_LCD_H) {
             last_x = x;
             last_y = y;
-            data->state = LV_INDEV_STATE_PRESSED;
+            down = true;
+            last_us = now;
+        } else if (n == 0 || now - last_us > 80000) {
+            down = false;
         }
+    } else if (now - last_us > 80000) {
+        down = false;
     }
-    pressed = data->state == LV_INDEV_STATE_PRESSED;
+    data->state = down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     /* coup d'œil : le toucher réveille, il n'agit pas sur l'interface */
     if (data->state == LV_INDEV_STATE_PRESSED && s_glance) { s_glance_touch = true; s_swallow = true; }
     if (s_swallow) {
