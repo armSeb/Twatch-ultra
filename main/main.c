@@ -82,6 +82,7 @@ static void screen_wake(void)
 static void handle_axp(void)
 {
     uint32_t m = power_handle_irq();
+    if (m & (AXP_IRQ_PEK_SHORT | AXP_IRQ_PEK_LONG)) ESP_LOGI("main", "bouton : appui %s", (m & AXP_IRQ_PEK_SHORT) ? "court" : "long");
     if (m & AXP_IRQ_PEK_SHORT) {
         if (display_is_glance()) {
             display_glance_end();            /* comme un toucher : réveil complet */
