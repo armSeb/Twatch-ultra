@@ -37,6 +37,10 @@ static const char *TAG = "axp2101";
 #define REG_GAUGE_CTRL     0xA2
 #define REG_PERCENT        0xA4
 
+#ifndef AXP_DIAG_ALL_RAILS
+#define AXP_DIAG_ALL_RAILS 1   /* TEMPORAIRE : diagnostic écran noir */
+#endif
+
 static i2c_master_dev_handle_t s_dev;
 
 /* rail → (bit dans 0x90, registre de tension, mV) */
@@ -115,8 +119,13 @@ esp_err_t axp_init(void)
         wr(RAIL[r].vreg, (uint8_t)((RAIL[r].mv - 500) / 100));
     /* au démarrage : écran et capteur seulement, le reste à la demande */
     uint8_t on = (1u << RAIL[AXP_RAIL_DISPLAY].bit) | (1u << RAIL[AXP_RAIL_SENSOR].bit);
+#if AXP_DIAG_ALL_RAILS
+    /* diagnostic écran noir : tous les rails allumés et jamais coupés, comme MCLite */
+    for (int r = 0; r < AXP_RAIL_COUNT; r++) on |= 1u << RAIL[r].bit;
+#endif
     wr(REG_LDO_ONOFF0, on);
     upd(REG_DC_ONOFF, 0x1E, 0x00);                     /* DCDC2..5 coupés, DCDC1 intact */
+    ESP_LOGI(TAG, "rails LDO 0x%02x, DCDC 0x%02x", rd(REG_LDO_ONOFF0), rd(REG_DC_ONOFF));
 
     upd(REG_VOFF, 0x07, 0x03);                         /* coupure système à 2,9 V */
     wr(REG_LOWBAT_WARN, (uint8_t)(((15 - 5) << 4) | 5)); /* alerte 15 %, arrêt 5 % */
@@ -148,6 +157,9 @@ esp_err_t axp_rail(axp_rail_t rail, bool on)
 {
     if (rail >= AXP_RAIL_COUNT) return ESP_ERR_INVALID_ARG;
     uint8_t m = 1u << RAIL[rail].bit;
+#if AXP_DIAG_ALL_RAILS
+    if (!on) return ESP_OK;
+#endif
     return i2c_reg_update8(s_dev, REG_LDO_ONOFF0, m, on ? m : 0);
 }
 
