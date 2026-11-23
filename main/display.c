@@ -93,6 +93,16 @@ static void lcd_init_seq(void)
     lcd_cmd1(0x51, 0x00);            /* noir tant qu'aucune image n'est peinte */
 }
 
+/* diagnostic : RDDPM (0x0A). bit 7 booster, bit 4 sortie de veille, bit 2
+ * affichage allumé. 0x00 ou 0xFF : la dalle ne répond pas (alimentation,
+ * reset ou bus). */
+static uint8_t lcd_power_mode(void)
+{
+    uint8_t v = 0;
+    esp_lcd_panel_io_rx_param(s_io, (0x03u << 24) | (0x0Au << 8), &v, 1);
+    return v;
+}
+
 void display_panel_brightness(uint8_t level)
 {
     if (s_io) lcd_cmd1(0x51, level);
@@ -408,6 +418,7 @@ esp_err_t display_init(void)
         lcd_cmd(0x29, NULL, 0);          /* DISPON */
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+    ESP_LOGI(TAG, "après init, dalle 0x%02x", lcd_power_mode());
 
     size_t bsz = BOARD_LCD_W * BUF_LINES * 2;
     void *b1 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -464,7 +475,7 @@ esp_err_t display_init(void)
     s_on = false;
     touch_power(false);
     lv_indev_enable(s_indev, false);
-    ESP_LOGI(TAG, "init OK");
+    ESP_LOGI(TAG, "init OK, dalle 0x%02x", lcd_power_mode());
     return ESP_OK;
 }
 
@@ -526,6 +537,7 @@ static void set_on(bool on, bool glance, uint8_t level)
         power_backlight(glance ? level : settings_get()->brightness);
         gpio_intr_enable(BOARD_LCD_TE);
         s_on = true;
+        ESP_LOGI(TAG, "allumé, dalle 0x%02x", lcd_power_mode());
     } else {
         gpio_intr_disable(BOARD_LCD_TE);
         power_backlight(0);
