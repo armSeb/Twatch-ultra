@@ -375,6 +375,36 @@ static void lora_task(void *arg)
 }
 
 /* ------------------------------------------------------------------ allumage */
+/* La carte SD (ALDO1) et le NFC (DLDO1) partagent le bus SPI. Hors tension,
+ * leurs diodes de protection tirent MISO, MOSI et SCK vers la masse : la
+ * SX1262 répondait 0x00. On les alimente, CS tenus hauts (désélectionnés),
+ * le temps que la radio tourne, comme LilyGoLib. */
+static void bus_peers(bool on)
+{
+    const gpio_num_t cs[] = { BOARD_SD_CS, BOARD_NFC_CS };
+    if (on) {
+        axp_rail(AXP_RAIL_SD, true);
+        axp_rail(AXP_RAIL_NFC, true);
+        for (int i = 0; i < 2; i++) {
+            gpio_set_level(cs[i], 1);
+            gpio_config_t o = { .pin_bit_mask = 1ULL << cs[i], .mode = GPIO_MODE_OUTPUT,
+                                .pull_up_en = GPIO_PULLUP_ENABLE };
+            gpio_config(&o);
+            gpio_set_level(cs[i], 1);
+            gpio_sleep_sel_dis(cs[i]);
+        }
+    } else {
+        for (int i = 0; i < 2; i++) {
+            gpio_reset_pin(cs[i]);
+            gpio_set_pull_mode(cs[i], GPIO_FLOATING);
+            gpio_set_direction(cs[i], GPIO_MODE_DISABLE);
+            gpio_sleep_sel_en(cs[i]);
+        }
+        axp_rail(AXP_RAIL_SD, false);
+        axp_rail(AXP_RAIL_NFC, false);
+    }
+}
+
 static void pins_idle(void)
 {
     const gpio_num_t p[] = { BOARD_LORA_CS, BOARD_LORA_RST, BOARD_LORA_BUSY, BOARD_LORA_IRQ };
@@ -402,13 +432,17 @@ static esp_err_t chip_init(void)
     vTaskDelay(pdMS_TO_TICKS(10));
     if (!wait_busy(100)) return ESP_ERR_TIMEOUT;
 
-    standby();
-    uint8_t st;
-    uint8_t tx[2] = { C_GET_STATUS, 0 }, rx[2] = { 0 };
-    xfer(tx, rx, 2);
-    st = rx[1];
+    uint8_t st = 0;
+    for (int i = 0; i < 3; i++) {                               /* la puce peut rater le 1er ordre */
+        standby();
+        st = status();
+        if (((st >> 4) & 7) == 2) break;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
     if (((st >> 4) & 7) != 2) {                                 /* mode STDBY_RC attendu */
-        ESP_LOGE(TAG, "pas de réponse (statut 0x%02x)", st);
+        ESP_LOGE(TAG, "pas de réponse (statut 0x%02x, BUSY %d, MISO %d, ALDO3 %d, SD %d, NFC %d)", st,
+                 gpio_get_level(BOARD_LORA_BUSY), gpio_get_level(BOARD_SPI_MISO), axp_rail_is_on(AXP_RAIL_LORA),
+                 axp_rail_is_on(AXP_RAIL_SD), axp_rail_is_on(AXP_RAIL_NFC));
         return ESP_ERR_NOT_FOUND;
     }
     uint8_t reg = 0x01;                                         /* DC-DC */
@@ -437,9 +471,10 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
     if (s_run) return sx_set_config(cfg);
     s_cfg = *cfg;
     s_cb = cb;
-    axp_rail(AXP_RAIL_LORA, true);
+    bus_peers(true);
+    if (axp_rail(AXP_RAIL_LORA, true) != ESP_OK) ESP_LOGE(TAG, "rail ALDO3 : écriture I2C ratée");
     xl9555_output(XIO_LORA_RF_SW, !s_ext_ant);                  /* haut : antenne intégrée, bas : USB-C */
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(20));                              /* montée du rail, POR de la puce */
     esp_err_t e = spi_shared_get();
     if (e != ESP_OK) goto off;
     spi_device_interface_config_t dc = {
@@ -482,6 +517,7 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
 off:
     xl9555_output(XIO_LORA_RF_SW, false);
     axp_rail(AXP_RAIL_LORA, false);
+    bus_peers(false);
     pins_idle();
     ESP_LOGE(TAG, "démarrage impossible : %s", esp_err_to_name(e));
     s_last_err = e;
@@ -506,6 +542,7 @@ void sx_stop(void)
     }
     xl9555_output(XIO_LORA_RF_SW, false);
     axp_rail(AXP_RAIL_LORA, false);
+    bus_peers(false);
     pins_idle();
     s_noise = INT16_MIN;
 }
