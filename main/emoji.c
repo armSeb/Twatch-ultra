@@ -275,7 +275,19 @@ static const lv_image_dsc_t *decode(efont_t *f, int idx)
     if (!px || !d) { free(px); lv_free(d); return NULL; }
     const uint8_t *src = s_pack + s_hdr->off_img + off;
 #ifdef ESP_PLATFORM
-    size_t got = tinfl_decompress_mem_to_mem(px, raw, src, len, 0);
+    /* tinfl_decompress_mem_to_mem() pose son décompresseur (~11 Ko) sur la
+     * pile : débordement de la tâche « app » au premier émoji. Un seul,
+     * alloué une fois en PSRAM (LVGL rend depuis une seule tâche). */
+    static tinfl_decompressor *inf;
+    if (!inf) inf = heap_caps_malloc(sizeof *inf, MALLOC_CAP_SPIRAM);
+    size_t got = 0;
+    if (inf) {
+        tinfl_init(inf);
+        size_t in_n = len, out_n = raw;
+        tinfl_status st = tinfl_decompress(inf, src, &in_n, px, px, &out_n,
+                                           TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+        if (st == TINFL_STATUS_DONE) got = out_n;
+    }
 #else
     z_stream z = { 0 };
     inflateInit2(&z, -15);
