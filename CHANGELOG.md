@@ -2,6 +2,20 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.11 — 2026-11-23
+
+- Control center everywhere: pull down from the top edge of the screen (start within the
+  top ~48 px, drag ~60 px down) in any app or menu. It opens on top of the app without
+  quitting it (the radio keeps playing) and closes back onto it (swipe up or right, or the
+  button). On the watch face, a swipe down anywhere still opens it.
+- Global volume (0–100 %, steps of 10) and a *Silent* tile in the control center. Every
+  sound goes through it: beeps, timer alarm, Púca, game music, Radio and WebRX (whose own
+  volume now sets their level relative to the global one). *Tone* is the one exception:
+  its relay tone keeps its fixed level. Silent mode keeps the amplifier off; vibrations
+  still work. The digital face shows a muted speaker in silent mode.
+- Control center: six tiles (Bluetooth, Do not disturb, Silent, Torch, Now playing,
+  Settings). Now playing, Settings and Torch quit the app the panel was pulled over.
+
 ## 0.2.10 — 2026-11-23
 
 - Raise to wake works again: the motion sensor goes back to LilyGoLib's orientation (180°

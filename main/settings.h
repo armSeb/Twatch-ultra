@@ -22,6 +22,8 @@ typedef struct {
     bool    meshcore;         /* radio LoRa MeshCore (app compagnon iPhone) */
     uint8_t wifi_pwr;         /* puissance Wi-Fi : 0 basse … 3 maximale (wifi_sta.c) */
     bool    lora_ext_ant;     /* antenne LoRa externe (USB-C) au lieu de l'intégrée */
+    uint8_t volume;           /* volume général 0..100 (sound.c), en plus de celui des apps */
+    bool    silent;           /* mode silencieux : aucun son (la vibration reste) */
 } settings_t;
 
 void        settings_load(void);

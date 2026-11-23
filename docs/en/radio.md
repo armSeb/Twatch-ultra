@@ -36,6 +36,8 @@ supported.
 | Swipe → or ‹ | leave the app: playback stops, Bluetooth comes back |
 
 - Playback resumes at the **last volume used** (15 % the first time, or if it was left at 0).
+- This volume works *within* the watch's global volume (control center, pulled down from
+  the top edge without leaving the app); in silent mode nothing plays.
 - **Tone** (5 steps, remembered): *Flat*, *Bright* (default), *Voice*, *Soft*, *Muffled* —
   to the right, less treble and fuller voices on the small speaker.
 - The watch remembers the last station played.

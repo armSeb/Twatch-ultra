@@ -511,17 +511,20 @@ static void on_show(void)
     refresh();
 }
 
-/* écran éteint (ou notification par-dessus) : l'écoute continue en mode
+/* sortie de l'app : l'écoute s'arrête */
+static void on_leave(void)
+{
+    sheet_close();
+    if (radio_running()) radio_stop();
+}
+
+/* écran éteint (notification ou centre de contrôle par-dessus) : l'écoute continue en mode
  * économe ; on quitte l'app : arrêt */
 static void on_hide(void)
 {
     if (v_tick) lv_timer_pause(v_tick);
-    if (app_leaving_for_good()) {
-        sheet_close();
-        if (radio_running()) radio_stop();
-    } else {
-        radio_screen(false);
-    }
+    if (app_leaving_for_good()) on_leave();
+    else radio_screen(false);
 }
 
 static bool busy(void) { return radio_running(); }
@@ -534,6 +537,7 @@ const app_t app_radio = {
     .destroy = destroy,
     .on_show = on_show,
     .on_hide = on_hide,
+    .on_leave = on_leave,
     .busy = busy,
     .background = busy,
 };

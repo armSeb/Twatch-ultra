@@ -26,9 +26,25 @@ typedef struct { int n, freq, on_ms, off_ms; } beeps_t;
 static volatile int s_last_err;          /* 0 = joué, sinon code esp_err_t */
 static volatile bool s_busy;
 static beeps_t s_req;
+static volatile int s_master = 4096;     /* volume général, Q12 (4096 = ×1) */
+static volatile bool s_fixed;            /* flux hors volume général */
+
+/* Courbe quadratique : l'oreille perçoit le volume en logarithme, une
+ * pente linéaire tasserait tout l'intérêt dans le bas du curseur.
+ * 50 % ≈ -12 dB, 20 % ≈ -28 dB, 100 % = niveau d'origine. */
+void sound_set_master(int pct, bool muted)
+{
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    s_master = muted ? 0 : (4096 * pct * pct + 5000) / 10000;
+    if (!muted && pct > 0 && s_master == 0) s_master = 1;
+}
+
+bool sound_muted(void) { return s_master == 0; }
 
 static void write_tone(i2s_chan_handle_t ch, int freq, int ms)
 {
+    const float amp = (float)AMPL * s_master / 4096.0f;
     int16_t buf[2 * 128];                        /* stéréo : même échantillon à gauche et à droite */
     int total = RATE * ms / 1000, done = 0;
     float ph = 0, step = freq ? 2.0f * (float)M_PI * freq / RATE : 0;
@@ -40,7 +56,7 @@ static void write_tone(i2s_chan_handle_t ch, int freq, int ms)
             float env = 1.0f;
             if (t < ramp) env = (float)t / ramp;
             else if (total - t < ramp) env = (float)(total - t) / ramp;
-            int16_t v = freq ? (int16_t)(AMPL * env * sinf(ph)) : 0;
+            int16_t v = freq ? (int16_t)(amp * env * sinf(ph)) : 0;
             buf[2 * i] = buf[2 * i + 1] = v;
             ph += step;
             if (ph > 2.0f * (float)M_PI) ph -= 2.0f * (float)M_PI;
@@ -124,7 +140,7 @@ static void sound_task(void *arg)
 /* ------------------------------------------------------------------ */
 static i2s_chan_handle_t s_stream;
 
-esp_err_t sound_stream_open(int rate)
+static esp_err_t stream_open(int rate, bool fixed)
 {
     if (s_stream) return ESP_OK;
     for (int i = 0; s_busy && i < 100; i++) vTaskDelay(pdMS_TO_TICKS(20));   /* bip en cours */
@@ -140,9 +156,14 @@ esp_err_t sound_stream_open(int rate)
         amp_off(NULL);
         s_stream = NULL;
         s_busy = false;
+    } else {
+        s_fixed = fixed;
     }
     return e;
 }
+
+esp_err_t sound_stream_open(int rate) { return stream_open(rate, false); }
+esp_err_t sound_stream_open_fixed(int rate) { return stream_open(rate, true); }
 
 /* Limiteur doux : linéaire jusqu'à KNEE, puis courbe qui tend vers la
  * pleine échelle sans jamais l'atteindre. Permet un gain élevé sur la
@@ -163,6 +184,10 @@ void sound_stream_write(const int16_t *mono, int n, int gain_q12)
 {
     if (!s_stream) return;
     int16_t buf[2 * 128];
+    /* volume général appliqué ici, une fois pour tous les flux ; en int64 :
+     * le gain d'une app peut dépasser ×1 (radio, jusqu'à ×4) */
+    if (!s_fixed) gain_q12 = (int)(((int64_t)gain_q12 * s_master) >> 12);
+    if (gain_q12 == 0) mono = NULL;                 /* silencieux : garde le rythme */
     while (n > 0) {
         int k = n < 128 ? n : 128;
         for (int i = 0; i < k; i++) {
@@ -181,6 +206,7 @@ void sound_stream_close(void)
     if (!s_stream) return;
     amp_off(s_stream);
     s_stream = NULL;
+    s_fixed = false;
     s_busy = false;
 }
 
@@ -189,7 +215,7 @@ int  sound_last_error(void) { return s_last_err; }
 
 void sound_beeps(int n, int freq_hz, int on_ms, int off_ms)
 {
-    if (s_busy || n <= 0) return;
+    if (s_busy || n <= 0 || s_master == 0) return;    /* silencieux : ampli laissé coupé */
     s_busy = true;
     s_req = (beeps_t){ n, freq_hz, on_ms, off_ms };
     if (task_psram(sound_task, "sound", 3072, NULL, 3, NULL, tskNO_AFFINITY) != pdPASS) s_busy = false;

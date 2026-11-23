@@ -65,7 +65,9 @@ arrondis de la dalle)*
   deux désactivés, le rail du capteur est coupé.
 - **Les notifications ne vous sortent jamais d'une app ou d'un menu** : elles arrivent en
   bandeau par-dessus.
-- **Réglages rapides** : Bluetooth, **Ne pas déranger**, lampe, lecture en cours, luminosité.
+- **Centre de contrôle**, tiré du haut de l'écran **depuis n'importe quelle app ou menu** :
+  Bluetooth, **Ne pas déranger**, **Silencieux**, lampe, lecture en cours, réglages,
+  luminosité et **volume général**.
 - **Interface en français ou en anglais**, changée instantanément sans redémarrage.
 - **Mises à jour par Wi-Fi** depuis l'iPhone (la montre devient point d'accès), deux slots
   de firmware avec retour automatique, et **retour à la version précédente** depuis la
@@ -92,7 +94,8 @@ basse consommation.
 | Où | Geste / bouton | Action |
 |---|---|---|
 | Cadran | glisser ↑ | Notifications (fermer : ↓ ou →) |
-| Cadran | glisser ↓ | Réglages rapides (fermer : ↑ ou →) |
+| Cadran | glisser ↓ | Centre de contrôle (fermer : ↑, → ou bouton) |
+| Partout ailleurs | tirer depuis le bord haut | Centre de contrôle par-dessus l'écran ou l'app, qui continue |
 | Cadran | glisser ← | Apps et réglages |
 | Cadran | appui long | Choisir le cadran |
 | Ailleurs | glisser → ou « ‹ » | Retour d'où l'on vient |
@@ -104,6 +107,28 @@ basse consommation.
 
 **Ne pas déranger** : les notifications ne vibrent pas, n'allument pas l'écran et attendent
 dans la liste ; les appels sonnent toujours. Une lune s'affiche sur le cadran.
+
+### Centre de contrôle et volume
+
+![centre de contrôle](docs/img/control-fr.png)
+
+- **L'ouvrir** : sur le cadran, glisser vers le bas n'importe où. Partout ailleurs (apps,
+  jeux, menus), poser le doigt **tout en haut de l'écran** (bande d'environ 1 cm) et tirer
+  vers le bas d'au moins 1,5 cm. Un toucher ou un petit glissé dans cette bande reste à
+  l'app ; un glissé qui part plus bas aussi.
+- **Le refermer** : glisser ↑ ou →, ou appui court sur le bouton. On retrouve l'app telle
+  qu'on l'a laissée : la radio et WebRX continuent de jouer pendant qu'on règle le volume.
+  Seule exception, une partie d'*Envol* en cours revient à l'écran titre.
+- **Lecture**, **Réglages** et **Lampe** quittent l'app d'où l'on vient (l'écoute radio
+  s'arrête), comme le retour habituel.
+- **Volume général** (− / +, par pas de 10 %) : il s'applique à tous les sons de la montre,
+  bips, alarme du minuteur, Púca, musique des jeux, Radio et WebRX, avec un petit bip
+  témoin. Le volume propre à Radio et WebRX règle leur niveau *à l'intérieur* du volume
+  général. 100 % correspond aux niveaux d'avant ce réglage ; l'ampli n'a pas de gain
+  réglable, tout se fait en logiciel. Seule exception : la tonalité de l'app *Tone*, émise
+  à la demande pour ouvrir un relais, garde son niveau fixe.
+- **Silencieux** : plus aucun son (l'ampli reste coupé), les vibrations restent. Une
+  cloche barrée s'affiche sur le cadran numérique. − ou + rallume le son.
 
 ---
 

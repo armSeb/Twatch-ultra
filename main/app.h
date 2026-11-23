@@ -44,6 +44,12 @@ typedef struct app_s {
     /* optionnel : bouton retour ou glissé → ; true = géré par l'app (retour à
      * son écran principal), false = on quitte l'app */
     bool (*on_back)(void);
+    /* optionnel : l'app, cachée sans être quittée (on_hide alors que
+     * app_leaving_for_good() valait false : centre de contrôle tiré
+     * par-dessus), est finalement quittée sans être réaffichée (raccourci
+     * Réglages, Lecture… du centre de contrôle). Arrêter ce que on_hide a
+     * laissé tourner (écoute radio…). */
+    void (*on_leave)(void);
 } app_t;
 
 /* registre (apps.c) */

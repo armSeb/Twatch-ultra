@@ -20,6 +20,7 @@
 
 #include "app_events.h"
 #include "settings.h"
+#include "sound.h"
 #include "i2c_bus.h"
 #include "axp2101.h"
 #include "power.h"
@@ -315,6 +316,7 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
     ota_boot_check();
     settings_load();
+    sound_set_master(settings_get()->volume, settings_get()->silent);
 #if CONFIG_BT_NIMBLE_LOG_LEVEL == 0
     esp_log_level_set("NimBLE", ESP_LOG_DEBUG);   /* build de diagnostic SMP */
 #endif
