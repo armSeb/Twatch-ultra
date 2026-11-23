@@ -10,7 +10,6 @@
  * et lignes paires : les zones invalidées par LVGL sont arrondies.
  */
 #include "display.h"
-#include <string.h>
 #include "board.h"
 #include "power.h"
 #include "i2c_bus.h"
@@ -92,46 +91,6 @@ static void lcd_init_seq(void)
     lcd_cmd1(0x53, 0x20);            /* luminosité pilotée par 0x51 */
     lcd_cmd1(0x63, 0xFF);            /* luminosité HBM max */
     lcd_cmd1(0x51, 0x00);            /* noir tant qu'aucune image n'est peinte */
-}
-
-/* diagnostic : RDDPM (0x0A). bit 7 booster, bit 4 sortie de veille, bit 2
- * affichage allumé. 0x00 ou 0xFF : la dalle ne répond pas (alimentation,
- * reset ou bus). */
-static uint8_t lcd_power_mode(void)
-{
-    uint8_t v = 0;
-    esp_lcd_panel_io_rx_param(s_io, (0x03u << 24) | (0x0Au << 8), &v, 1);
-    return v;
-}
-
-/* diagnostic : fronts montants sur TE pendant 100 ms. ~6 si la dalle
- * tourne (60 Hz), 0 si elle est morte (alimentation, reset). */
-static int te_edges(void)
-{
-    gpio_set_direction(BOARD_LCD_TE, GPIO_MODE_INPUT);
-    int n = 0, last = gpio_get_level(BOARD_LCD_TE);
-    int64_t end = esp_timer_get_time() + 100000;
-    while (esp_timer_get_time() < end) {
-        int v = gpio_get_level(BOARD_LCD_TE);
-        if (v && !last) n++;
-        last = v;
-    }
-    return n;
-}
-
-static void diag_white(void)
-{
-    static const uint8_t full = 0xFF;
-    size_t n = BOARD_LCD_W * 2 * 2;
-    uint8_t *line = heap_caps_malloc(n, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (!line) return;
-    memset(line, 0xFF, n);
-    for (int y = 0; y < BOARD_LCD_H; y += 2) {
-        lcd_pixels(0, y, BOARD_LCD_W - 1, y + 1, line);
-        esp_lcd_panel_io_tx_param(s_io, -1, NULL, 0);   /* attend la fin du transfert */
-    }
-    free(line);
-    lcd_cmd1(0x51, full);
 }
 
 void display_panel_brightness(uint8_t level)
@@ -454,28 +413,6 @@ esp_err_t display_init(void)
         lcd_cmd(0x29, NULL, 0);          /* DISPON */
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    ESP_LOGI(TAG, "après init, dalle 0x%02x, TE %d fronts/100 ms", lcd_power_mode(), te_edges());
-    /* DIAG 4 : la dalle exécute-t-elle nos commandes ? (TE s'arrête ou non) */
-    lcd_cmd(0x34, NULL, 0);                                  /* TEOFF */
-    ESP_LOGW(TAG, "DIAG : TEOFF -> TE %d (attendu 0)", te_edges());
-    lcd_cmd1(0x35, 0x00);                                    /* TEON */
-    ESP_LOGW(TAG, "DIAG : TEON  -> TE %d (attendu 6)", te_edges());
-    lcd_cmd1(0x51, 0xFF);
-    lcd_cmd(0x23, NULL, 0);                                  /* ALLPON : tout blanc, sans la RAM */
-    ESP_LOGW(TAG, "DIAG : ALLPON, luminosité max, 4 s");
-    vTaskDelay(pdMS_TO_TICKS(4000));
-    lcd_cmd(0x22, NULL, 0);                                  /* ALLPOFF */
-    lcd_cmd(0x13, NULL, 0);                                  /* NORON */
-    diag_white();
-    ESP_LOGW(TAG, "DIAG : RAM blanche, luminosité max, 4 s");
-    vTaskDelay(pdMS_TO_TICKS(4000));
-    lcd_cmd(0x10, NULL, 0);                                  /* SLPIN */
-    vTaskDelay(pdMS_TO_TICKS(130));
-    ESP_LOGW(TAG, "DIAG : SLPIN -> TE %d", te_edges());
-    lcd_cmd(0x11, NULL, 0);                                  /* SLPOUT */
-    vTaskDelay(pdMS_TO_TICKS(130));
-    lcd_cmd(0x29, NULL, 0);
-    ESP_LOGW(TAG, "DIAG : SLPOUT -> TE %d", te_edges());
 
     size_t bsz = BOARD_LCD_W * BUF_LINES * 2;
     void *b1 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -532,7 +469,7 @@ esp_err_t display_init(void)
     s_on = false;
     touch_power(false);
     lv_indev_enable(s_indev, false);
-    ESP_LOGI(TAG, "init OK, dalle 0x%02x", lcd_power_mode());
+    ESP_LOGI(TAG, "init OK");
     return ESP_OK;
 }
 
@@ -594,7 +531,6 @@ static void set_on(bool on, bool glance, uint8_t level)
         power_backlight(glance ? level : settings_get()->brightness);
         gpio_intr_enable(BOARD_LCD_TE);
         s_on = true;
-        ESP_LOGI(TAG, "allumé, dalle 0x%02x, TE %d", lcd_power_mode(), te_edges());
     } else {
         gpio_intr_disable(BOARD_LCD_TE);
         power_backlight(0);
