@@ -75,7 +75,8 @@ static sx_cfg_t s_cfg;
 static sx_rx_cb_t s_cb;
 static sx_stats_t s_stats;
 static int16_t s_noise = INT16_MIN;
-static int64_t s_rx_busy_until;      /* préambule ou en-tête vu : réception en cours */
+static volatile int64_t s_rx_busy_until;   /* préambule ou en-tête vu : réception en cours */
+static volatile bool s_tx_busy;            /* paquet sorti de la file, pas encore émis */
 
 /* ------------------------------------------------------------------ SPI */
 static bool wait_busy(int ms)
@@ -319,10 +320,12 @@ static void lora_task(void *arg)
         }
         /* émission : seulement si aucune réception n'est en cours */
         if (r && uxQueueMessagesWaiting(s_txq) && esp_timer_get_time() >= s_rx_busy_until) {
+            s_tx_busy = true;
             if (xQueueReceive(s_txq, r, 0) == pdTRUE) {
                 transmit(r);
                 rx_continuous();
             }
+            s_tx_busy = false;
         } else if (uxQueueMessagesWaiting(s_txq)) {
             xTaskNotifyGive(xTaskGetCurrentTaskHandle());       /* on réessaie bientôt */
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -480,5 +483,9 @@ bool sx_send(const uint8_t *buf, size_t len)
 }
 
 int16_t sx_noise_floor(void) { return s_noise; }
+
+bool sx_rx_active(void) { return s_run && esp_timer_get_time() < s_rx_busy_until; }
+
+bool sx_tx_idle(void) { return !s_run || (!s_tx_busy && (!s_txq || !uxQueueMessagesWaiting(s_txq))); }
 
 void sx_get_stats(sx_stats_t *out) { *out = s_stats; }

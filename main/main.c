@@ -27,6 +27,7 @@
 #include "display.h"
 #include "ui.h"
 #include "ble.h"
+#include "meshcore/mc_port.h"
 #include "ota.h"
 #include "crashlog.h"
 #include "boot_app.h"
@@ -343,6 +344,9 @@ void app_main(void)
     } else {
         ESP_LOGW(TAG, "mode avion : BLE non démarré");
     }
+#if !TW_DIAG_BARE
+    if (settings_get()->meshcore && mc_start() != ESP_OK) ESP_LOGE(TAG, "MeshCore indisponible");
+#endif
     int reopen = boot_app_get();        /* retour dans l'app après ses réglages */
     if (reopen >= 0 && reopen < g_app_count) app_open(g_apps[reopen]);
 #if !TW_DIAG_BARE

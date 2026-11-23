@@ -44,6 +44,9 @@ void      ble_set_hid_mode(bool on);
 bool      ble_hid_mode(void);
 uint8_t   ble_get_battery(void);
 
+/* MeshCore : publie le service compagnon (NUS) pour l'app de l'iPhone */
+void      ble_mc_set_enabled(bool on);  /* thread-safe */
+
 /* usage interne (ancs.c) */
 void      ble_internal_set_state(ble_state_t st);
 void      ble_internal_ancs_ready(uint16_t conn);

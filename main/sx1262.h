@@ -36,6 +36,10 @@ esp_err_t sx_set_config(const sx_cfg_t *cfg);              /* à chaud */
 /* met le paquet en file d'émission (copié) ; l'émission attend la fin d'une
  * réception en cours. false : radio arrêtée ou file pleine. */
 bool      sx_send(const uint8_t *buf, size_t len);
+/* true : un préambule ou un en-tête a été vu, le paquet n'est pas fini */
+bool      sx_rx_active(void);
+/* true : la file d'émission est vide et aucune émission n'est en cours */
+bool      sx_tx_idle(void);
 /* durée d'émission (ms) d'un paquet de len octets avec la config courante */
 uint32_t  sx_airtime_ms(size_t len);
 /* bruit de fond mesuré entre deux paquets (dBm), INT16_MIN si inconnu */
