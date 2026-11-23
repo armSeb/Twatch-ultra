@@ -195,7 +195,7 @@ connexion, donc **le light sleep automatique reste possible iPhone connecté**.
 | Liaison BLE | une fois ANCS prêt, des paramètres économes sont demandés (intervalle 150–300 ms, latence 4, timeout 6 s, dans les règles d'Apple) et **redemandés jusqu'à acceptation**, avec un délai croissant |
 | Tâches | aucun timer périodique écran éteint ; la tâche app dort jusqu'à un événement (60 s max) ; tick LVGL lu à la demande |
 | Écran | CO5300 en veille (SLPIN) ; tactile en balayage lent si le double tap réveille la montre, sinon en veille profonde (réveil par reset) |
-| AXP2101 | tout rail inutilisé coupé (SD, LoRa, GNSS, NFC, DCDC2–5) ; rail de l'ampli allumé seulement pendant un son ; rail du BHI260AP coupé si ni lever le poignet ni les pas ne sont activés |
+| AXP2101 | tout rail inutilisé coupé (GNSS, DCDC2–5 ; LoRa, SD et NFC sauf quand MeshCore tourne) ; rail de l'ampli allumé seulement pendant un son ; rail du BHI260AP coupé si ni lever le poignet ni les pas ne sont activés |
 | Périphériques | broches des puces non alimentées laissées en haute impédance (pas d'alimentation fantôme par les diodes de protection) |
 | Mode avion | Bluetooth arrêté |
 

@@ -80,6 +80,14 @@ Sur une étiquette `v*`, il publie :
 L'artefact du workflow contient aussi le bootloader, la table des partitions, les données
 OTA, le paquet d'émojis et l'ELF (pour décoder un plantage).
 
+## Versions
+
+La version est `PROJECT_VER` dans `CMakeLists.txt` ; la montre l'affiche dans *Réglages ›
+À propos*. Chaque image de test diffusée incrémente le
+dernier chiffre et reçoit une entrée dans `CHANGELOG.md`, et son image d'application est
+nommée `twatch-ultra-X.Y.Z.bin` : deux images de test ne portent jamais le même nom. Une
+version publiée est l'étiquette `vX.Y.Z` de cette version.
+
 ## Tests PC
 
 ```bash

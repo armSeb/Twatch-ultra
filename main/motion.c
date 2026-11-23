@@ -252,9 +252,11 @@ static bool boot(void)
         return false;
     }
     bhy2_update_virtual_sensor_list(&s_dev);
-    /* Ultra : puce retournée de 180° autour de Z (LilyGoLib,
-     * TOP_LAYER_BOTTOM_RIGHT_CORNER) */
-    struct bhy2_orient_matrix m = { .c = { -1, 0, 0, 0, -1, 0, 0, 0, 1 } };
+    /* Ultra : puce montée face dessous, tournée de 180° autour de Y
+     * (X inversé, Y conservé, Z inversé). Vérifié sur la montre : avec
+     * la matrice de LilyGoLib, haut/bas et la position à plat étaient
+     * inversés, ce qui gênait aussi le geste de levée de poignet. */
+    struct bhy2_orient_matrix m = { .c = { -1, 0, 0, 0, 1, 0, 0, 0, -1 } };
     bhy2_set_orientation_matrix(BHY2_PHYS_SENSOR_ID_ACCELEROMETER, m, &s_dev);
     bhy2_set_orientation_matrix(BHY2_PHYS_SENSOR_ID_GYROSCOPE, m, &s_dev);
 

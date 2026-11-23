@@ -16,6 +16,7 @@ Priorités, dans l'ordre : **stabilité**, **autonomie**, **finition**.
 ![cadrans](docs/img/faces.png)
 ![écrans](docs/img/screens.png)
 ![apps et jeux](docs/img/apps.png)
+![MeshCore](docs/img/meshcore.png)
 
 *(rendus PC de l'interface réelle avec des données factices, découpés selon les coins
 arrondis de la dalle)*
@@ -72,13 +73,14 @@ arrondis de la dalle)*
 - Appairage sécurisé (LE Secure Connections + code à 6 chiffres), reconnexion automatique.
 - **Écran Énergie** : jauge de l'AXP2101, consommation moyenne estimée, décharge précédente,
   part du temps écran allumé.
+- **MeshCore** sur la radio LoRa (SX1262), préréglage EU/UK Narrow par défaut. L'appli
+  MeshCore officielle de l'iPhone se connecte en Bluetooth comme compagnon et règle la radio ;
+  la montre affiche les derniers messages, emoji compris, et un message lu sur la montre est
+  quand même transmis à l'appli. Antenne intégrée ou externe — [guide](docs/fr/meshcore.md).
+- **Réglages** par section : affichage, alertes, mouvement, Bluetooth, **Wi-Fi** (puissance
+  d'émission, 8 à 20 dBm), **MeshCore** (activation, antenne), batterie, mise à jour.
 - Tous les périphériques que le firmware n'utilise pas (GNSS, NFC, LoRa, carte SD, ampli du
   haut-parleur) ont leur rail d'alimentation coupé.
-
-- **MeshCore** sur la radio LoRa (SX1262), préréglage EU/UK Narrow par défaut. L'appli
-  MeshCore officielle s'appaire en Bluetooth comme compagnon et règle la radio ; un message lu
-  sur la montre est quand même transmis à l'appli. À activer dans Réglages ›
-  MeshCore.
 
 **En cours** : alertes des messages MeshCore, historique sur la carte SD, réception LoRa
 basse consommation.
@@ -148,6 +150,7 @@ Plus de détails : [compilation, flashage et tests](docs/fr/building.md).
 | Compilation, flashage, tests | [docs/fr/building.md](docs/fr/building.md) | [docs/en/building.md](docs/en/building.md) |
 | Architecture, énergie | [docs/fr/architecture.md](docs/fr/architecture.md) | [docs/en/architecture.md](docs/en/architecture.md) |
 | Notes matérielles (broches, rails, écran) | [docs/fr/hardware.md](docs/fr/hardware.md) | [docs/en/hardware.md](docs/en/hardware.md) |
+| MeshCore (messages LoRa) | [docs/fr/meshcore.md](docs/fr/meshcore.md) | [docs/en/meshcore.md](docs/en/meshcore.md) |
 | WebRX (client OpenWebRX) | [docs/fr/webrx.md](docs/fr/webrx.md) | [docs/en/webrx.md](docs/en/webrx.md) |
 | Radio (webradios) | [docs/fr/radio.md](docs/fr/radio.md) | [docs/en/radio.md](docs/en/radio.md) |
 | Púca (animal virtuel) | [docs/fr/puca.md](docs/fr/puca.md) | [docs/en/puca.md](docs/en/puca.md) |
@@ -184,6 +187,7 @@ Composants tiers et licences : [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - [LilyGoLib](https://github.com/Xinyuan-LilyGO/LilyGoLib), [SensorLib](https://github.com/lewisxhe/SensorLib)
   et [XPowersLib](https://github.com/lewisxhe/XPowersLib) (Lewis He, LilyGo) : brochage,
   registres et séquences d'initialisation pris comme référence.
+- [MeshCore](https://github.com/meshcore-dev/MeshCore) (Scott Powell / rippleradios.com), firmware compagnon v1.18.0.
 - API Bosch Sensortec BHI2xy et firmware du BHI260AP.
 - Décodeurs Helix MP3 et AAC en virgule fixe (RealNetworks, projet Helix DNA), tels
   qu'empaquetés par [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio)

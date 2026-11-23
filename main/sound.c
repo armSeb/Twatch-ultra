@@ -17,7 +17,7 @@
 
 #define TAG "sound"
 #define RATE 16000
-#define AMPL 4000                /* ~ -18 dBFS : assez fort, pointes de courant modérées */
+#define AMPL 13000               /* ~ -8 dBFS : bien audible, sans saturer */
 #define PIN_BCK BOARD_I2S_BCLK
 #define PIN_WS  BOARD_I2S_WCLK
 #define PIN_DO  BOARD_I2S_DOUT
@@ -144,6 +144,21 @@ esp_err_t sound_stream_open(int rate)
     return e;
 }
 
+/* Limiteur doux : linéaire jusqu'à KNEE, puis courbe qui tend vers la
+ * pleine échelle sans jamais l'atteindre. Permet un gain élevé sur la
+ * radio sans l'écrêtage dur qui grésille sur les crêtes. */
+#define KNEE 22000
+static inline int16_t soft_clip(int32_t v)
+{
+    int32_t a = v < 0 ? -v : v;
+    if (a > KNEE) {
+        const int32_t room = 32767 - KNEE;
+        int32_t over = a - KNEE;
+        a = KNEE + (int32_t)((int64_t)over * room / (over + room));
+    }
+    return (int16_t)(v < 0 ? -a : a);
+}
+
 void sound_stream_write(const int16_t *mono, int n, int gain_q12)
 {
     if (!s_stream) return;
@@ -152,9 +167,7 @@ void sound_stream_write(const int16_t *mono, int n, int gain_q12)
         int k = n < 128 ? n : 128;
         for (int i = 0; i < k; i++) {
             int32_t v = mono ? ((int32_t)mono[i] * gain_q12) >> 12 : 0;
-            if (v > 32767) v = 32767;
-            if (v < -32768) v = -32768;
-            buf[2 * i] = buf[2 * i + 1] = (int16_t)v;
+            buf[2 * i] = buf[2 * i + 1] = soft_clip(v);
         }
         size_t w;
         i2s_channel_write(s_stream, buf, 2 * k * sizeof(int16_t), &w, pdMS_TO_TICKS(500));

@@ -78,6 +78,13 @@ The check refuses images from another project (the 2020 firmware, for instance).
 The workflow artifact also contains the bootloader, partition table, OTA data, emoji pack and
 the ELF (for decoding crashes).
 
+## Versions
+
+The version is `PROJECT_VER` in `CMakeLists.txt`; the watch shows it in *Settings › About*.
+Every test build handed out bumps the last number and gets a
+`CHANGELOG.md` entry, and its application image is named `twatch-ultra-X.Y.Z.bin`, so two
+test images never carry the same name. A release is the `vX.Y.Z` tag of that version.
+
 ## PC tests
 
 ```bash

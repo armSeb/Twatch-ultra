@@ -16,6 +16,7 @@ Priorities, in order: **stability**, **battery life**, **finish**.
 ![watch faces](docs/img/faces.png)
 ![screens](docs/img/screens.png)
 ![apps and games](docs/img/apps.png)
+![MeshCore](docs/img/meshcore.png)
 
 *(PC renders of the real UI with sample data, French UI, cut to the panel's rounded
 corners)*
@@ -66,12 +67,14 @@ corners)*
 - Secure pairing (LE Secure Connections + 6-digit passkey), automatic reconnection.
 - **Energy screen**: battery gauge of the AXP2101, estimated average consumption, previous
   discharge, screen-on share.
+- **MeshCore** on the LoRa radio (SX1262), EU/UK Narrow preset by default. The official
+  MeshCore iPhone app connects over Bluetooth as a companion and sets the radio; the watch
+  shows the latest messages, emoji included, and messages read on the watch are still
+  delivered to the app. Built-in or external antenna — [guide](docs/en/meshcore.md).
+- **Settings** by section: display, alerts, motion, Bluetooth, **Wi-Fi** (transmit power,
+  8 to 20 dBm), **MeshCore** (on/off, antenna), battery, update.
 - Every peripheral the firmware does not use (GNSS, NFC, LoRa, SD card, speaker amplifier)
   has its power rail switched off.
-
-- **MeshCore** on the LoRa radio (SX1262), EU/UK Narrow preset by default. The official
-  MeshCore app pairs over Bluetooth as a companion and sets the radio; messages read on the
-  watch are still delivered to the app. Turn it on in Settings › MeshCore.
 
 **In progress**: MeshCore message alerts, history on the SD card, low-power LoRa receive.
 
@@ -140,6 +143,7 @@ More: [building, flashing and tests](docs/en/building.md).
 | Building, flashing, tests | [docs/en/building.md](docs/en/building.md) | [docs/fr/building.md](docs/fr/building.md) |
 | Architecture, power | [docs/en/architecture.md](docs/en/architecture.md) | [docs/fr/architecture.md](docs/fr/architecture.md) |
 | Hardware notes (pins, power rails, display) | [docs/en/hardware.md](docs/en/hardware.md) | [docs/fr/hardware.md](docs/fr/hardware.md) |
+| MeshCore (LoRa messages) | [docs/en/meshcore.md](docs/en/meshcore.md) | [docs/fr/meshcore.md](docs/fr/meshcore.md) |
 | WebRX (OpenWebRX client) | [docs/en/webrx.md](docs/en/webrx.md) | [docs/fr/webrx.md](docs/fr/webrx.md) |
 | Radio (web radios) | [docs/en/radio.md](docs/en/radio.md) | [docs/fr/radio.md](docs/fr/radio.md) |
 | Púca (virtual pet) | [docs/en/puca.md](docs/en/puca.md) | [docs/fr/puca.md](docs/fr/puca.md) |
@@ -175,6 +179,7 @@ Third-party components and their licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_
 - [LilyGoLib](https://github.com/Xinyuan-LilyGO/LilyGoLib), [SensorLib](https://github.com/lewisxhe/SensorLib)
   and [XPowersLib](https://github.com/lewisxhe/XPowersLib) (Lewis He, LilyGo): pinout,
   register maps and initialisation sequences used as reference.
+- [MeshCore](https://github.com/meshcore-dev/MeshCore) (Scott Powell / rippleradios.com), companion firmware v1.18.0.
 - Bosch Sensortec BHI2xy Sensor API and BHI260AP firmware.
 - Helix MP3 and AAC fixed-point decoders (RealNetworks, Helix DNA project), as packaged by
   [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio) (Earle F. Philhower III).

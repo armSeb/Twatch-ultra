@@ -48,10 +48,13 @@ static int64_t s_slpin_us;     /* dernier SLPIN : la dalle exige 120 ms avant SL
  * à zéro. */
 #define TURBO_IDLE_MS 1500
 
-/* 2 × 410 × 20 × 2 = 32 Ko de RAM DMA (40 lignes, 64 Ko, privaient le Wi-Fi
- * et l'I2S de mémoire interne pendant la radio). Une bande part en ~0,8 ms
- * à 40 MHz sur 4 lignes. */
-#define BUF_LINES 20
+/* LVGL rend dans une image pleine en PSRAM (400 Ko) ; l'envoi passe par
+ * deux petites bandes DMA internes : la bande k+1 se recopie (avec l'inversion
+ * d'octets du RGB565) pendant que la bande k part à l'écran. Une image
+ * complète part ainsi d'un trait en ≈ 11 ms, calée sur le TE, plus vite que
+ * le balayage de la dalle (16,7 ms) : plus de déchirure, quelle que soit la
+ * durée du rendu. 2 × 410 × 12 × 2 = 19,7 Ko de RAM interne (32 Ko avant). */
+#define STRIP_LINES 12
 
 /* ------------------------------------------------------------------ */
 /* CO5300                                                               */
@@ -161,6 +164,7 @@ static void IRAM_ATTR te_isr(void *arg)
  * continu, elle réveillerait le CPU du light sleep pour rien */
 static void wait_te(void)
 {
+    if (!s_te_sem) return;
     xSemaphoreTake(s_te_sem, 0);                  /* vieux front */
     gpio_intr_enable(BOARD_LCD_TE);
     xSemaphoreTake(s_te_sem, pdMS_TO_TICKS(20));
@@ -175,17 +179,46 @@ static uint32_t tick_cb(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
-static bool on_trans_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *ev, void *ctx)
+static uint16_t *s_strip[2];   /* bandes DMA internes, partagées avec display_direct */
+static int s_strip_k;          /* prochaine bande libre (l'autre peut être en vol) */
+
+/* copie n pixels en inversant les octets (la dalle attend du big-endian) */
+static void copy_swap(uint16_t *dst, const uint16_t *src, size_t n)
 {
-    lv_display_t *d = *(lv_display_t **)ctx;
-    if (d) lv_display_flush_ready(d);
-    return false;
+    if ((((uintptr_t)dst | (uintptr_t)src) & 3) == 0) {
+        const uint32_t *s32 = (const uint32_t *)src;
+        uint32_t *d32 = (uint32_t *)dst;
+        for (size_t i = 0; i < n / 2; i++) {
+            uint32_t v = s32[i];
+            d32[i] = ((v & 0x00FF00FFu) << 8) | ((v >> 8) & 0x00FF00FFu);
+        }
+        if (n & 1) dst[n - 1] = (uint16_t)((src[n - 1] << 8) | (src[n - 1] >> 8));
+    } else {
+        for (size_t i = 0; i < n; i++) dst[i] = (uint16_t)((src[i] << 8) | (src[i] >> 8));
+    }
+}
+
+/* esp_lcd attend la fin de la bande précédente avant d'envoyer la fenêtre
+ * suivante : la bande remplie ici n'est jamais en vol */
+static void send_strip(int x1, int y, int x2, int n)
+{
+    lcd_pixels(x1, y, x2, y + n - 1, s_strip[s_strip_k]);
+    s_strip_k ^= 1;
 }
 
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
 {
-    lv_draw_sw_rgb565_swap(px, lv_area_get_size(a));
-    lcd_pixels(a->x1, a->y1, a->x2, a->y2, px);
+    /* grand rafraîchissement : départ sur le TE, la dalle balaie derrière
+     * nous. Les petites mises à jour (heure, compteurs) n'attendent pas. */
+    int w = lv_area_get_width(a), h = lv_area_get_height(a);
+    if (w >= BOARD_LCD_W && h >= 2 * STRIP_LINES) wait_te();
+    const uint16_t *src = (const uint16_t *)px;
+    for (int y = 0; y < h; y += STRIP_LINES) {
+        int n = h - y < STRIP_LINES ? h - y : STRIP_LINES;
+        copy_swap(s_strip[s_strip_k], src + (size_t)y * w, (size_t)n * w);
+        send_strip(a->x1, a->y1 + y, a->x2, n);
+    }
+    lv_display_flush_ready(d);
 }
 
 /* fenêtre du CO5300 : x1, y1 pairs, x2, y2 impairs */
@@ -201,45 +234,24 @@ static void rounder_cb(lv_event_t *e)
 /* ------------------------------------------------------------------ */
 /* Affichage direct (jeux)                                              */
 /* ------------------------------------------------------------------ */
-/* bandes paires (fenêtre du CO5300) : 502 = 19 × 26 + 8, repli 50 × 10 + 2
- * si la RAM interne DMA manque (Wi-Fi, LVGL) */
-static const int STRIP_TRY[] = { 26, 10 };
-static uint16_t *s_strip[2];
-static int s_strip_lines;
-
 bool display_direct(display_strip_fn fill, void *ctx)
 {
-    if (!s_on) return false;
-    for (int t = 0; !s_strip[0] && t < 2; t++) {
-        s_strip_lines = STRIP_TRY[t];
-        for (int i = 0; i < 2; i++)
-            s_strip[i] = heap_caps_malloc(BOARD_LCD_W * s_strip_lines * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-        if (!s_strip[0] || !s_strip[1]) display_direct_end();
-    }
-    if (!s_strip[0]) {
-        ESP_LOGE(TAG, "affichage direct : RAM DMA insuffisante (plus grand bloc %u o)",
-                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
-        return false;
-    }
+    if (!s_on || !s_strip[0]) return false;
     /* début d'image calé sur le TE : la dalle relit la GRAM derrière nous,
-     * pas de déchirure horizontale. La bande k se remplit pendant que k−1
-     * part à l'écran (esp_lcd attend la fin de la précédente). */
+     * pas de déchirure horizontale */
     wait_te();
-    for (int y = 0, k = 0; y < BOARD_LCD_H; y += s_strip_lines, k ^= 1) {
-        int n = BOARD_LCD_H - y < s_strip_lines ? BOARD_LCD_H - y : s_strip_lines;
-        fill(s_strip[k], y, n, ctx);
-        lv_draw_sw_rgb565_swap(s_strip[k], BOARD_LCD_W * n);
-        lcd_pixels(0, y, BOARD_LCD_W - 1, y + n - 1, s_strip[k]);
+    for (int y = 0; y < BOARD_LCD_H; y += STRIP_LINES) {
+        int n = BOARD_LCD_H - y < STRIP_LINES ? BOARD_LCD_H - y : STRIP_LINES;
+        uint16_t *b = s_strip[s_strip_k];
+        fill(b, y, n, ctx);
+        lv_draw_sw_rgb565_swap(b, BOARD_LCD_W * n);
+        send_strip(0, y, BOARD_LCD_W - 1, n);
     }
     return true;
 }
 
-void display_direct_end(void)
-{
-    if (!s_strip[0] && !s_strip[1]) return;
-    vTaskDelay(pdMS_TO_TICKS(20));                /* dernière bande partie */
-    for (int i = 0; i < 2; i++) { heap_caps_free(s_strip[i]); s_strip[i] = NULL; }
-}
+/* les bandes restent allouées (LVGL s'en sert aussi) */
+void display_direct_end(void) { }
 
 /* ------------------------------------------------------------------ */
 /* CST9217 : registres sur 16 bits, lecture à 0xD000 puis acquittement   */
@@ -447,7 +459,7 @@ esp_err_t display_init(void)
         .sclk_io_num = BOARD_LCD_SCLK,
         .data2_io_num = BOARD_LCD_D2,
         .data3_io_num = BOARD_LCD_D3,
-        .max_transfer_sz = BOARD_LCD_W * BUF_LINES * 2 + 16,
+        .max_transfer_sz = BOARD_LCD_W * STRIP_LINES * 2 + 16,
         .flags = SPICOMMON_BUSFLAG_QUAD,
     };
     ESP_ERROR_CHECK(spi_bus_initialize(BOARD_LCD_HOST, &bus, SPI_DMA_CH_AUTO));
@@ -462,8 +474,6 @@ esp_err_t display_init(void)
         .spi_mode = 0,
         .pclk_hz = BOARD_LCD_PCLK_HZ,
         .trans_queue_depth = 10,
-        .on_color_trans_done = on_trans_done,
-        .user_ctx = &s_disp,
         .lcd_cmd_bits = 32,
         .lcd_param_bits = 8,
         .flags.quad_mode = true,
@@ -490,12 +500,14 @@ esp_err_t display_init(void)
     geom_test();
 #endif
 
-    size_t bsz = BOARD_LCD_W * BUF_LINES * 2;
-    void *b1 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    void *b2 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    assert(b1 && b2);
+    for (int i = 0; i < 2; i++)
+        s_strip[i] = heap_caps_malloc(BOARD_LCD_W * STRIP_LINES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    size_t bsz = BOARD_LCD_W * BOARD_LCD_H * 2;
+    void *fb = heap_caps_aligned_alloc(64, bsz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    assert(s_strip[0] && s_strip[1] && fb);
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(s_disp, b1, b2, bsz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    /* flush synchrone : un seul tampon suffit */
+    lv_display_set_buffers(s_disp, fb, NULL, bsz, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_disp, flush_cb);
     lv_display_add_event_cb(s_disp, rounder_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 

@@ -25,7 +25,7 @@
 #define BOARD_LCD_GAP_X         22
 #define BOARD_LCD_GAP_Y         0
 /* 80 MHz : valeur de LilyGoLib (4 lignes → 40 Mo/s, une image pleine en ~10 ms) */
-#define BOARD_LCD_PCLK_HZ       (40 * 1000 * 1000)   /* 80 MHz : barres de couleur (MCLite), via la matrice GPIO */
+#define BOARD_LCD_PCLK_HZ       (80 * 1000 * 1000)   /* comme LilyGoLib ; image pleine ≈ 10,5 ms < balayage 16,7 ms */
 /* Rayon des coins de la dalle (px, estimé : à mesurer sur la montre). Le
  * contenu utile reste dans le rectangle inset de X à gauche/droite et de Y en
  * haut/bas : son coin (X, Y) est à √((R−X)² + (R−Y)²) ≈ 80 px du centre de
