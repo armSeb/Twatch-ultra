@@ -473,7 +473,8 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
     s_cb = cb;
     bus_peers(true);
     if (axp_rail(AXP_RAIL_LORA, true) != ESP_OK) ESP_LOGE(TAG, "rail ALDO3 : écriture I2C ratée");
-    xl9555_output(XIO_LORA_RF_SW, !s_ext_ant);                  /* haut : antenne intégrée, bas : USB-C */
+    xl9555_output(XIO_LORA_RF_SW, s_ext_ant);                   /* bas : antenne intégrée, haut : externe
+                                                                 * (essayé sur la montre, LilyGoLib dit l'inverse) */
     vTaskDelay(pdMS_TO_TICKS(20));                              /* montée du rail, POR de la puce */
     esp_err_t e = spi_shared_get();
     if (e != ESP_OK) goto off;
@@ -580,7 +581,7 @@ void sx_get_stats(sx_stats_t *out) { *out = s_stats; }
 void sx_set_antenna(bool external)
 {
     s_ext_ant = external;
-    if (s_run) xl9555_output(XIO_LORA_RF_SW, !external);
+    if (s_run) xl9555_output(XIO_LORA_RF_SW, external);
 }
 
 esp_err_t sx_last_error(void) { return s_last_err; }
