@@ -5,6 +5,8 @@ All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 ## 0.2.4 — 2026-11-23
 
 - *Pub* face slightly smaller: brass rims 4 px further in, minute track 6 px further in.
+- Display bus at 80 MHz (as LilyGoLib): a full frame takes about 10.5 ms, faster than one panel
+  scan, so slides stay smooth and, starting on TE, no longer tear. The watch face slides again.
 
 ## 0.2.3 — 2026-11-23
 
