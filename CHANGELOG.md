@@ -2,6 +2,10 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.4 — 2026-11-23
+
+- *Pub* face slightly smaller: brass rims 4 px further in, minute track 6 px further in.
+
 ## 0.2.3 — 2026-11-23
 
 - Leaving or returning to the watch face switches at once instead of sliding: a full frame
