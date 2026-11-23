@@ -44,6 +44,7 @@
 #define SYM_KEYPAD    "\xEF\x80\x8A"   /* U+F00A */
 #define SYM_PEN       "\xEF\x8C\x84"   /* U+F304 */
 #define SYM_POINTER   "\xEF\x89\x85"   /* U+F245 */
+#define SYM_SILENT    "\xEF\x87\xB6"   /* U+F1F6, cloche barrée : mode silencieux */
 
 #define UI_ANIM_MS 140
 

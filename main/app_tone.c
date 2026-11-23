@@ -75,7 +75,8 @@ static void tone_task(void *arg)
 {
     int16_t buf[CHUNK];
     do {                                  /* rappuyé pendant la fermeture : on repart */
-        if (sound_stream_open(RATE) != ESP_OK) break;
+        /* hors volume général : le relais attend un niveau franc */
+        if (sound_stream_open_fixed(RATE) != ESP_OK) break;
         float ph = 0, env = 0;
         const float dEnv = 1.0f / FADE;
         for (;;) {

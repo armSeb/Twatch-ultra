@@ -19,6 +19,8 @@ typedef struct app_s {
     bool (*on_event)(int code);       /* app_post_event(); true = open the app, wake the screen */
     uint32_t screen_timeout_ms;       /* 0 = user setting */
     bool (*busy)(void);               /* true = keep the screen on this app across sleep/wake */
+    /* ... keep_screen_on, background, no_interrupt, on_back: see app.h */
+    void (*on_leave)(void);           /* optional: quit after an on_hide() that was not final */
 } app_t;
 ```
 
@@ -38,6 +40,14 @@ typedef struct app_s {
 - The open app is kept across sleep: the screen turns off *on* it (`on_hide()`) and wakes back
   to it (`on_show()`). Stop anything costly (radio, sensors) in `on_hide()`. `busy()` is
   informative (e.g. an app that is working).
+- The control center can be pulled over any app from the top edge: the app gets `on_hide()`
+  with `app_leaving_for_good()` false, then `on_show()` when the panel closes. If the user
+  leaves from the panel instead (Now playing, Settings, Torch), the app gets `on_leave()`
+  without being shown again: stop there whatever `on_hide()` kept running (see Radio).
+  Keep the top ~48 px free of drag gestures of your own; taps there still reach the app.
+- Sound: go through `sound.h`. The global volume and silent mode apply to every stream and
+  beep; give your own level as the stream gain. `sound_muted()` lets you skip powering the
+  amplifier at all.
 
 ### Building blocks (`ui_kit.h`)
 

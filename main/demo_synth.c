@@ -424,7 +424,8 @@ float demo_synth_snare(void) { return hit_env(D_S, 90); }
 static void synth_task(void *arg)
 {
     int16_t buf[CHUNK];
-    bool open = sound_stream_open(DEMO_RATE) == ESP_OK;
+    /* son coupé dans le jeu ou montre en silencieux : l'ampli reste éteint */
+    bool open = s_sound && !sound_muted() && sound_stream_open(DEMO_RATE) == ESP_OK;
     while (s_run) {
         /* rattrape l'horloge si la tâche a pris du retard (écran, Wi-Fi…) */
         uint32_t target = (uint32_t)((uint64_t)demo_synth_ms() * DEMO_RATE / 1000);
@@ -433,7 +434,7 @@ static void synth_task(void *arg)
         if (open) sound_stream_write(buf, CHUNK, s_sound ? 4096 * 6 / 10 : 0);
         else {
             vTaskDelay(pdMS_TO_TICKS(CHUNK * 1000 / DEMO_RATE));
-            if (s_sound) open = sound_stream_open(DEMO_RATE) == ESP_OK;
+            if (s_sound && !sound_muted()) open = sound_stream_open(DEMO_RATE) == ESP_OK;
         }
     }
     if (open) { sound_stream_write(NULL, CHUNK * 4, 0); sound_stream_close(); }

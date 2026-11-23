@@ -19,6 +19,8 @@ typedef struct app_s {
     bool (*on_event)(int code);       /* app_post_event() ; true = ouvrir l'app, allumer l'écran */
     uint32_t screen_timeout_ms;       /* 0 = réglage utilisateur */
     bool (*busy)(void);               /* true = garder l'écran sur l'app à l'extinction et au réveil */
+    /* ... keep_screen_on, background, no_interrupt, on_back : voir app.h */
+    void (*on_leave)(void);           /* optionnel : sortie après un on_hide() qui n'était pas définitif */
 } app_t;
 ```
 
@@ -38,6 +40,14 @@ typedef struct app_s {
 - L'app ouverte est gardée pendant la veille : l'écran s'éteint *sur* elle (`on_hide()`) et
   le réveil y revient (`on_show()`). Arrêter dans `on_hide()` tout ce qui coûte (radio,
   capteurs). `busy()` est indicatif (app en train de travailler).
+- Le centre de contrôle se tire par-dessus n'importe quelle app depuis le bord haut : l'app
+  reçoit `on_hide()` avec `app_leaving_for_good()` faux, puis `on_show()` à sa fermeture. Si
+  l'on part ailleurs depuis le centre (Lecture, Réglages, Lampe), l'app reçoit `on_leave()`
+  sans être réaffichée : y arrêter ce que `on_hide()` a laissé tourner (voir Radio). Ne pas
+  mettre de glissé propre à l'app dans les ~48 px du haut ; les touchers y arrivent toujours.
+- Son : passer par `sound.h`. Le volume général et le mode silencieux s'appliquent à tous
+  les flux et bips ; donner son propre niveau comme gain du flux. `sound_muted()` permet de
+  ne pas allumer l'ampli du tout.
 
 ### Briques (`ui_kit.h`)
 

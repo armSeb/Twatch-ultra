@@ -995,16 +995,20 @@ static void on_show(void)
     refresh(true);
 }
 
-/* écran éteint (ou notification par-dessus) : on continue d'écouter ; on
+/* sortie de l'app : l'écoute s'arrête */
+static void on_leave(void)
+{
+    sheet_close();
+    if (webrx_running()) webrx_stop();
+}
+
+/* écran éteint (notification ou centre de contrôle par-dessus) : on continue d'écouter ; on
  * quitte l'app : arrêt */
 static void on_hide(void)
 {
     webrx_fft_enable(false, m_zoom);
     if (v_tick) lv_timer_pause(v_tick);
-    if (app_leaving_for_good()) {
-        sheet_close();
-        if (webrx_running()) webrx_stop();
-    }
+    if (app_leaving_for_good()) on_leave();
 }
 
 static bool busy(void) { return webrx_running(); }
@@ -1020,6 +1024,7 @@ const app_t app_webrx = {
     .destroy = destroy,
     .on_show = on_show,
     .on_hide = on_hide,
+    .on_leave = on_leave,
     .busy = busy,
     .keep_screen_on = keep_on,
 };

@@ -59,7 +59,9 @@ corners)*
   (Bosch firmware loaded at boot): the ESP32 does nothing while you walk. With both off, the
   sensor's power rail is cut.
 - **Notifications never pull you out of an app or menu**: they slide in as a banner on top.
-- **Quick controls**: Bluetooth, **Do not disturb**, torch, now playing, brightness.
+- **Control center**, pulled down from the top of the screen **from any app or menu**:
+  Bluetooth, **Do not disturb**, **Silent**, torch, now playing, settings, brightness and
+  **global volume**.
 - **French or English UI**, switched instantly without a restart.
 - **Over-the-air updates** from the iPhone over Wi-Fi (the watch becomes an access point),
   two firmware slots with automatic rollback, plus **going back to the previous version**
@@ -85,7 +87,8 @@ corners)*
 | Where | Gesture / button | Action |
 |---|---|---|
 | Watch face | swipe ↑ | Notifications (close: ↓ or →) |
-| Watch face | swipe ↓ | Quick controls (close: ↑ or →) |
+| Watch face | swipe ↓ | Control center (close: ↑, → or button) |
+| Anywhere else | pull down from the top edge | Control center over the screen or app, which keeps running |
 | Watch face | swipe ← | Apps and settings |
 | Watch face | long press | Choose the watch face |
 | Anywhere else | swipe → or « ‹ » | Back to where you came from |
@@ -97,6 +100,27 @@ corners)*
 
 **Do not disturb**: notifications neither vibrate nor wake the screen and wait in the list;
 calls still ring. A moon shows on the watch face.
+
+### Control center and volume
+
+![control center](docs/img/control-en.png)
+
+- **Open it**: on the watch face, swipe down anywhere. Everywhere else (apps, games, menus),
+  put your finger **at the very top of the screen** (a band about 1 cm high) and pull down
+  at least 1.5 cm. A tap or a short drag in that band stays with the app, and so does a
+  drag that starts lower.
+- **Close it**: swipe ↑ or →, or a short press on the button. The app is back as you left
+  it: Radio and WebRX keep playing while you change the volume. One exception: a *Soar*
+  game in progress goes back to the title screen.
+- **Now playing**, **Settings** and **Torch** quit the app you came from (radio listening
+  stops), like the usual back gesture.
+- **Global volume** (− / +, steps of 10 %) applies to every sound of the watch: beeps,
+  timer alarm, Púca, game music, Radio and WebRX, with a short test beep. The own volume of
+  Radio and WebRX sets their level *within* the global volume. 100 % matches the levels
+  before this setting; the amplifier has no adjustable gain, it is all done in software.
+  One exception: the *Tone* app's relay tone, played on demand, keeps its fixed level.
+- **Silent**: no sound at all (the amplifier stays off); vibrations still work. A crossed-out
+  bell shows on the digital face. − or + turns the sound back on.
 
 ---
 
