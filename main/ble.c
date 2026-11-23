@@ -18,7 +18,9 @@
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "nvs.h"
 #include "ble_hid.h"
+#include "meshcore/mc_port.h"
 
 static const char *TAG = "ble";
 
@@ -79,7 +81,7 @@ static bool    s_cut_noenc;        /* coupure « pas chiffré » : pause avant r
  * parfois l'iPhone ne répond pas à la Security Request et SMP n'abandonne
  * qu'au bout de 30 s. On coupe plus tôt : l'iPhone se reconnecte aussitôt. */
 #define ENC_WATCHDOG_MS 8000
-static struct ble_npl_event s_ev_batt, s_ev_forget, s_ev_pair;
+static struct ble_npl_event s_ev_batt, s_ev_forget, s_ev_pair, s_ev_mc;
 
 static int gap_event(struct ble_gap_event *event, void *arg);
 static void adv_start(bool fast, uint32_t fast_ms);
@@ -101,6 +103,74 @@ static int batt_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt
     return BLE_ATT_ERR_UNLIKELY;
 }
 
+/* ------------------------------------------------------------------ */
+/* Service compagnon MeshCore (Nordic UART) : l'app MeshCore de          */
+/* l'iPhone écrit une trame par écriture sur RX et reçoit une trame par  */
+/* notification sur TX. Lien chiffré et authentifié (passkey) exigé.    */
+/* ------------------------------------------------------------------ */
+static const ble_uuid128_t s_nus_svc = BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
+                                                       0x93, 0xf3, 0xa3, 0xb5, 0x01, 0x00, 0x40, 0x6e);
+static const ble_uuid128_t s_nus_rx = BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
+                                                      0x93, 0xf3, 0xa3, 0xb5, 0x02, 0x00, 0x40, 0x6e);
+static const ble_uuid128_t s_nus_tx = BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
+                                                      0x93, 0xf3, 0xa3, 0xb5, 0x03, 0x00, 0x40, 0x6e);
+static uint16_t s_nus_tx_handle;
+static volatile bool s_nus_sub;         /* l'app est abonnée sur le lien courant */
+static volatile bool s_mc_on;           /* MeshCore actif : visible pour l'app */
+
+/* Table GATT : à incrémenter à chaque service ajouté ou retiré. iOS garde en
+ * cache la table d'un appareil appairé : sans indication « Service Changed »,
+ * l'appli MeshCore ne verrait pas le service NUS ajouté après l'appairage. */
+#define GATT_DB_VERSION 2   /* 2 : service NUS (MeshCore) */
+
+static void gatt_db_check(void)
+{
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open("ble", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_get_u8(h, "gattv", &v);
+    if (v != GATT_DB_VERSION) {
+        ble_svc_gatt_changed(0x0001, 0xFFFF);
+        ESP_LOGI(TAG, "table GATT modifiée (v%d → v%d) : indication Service Changed", v, GATT_DB_VERSION);
+        nvs_set_u8(h, "gattv", GATT_DB_VERSION);
+        nvs_commit(h);
+    }
+    nvs_close(h);
+}
+
+static bool link_authenticated(uint16_t conn)
+{
+    struct ble_gap_conn_desc d;
+    return ble_gap_conn_find(conn, &d) == 0 && d.sec_state.encrypted && d.sec_state.authenticated;
+}
+
+static int nus_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) return 0;      /* TX : valeur vide */
+    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) return BLE_ATT_ERR_UNLIKELY;
+    if (conn != s_conn || !link_authenticated(conn)) return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    uint8_t buf[MC_FRAME_MAX];
+    uint16_t n = OS_MBUF_PKTLEN(ctxt->om);
+    if (n == 0 || n > sizeof buf) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if (ble_hs_mbuf_to_flat(ctxt->om, buf, sizeof buf, &n) != 0) return BLE_ATT_ERR_UNLIKELY;
+    if (!s_mc_on || !mc_ble_rx(buf, n)) return BLE_ATT_ERR_INSUFFICIENT_RES;
+    return 0;
+}
+
+bool ble_mc_notify(const uint8_t *buf, size_t len)
+{
+    uint16_t conn = s_conn;
+    if (!s_running || s_stopping || conn == BLE_HS_CONN_HANDLE_NONE || !s_nus_sub) return false;
+    if (len + 3 > ble_att_mtu(conn)) {
+        /* iOS négocie 185 : n'arrive qu'avec un MTU minimal, trame perdue */
+        ESP_LOGW(TAG, "trame MeshCore de %u o > MTU %u", (unsigned)len, ble_att_mtu(conn));
+        return true;
+    }
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, len);
+    if (!om) return false;                  /* plus de tampons : réessai plus tard */
+    return ble_gatts_notify_custom(conn, s_nus_tx_handle, om) == 0;
+}
+
 static const struct ble_gatt_svc_def s_svcs[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -111,6 +181,26 @@ static const struct ble_gatt_svc_def s_svcs[] = {
                 .access_cb = batt_access,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &s_batt_handle,
+            },
+            { 0 },
+        },
+    },
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &s_nus_svc.u,
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = &s_nus_rx.u,
+                .access_cb = nus_access,
+                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP |
+                         BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_WRITE_AUTHEN,
+            },
+            {
+                .uuid = &s_nus_tx.u,
+                .access_cb = nus_access,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY |
+                         BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN,
+                .val_handle = &s_nus_tx_handle,
             },
             { 0 },
         },
@@ -163,6 +253,11 @@ static void adv_set_data(void)
     f.uuids16_is_complete = 1;
     f.appearance = s_hid ? HID_APPEARANCE : BLE_APPEARANCE;
     f.appearance_is_present = 1;
+    if (s_mc_on && !s_hid) {            /* l'app MeshCore cherche ce service */
+        f.uuids128 = &s_nus_svc;
+        f.num_uuids128 = 1;
+        f.uuids128_is_complete = 0;
+    }
     int rc = ble_gap_adv_set_fields(&f);
     if (rc) ESP_LOGE(TAG, "adv_set_fields rc=%d", rc);
 
@@ -277,6 +372,38 @@ static void adv_start(bool fast, uint32_t fast_ms)
     ble_diag("pub. %s", fast ? "rapide" : "lente");
 }
 
+/* MeshCore : l'app de l'iPhone doit voir la montre alors que l'iPhone y
+ * est déjà relié (ANCS). On continue donc une publicité lente pendant la
+ * connexion ; l'app, en se « connectant », reprend le lien existant. Une
+ * seconde connexion d'un autre appareil est refusée (voir CONNECT). */
+static void adv_start_connected(void)
+{
+    if (!s_mc_on || s_hid || s_stopping || s_conn == BLE_HS_CONN_HANDLE_NONE) return;
+    if (ble_gap_adv_active()) return;
+    struct ble_gap_adv_params p = { 0 };
+    p.conn_mode = BLE_GAP_CONN_MODE_UND;
+    p.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    p.itvl_min = p.itvl_max = ADV_SLOW_ITVL;
+    int rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER, &p, gap_event, NULL);
+    if (rc) ble_diag("pub. connectée rc=%d", rc);
+}
+
+static void ev_mc_cb(struct ble_npl_event *ev)
+{
+    if (ble_gap_adv_active()) ble_gap_adv_stop();
+    adv_set_data();
+    if (s_conn == BLE_HS_CONN_HANDLE_NONE) adv_start(s_fast_adv, ADV_FAST_MS);
+    else adv_start_connected();
+}
+
+void ble_mc_set_enabled(bool on)
+{
+    if (s_mc_on == on) return;
+    s_mc_on = on;
+    if (!on && s_nus_sub) { s_nus_sub = false; mc_ble_link(false); }
+    if (s_running) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_mc);
+}
+
 static void co_adv_cb(struct ble_npl_event *ev)
 {
     if (s_conn == BLE_HS_CONN_HANDLE_NONE && s_fast_adv) adv_start(false, 0);
@@ -295,8 +422,29 @@ static uint32_t eco_backoff_ms(void)
     return ms < ECO_RETRY_MAX ? ms : ECO_RETRY_MAX;
 }
 
+/* Appli MeshCore connectée : intervalle court, sans latence, le temps de la
+ * synchro (contacts, messages : une trame par notification). Les paramètres
+ * éco (150-300 ms, latence 4) reviennent quand l'appli se désabonne. */
+static void mc_link_params(bool app)
+{
+    if (s_conn == BLE_HS_CONN_HANDLE_NONE) return;
+    if (app) {
+        ble_npl_callout_stop(&s_co_eco);
+        struct ble_gap_upd_params up = {
+            .itvl_min = 12, .itvl_max = 24, .latency = 0,       /* 15-30 ms */
+            .supervision_timeout = 400, .min_ce_len = 0, .max_ce_len = 0,
+        };
+        int rc = ble_gap_update_params(s_conn, &up);
+        ESP_LOGI(TAG, "appli MeshCore : params rapides, rc=%d", rc);
+    } else {
+        s_eco_tries = 0;
+        ble_npl_callout_reset(&s_co_eco, ble_npl_time_ms_to_ticks32(ECO_RETRY_MS));
+    }
+}
+
 static void co_eco_cb(struct ble_npl_event *ev)
 {
+    if (s_nus_sub) return;                                         /* appli MeshCore : on reste rapide */
     if (s_conn == BLE_HS_CONN_HANDLE_NONE || s_eco_pending) return;
     if (s_itvl >= ECO_ITVL_MIN && s_lat >= ECO_LATENCY) return;      /* déjà fait */
     if (!ancs_idle()) {                                                /* file ANCS occupée */
@@ -472,6 +620,13 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
+        if (event->connect.status == 0 && s_conn != BLE_HS_CONN_HANDLE_NONE &&
+            event->connect.conn_handle != s_conn) {
+            /* publicité « connectée » (MeshCore) : un seul appareil à la fois */
+            ble_diag("2e connexion refusée");
+            ble_gap_terminate(event->connect.conn_handle, BLE_ERR_CONN_LIMIT);
+            return 0;
+        }
         if (event->connect.status == 0) {
             s_conn = event->connect.conn_handle;
             s_eco_pending = false;
@@ -509,6 +664,11 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
+        if (s_conn != BLE_HS_CONN_HANDLE_NONE && event->disconnect.conn.conn_handle != s_conn) {
+            if (s_mc_on) adv_start_connected();         /* 2e connexion refusée */
+            return 0;
+        }
+        if (s_nus_sub) { s_nus_sub = false; mc_ble_link(false); }
         ESP_LOGI(TAG, "déconnecté, raison=0x%x", event->disconnect.reason);
         ble_diag("déco 0x%x", event->disconnect.reason);
         s_conn = BLE_HS_CONN_HANDLE_NONE;
@@ -558,7 +718,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 app_post_simple(EV_PAIRING_DONE, 0);
             }
             set_state(BLE_ST_SECURED);
+            gatt_db_check();
             ancs_on_encrypted(event->enc_change.conn_handle);
+            adv_start_connected();
         } else {
             int st = event->enc_change.status;
             ESP_LOGW(TAG, "échec chiffrement status=%d", st);
@@ -604,6 +766,20 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         return BLE_GAP_REPEAT_PAIRING_RETRY;
 
+    case BLE_GAP_EVENT_SUBSCRIBE:
+        if (event->subscribe.attr_handle == s_nus_tx_handle) {
+            bool up = event->subscribe.cur_notify && s_mc_on &&
+                      event->subscribe.conn_handle == s_conn &&
+                      link_authenticated(event->subscribe.conn_handle);
+            ble_diag("app MeshCore %s", up ? "abonnée" : "partie");
+            if (up != s_nus_sub) {
+                s_nus_sub = up;
+                mc_ble_link(up);
+                mc_link_params(up);
+            }
+        }
+        return 0;
+
     case BLE_GAP_EVENT_NOTIFY_RX:
         ancs_on_notify_rx(event->notify_rx.conn_handle, event->notify_rx.attr_handle,
                           event->notify_rx.om);
@@ -638,6 +814,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ble_diag("fin pub. r=%d", event->adv_complete.reason);
         if (s_conn == BLE_HS_CONN_HANDLE_NONE) adv_start(s_fast_adv, ADV_FAST_MS);
+        else adv_start_connected();
         return 0;
 
     default:
@@ -749,6 +926,7 @@ esp_err_t ble_start(void)
     ble_npl_event_init(&s_ev_batt, ev_batt_cb, NULL);
     ble_npl_event_init(&s_ev_forget, ev_forget_cb, NULL);
     ble_npl_event_init(&s_ev_pair, ev_pair_cb, NULL);
+    ble_npl_event_init(&s_ev_mc, ev_mc_cb, NULL);
     s_ancs_up = !s_hid;
     if (s_ancs_up) ancs_host_init();
 
@@ -786,6 +964,7 @@ void ble_stop(void)
     s_running = false;
     s_stopping = false;
     s_conn = BLE_HS_CONN_HANDLE_NONE;
+    if (s_nus_sub) { s_nus_sub = false; mc_ble_link(false); }
     s_itvl = s_lat = s_tmo = 0;
     set_state(BLE_ST_OFF);
 }

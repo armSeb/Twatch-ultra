@@ -157,10 +157,14 @@ static void IRAM_ATTR te_isr(void *arg)
     if (hp) portYIELD_FROM_ISR();
 }
 
+/* l'interruption TE n'est armée que le temps de l'attente : à 60 Hz en
+ * continu, elle réveillerait le CPU du light sleep pour rien */
 static void wait_te(void)
 {
     xSemaphoreTake(s_te_sem, 0);                  /* vieux front */
+    gpio_intr_enable(BOARD_LCD_TE);
     xSemaphoreTake(s_te_sem, pdMS_TO_TICKS(20));
+    gpio_intr_disable(BOARD_LCD_TE);
 }
 
 /* ------------------------------------------------------------------ */
@@ -601,10 +605,8 @@ static void set_on(bool on, bool glance, uint8_t level)
         lv_refr_now(s_disp);
         lcd_cmd(0x29, NULL, 0);                  /* DISPON */
         power_backlight(glance ? level : settings_get()->brightness);
-        gpio_intr_enable(BOARD_LCD_TE);
         s_on = true;
     } else {
-        gpio_intr_disable(BOARD_LCD_TE);
         power_backlight(0);
         lcd_cmd(0x28, NULL, 0);                  /* DISPOFF */
         lcd_cmd(0x10, NULL, 0);                  /* SLPIN */

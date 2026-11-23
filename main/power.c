@@ -294,7 +294,7 @@ esp_err_t power_init(void)
 
     ESP_ERROR_CHECK(axp_init());
     if (xl9555_init() != ESP_OK) ESP_LOGE(TAG, "XL9555 absent : écran et vibreur sans alimentation");
-    xl9555_output(XIO_LORA_RF_SW, true);     /* 1 = antenne LoRa intégrée, 0 = vers l'USB (LilyGoLib) */
+    xl9555_output(XIO_LORA_RF_SW, false);    /* 0 = antenne LoRa intégrée, 1 = externe (vérifié sur la montre) */
 
     esp_timer_create_args_t ta = { .callback = vib_step, .name = "vib" };
     ESP_ERROR_CHECK(esp_timer_create(&ta, &s_vib_timer));

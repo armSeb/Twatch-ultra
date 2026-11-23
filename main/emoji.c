@@ -42,6 +42,7 @@ typedef struct __attribute__((packed)) {
 static const uint8_t *s_pack;
 static const pack_hdr_t *s_hdr;
 static int s_count, s_ent_sz;
+static size_t s_size;
 
 /* ------------------------------------------------------------------ */
 /* Pack                                                                 */
@@ -93,17 +94,27 @@ bool emoji_init(void)
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
-    uint8_t *buf = malloc(sz);
-    if (fread(buf, 1, sz, f) != (size_t)sz) { fclose(f); free(buf); return false; }
+    uint8_t *buf = sz > 0 ? malloc(sz) : NULL;
+    if (!buf || fread(buf, 1, sz, f) != (size_t)sz) { fclose(f); free(buf); return false; }
     fclose(f);
     p = buf;
 #endif
+#ifdef ESP_PLATFORM
+    size_t size = part->size;
+#else
+    size_t size = (size_t)sz;
+#endif
     const pack_hdr_t *h0 = (const pack_hdr_t *)p;
-    if (memcmp(h0->magic, "EMJ1", 4) || h0->nsizes != 2 || h0->sizes[0] != 20 || h0->sizes[1] != 28) {
+    /* le pack est à nous, mais une partition effacée ou tronquée ne doit pas
+     * faire lire hors de la projection */
+    size_t ent_end = sizeof(pack_hdr_t) + (size_t)h0->count * (8 + 8 * 2);
+    if (size < sizeof *h0 || memcmp(h0->magic, "EMJ1", 4) || h0->nsizes != 2 || h0->sizes[0] != 20 ||
+        h0->sizes[1] != 28 || ent_end > h0->off_seq || h0->off_seq > h0->off_img || h0->off_img > size) {
         ESP_LOGW(TAG, "pack emoji invalide");
         return false;
     }
     s_pack = p;
+    s_size = size;
     s_hdr = h0;
     s_ent_sz = 8 + 8 * h0->nsizes;
     s_count = h0->count;
@@ -149,7 +160,9 @@ static int utf8_get(const unsigned char *s, uint32_t *cp)
         if ((s[i] & 0xC0) != 0x80) { *cp = BAD_CP; return i; }
         c = (c << 6) | (s[i] & 0x3F);
     }
-    *cp = c;
+    /* formes trop longues, surrogates, hors Unicode : rejetés */
+    static const uint32_t MIN[5] = { 0, 0, 0x80, 0x800, 0x10000 };
+    *cp = (c < MIN[len] || (c >= 0xD800 && c <= 0xDFFF) || c > 0x10FFFF) ? BAD_CP : c;
     return len;
 }
 
@@ -256,12 +269,25 @@ static const lv_image_dsc_t *decode(efont_t *f, int idx)
     const uint8_t *e = entry(idx);
     uint32_t off = rd32(e + 8 + 8 * f->si), len = rd32(e + 12 + 8 * f->si);
     size_t raw = (size_t)f->px * f->px * 3;
+    if ((size_t)s_hdr->off_img + off + len > s_size) return NULL;
     uint8_t *px = EMJ_ALLOC(raw);
     lv_image_dsc_t *d = lv_malloc_zeroed(sizeof *d);
     if (!px || !d) { free(px); lv_free(d); return NULL; }
     const uint8_t *src = s_pack + s_hdr->off_img + off;
 #ifdef ESP_PLATFORM
-    size_t got = tinfl_decompress_mem_to_mem(px, raw, src, len, 0);
+    /* tinfl_decompress_mem_to_mem() pose son décompresseur (~11 Ko) sur la
+     * pile : débordement de la tâche « app » au premier émoji. Un seul,
+     * alloué une fois en PSRAM (LVGL rend depuis une seule tâche). */
+    static tinfl_decompressor *inf;
+    if (!inf) inf = heap_caps_malloc(sizeof *inf, MALLOC_CAP_SPIRAM);
+    size_t got = 0;
+    if (inf) {
+        tinfl_init(inf);
+        size_t in_n = len, out_n = raw;
+        tinfl_status st = tinfl_decompress(inf, src, &in_n, px, px, &out_n,
+                                           TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+        if (st == TINFL_STATUS_DONE) got = out_n;
+    }
 #else
     z_stream z = { 0 };
     inflateInit2(&z, -15);
