@@ -83,6 +83,8 @@ static const tr_t EN[] = {
     { "ratés", "failed" },
     { "abîmés", "corrupt" },
     { "bruit", "noise" },
+    { "Sans fil", "Wireless" },
+    { "PUISSANCE WI-FI", "WI-FI POWER" },
     { "Radio LoRa arrêtée", "LoRa radio stopped" },
     { "Activez d'abord le Bluetooth", "Turn Bluetooth on first" },
     { "iPhone : Réglages > Bluetooth\n> T-Watch, puis « Jumeler »", "iPhone: Settings > Bluetooth\n> T-Watch, then \"Pair\"" },

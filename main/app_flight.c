@@ -14,6 +14,7 @@
  * l'interface est dessinée ensuite à pleine résolution, dans la zone sûre.
  */
 #include <math.h>
+#include "esp_attr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -78,7 +79,7 @@ static float shake;
 /* éclats (anneau traversé, crash) */
 #define NSPARK 60
 typedef struct { float x, y, vx, vy, life; uint16_t col; } spark_t;
-static spark_t spark[NSPARK];
+EXT_RAM_BSS_ATTR static spark_t spark[NSPARK];
 
 static inline float clampf(float v, float a, float b) { return v < a ? a : v > b ? b : v; }
 

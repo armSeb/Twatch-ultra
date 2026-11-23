@@ -5,6 +5,7 @@
  * Un air demandé pendant qu'un autre joue est ignoré (pas de file d'attente).
  */
 #include "puca_sfx.h"
+#include "task_psram.h"
 #include <stdbool.h>
 #include "sound.h"
 #include "freertos/FreeRTOS.h"
@@ -83,12 +84,12 @@ static void sfx_task(void *arg)
         sound_stream_close();
     }
     s_busy = false;
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 void puca_sfx(puca_sfx_t s)
 {
     if (s_busy || s < 0 || s >= SFX_COUNT || !TUNES[s]) return;
     s_busy = true;
-    if (xTaskCreatePinnedToCore(sfx_task, "pucasfx", 3072, (void *)TUNES[s], 4, NULL, 1) != pdPASS) s_busy = false;
+    if (task_psram(sfx_task, "pucasfx", 3072, (void *)TUNES[s], 4, NULL, 1) != pdPASS) s_busy = false;
 }

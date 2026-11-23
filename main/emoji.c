@@ -5,6 +5,7 @@
  * de points de code, séquences, images RGB565A8 en deflate brut.
  */
 #include "emoji.h"
+#include "esp_attr.h"
 #include <string.h>
 #include <stdint.h>
 #include "fonts/fonts.h"
@@ -239,7 +240,7 @@ size_t emoji_text(const char *in, char *out, size_t cap)
 
 void emoji_label_set_text(lv_obj_t *label, const char *utf8)
 {
-    static char buf[1024];
+    EXT_RAM_BSS_ATTR static char buf[1024];
     emoji_text(utf8, buf, sizeof buf);
     lv_label_set_text(label, buf);
 }

@@ -3,6 +3,7 @@
  * détruit et remet les broches à 0 (état de repos de power.c).
  */
 #include <math.h>
+#include "task_psram.h"
 #include <string.h>
 #include "sound.h"
 #include "driver/i2s_std.h"
@@ -115,7 +116,7 @@ static void sound_task(void *arg)
     }
     amp_off(tx);
     s_busy = false;
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 /* ------------------------------------------------------------------ */
@@ -178,5 +179,5 @@ void sound_beeps(int n, int freq_hz, int on_ms, int off_ms)
     if (s_busy || n <= 0) return;
     s_busy = true;
     s_req = (beeps_t){ n, freq_hz, on_ms, off_ms };
-    if (xTaskCreate(sound_task, "sound", 3072, NULL, 3, NULL) != pdPASS) s_busy = false;
+    if (task_psram(sound_task, "sound", 3072, NULL, 3, NULL, tskNO_AFFINITY) != pdPASS) s_busy = false;
 }

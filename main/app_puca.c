@@ -732,7 +732,7 @@ static void feed_close_cb(lv_event_t *e) { lv_obj_add_flag(v_feed, LV_OBJ_FLAG_H
 
 /* ------------------------------------------------------------------ icônes pixel */
 typedef struct { lv_image_dsc_t dsc; uint32_t *px; const puca_spr_t *spr; int scale; } icon_t;
-static icon_t s_icons[16];
+EXT_RAM_BSS_ATTR static icon_t s_icons[16];
 static int s_nicons;
 
 static const lv_image_dsc_t *icon(const puca_spr_t *s, int scale)

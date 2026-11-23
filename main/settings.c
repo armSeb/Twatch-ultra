@@ -16,6 +16,7 @@ static settings_t s_set = {
     .glance = true,
     .glance_pct = 25,
     .glance_s = 4,
+    .wifi_pwr = 3,
 };
 
 void settings_load(void)
@@ -41,6 +42,7 @@ void settings_load(void)
     if (nvs_get_u8(h, "gdur", &u8) == ESP_OK && u8 >= 2 && u8 <= 15) s_set.glance_s = u8;
     if (nvs_get_u8(h, "mesh", &u8) == ESP_OK) s_set.meshcore = u8;
     if (nvs_get_u8(h, "lant", &u8) == ESP_OK) s_set.lora_ext_ant = u8;
+    if (nvs_get_u8(h, "wpwr", &u8) == ESP_OK && u8 <= 3) s_set.wifi_pwr = u8;
     nvs_close(h);
     ESP_LOGI(TAG, "lum=%u veille=%us vib=%d bt=%d tz=%+d min", s_set.brightness,
              s_set.screen_timeout_s, s_set.vibrate, s_set.ble_enabled, s_set.tz_offset_min);
@@ -68,6 +70,7 @@ void settings_save(void)
     nvs_set_u8(h, "gdur", s_set.glance_s);
     nvs_set_u8(h, "mesh", s_set.meshcore);
     nvs_set_u8(h, "lant", s_set.lora_ext_ant);
+    nvs_set_u8(h, "wpwr", s_set.wifi_pwr);
     nvs_commit(h);
     nvs_close(h);
 }

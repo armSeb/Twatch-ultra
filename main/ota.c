@@ -1,4 +1,5 @@
 #include "i18n.h"
+#include "task_psram.h"
 #include "esp_attr.h"
 #include "ota.h"
 #include <string.h>
@@ -14,6 +15,7 @@
 #include "esp_image_format.h"
 #include "esp_app_desc.h"
 #include "esp_wifi.h"
+#include "wifi_sta.h"
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -219,11 +221,11 @@ static TaskHandle_t s_dns_task;
 static void dns_task(void *arg)
 {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock < 0) { s_dns_task = NULL; vTaskDelete(NULL); return; }
+    if (sock < 0) { s_dns_task = NULL; task_psram_exit(); return; }
     struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(53), .sin_addr.s_addr = htonl(INADDR_ANY) };
     struct timeval tv = { .tv_sec = 1 };
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    if (bind(sock, (struct sockaddr *)&a, sizeof(a)) < 0) { close(sock); s_dns_task = NULL; vTaskDelete(NULL); return; }
+    if (bind(sock, (struct sockaddr *)&a, sizeof(a)) < 0) { close(sock); s_dns_task = NULL; task_psram_exit(); return; }
     static uint8_t b[512];
     while (s_active) {
         struct sockaddr_in from;
@@ -248,7 +250,7 @@ static void dns_task(void *arg)
     }
     close(sock);
     s_dns_task = NULL;
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 /* transfert en cours (tâche httpd dans update_post) / activation de l'image */
@@ -725,6 +727,7 @@ const char *ota_start(void)
     esp_wifi_set_mode(s_page == OTA_PAGE_WEBRX ? WIFI_MODE_APSTA : WIFI_MODE_AP);
     esp_wifi_set_config(WIFI_IF_AP, &ap);
     if (esp_wifi_start() != ESP_OK) return N_("Le point d'accès n'a pas démarré");
+    wsta_apply_power();
     if (s_page == OTA_PAGE_WEBRX) {
         scan_networks();
         esp_wifi_set_mode(WIFI_MODE_AP);       /* station inutile ensuite : sa RAM est rendue */
@@ -768,7 +771,7 @@ const char *ota_start(void)
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s_httpd, &uris[i]);
     s_active = true;                   /* avant la tâche DNS, qui boucle tant que actif */
-    xTaskCreate(dns_task, "dns", 3072, NULL, 4, &s_dns_task);
+    task_psram(dns_task, "dns", 3072, NULL, 4, &s_dns_task, tskNO_AFFINITY);
 
     s_last_activity_us = esp_timer_get_time();
     if (!s_idle_timer) {

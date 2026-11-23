@@ -1,5 +1,7 @@
 /* sx1262.c — voir sx1262.h. Commandes d'après la fiche Semtech SX1261/2 (rév. 2.1). */
 #include "sx1262.h"
+#include "esp_attr.h"
+#include "task_psram.h"
 #include <string.h>
 #include "board.h"
 #include "axp2101.h"
@@ -323,7 +325,7 @@ static bool transmit(const txreq_t *r)
 
 static void lora_task(void *arg)
 {
-    static txreq_t tx_slot;                                     /* une seule tâche lora à la fois */
+    EXT_RAM_BSS_ATTR static txreq_t tx_slot;                                     /* une seule tâche lora à la fois */
     txreq_t *r = &tx_slot;
     rx_continuous();
     int64_t beat = esp_timer_get_time();
@@ -371,7 +373,7 @@ static void lora_task(void *arg)
         }
     }
     s_task = NULL;
-    vTaskDelete(NULL);
+    task_psram_exit();
 }
 
 /* ------------------------------------------------------------------ allumage */
@@ -504,7 +506,7 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
 
     s_run = true;
     s_last_err = ESP_OK;
-    if (xTaskCreatePinnedToCore(lora_task, "lora", 4096, NULL, 6, &s_task, 0) != pdPASS) {
+    if (task_psram(lora_task, "lora", 4096, NULL, 6, &s_task, 0) != pdPASS) {
         s_run = false;
         sx_stop();
         ESP_LOGE(TAG, "tâche lora : mémoire insuffisante");
