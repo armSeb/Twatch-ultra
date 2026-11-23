@@ -66,6 +66,7 @@ static const tr_t EN[] = {
     { "Oublier", "Forget" },
     { "Bluetooth activé", "Bluetooth on" },
     { "Mode avion", "Airplane mode" },
+    { "MeshCore", "MeshCore" },
     { "MeshCore activé", "MeshCore on" },
     { "MeshCore coupé", "MeshCore off" },
     { "Radio LoRa indisponible", "LoRa radio unavailable" },
