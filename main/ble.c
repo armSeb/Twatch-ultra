@@ -18,6 +18,7 @@
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "nvs.h"
 #include "ble_hid.h"
 #include "meshcore/mc_port.h"
 
@@ -116,6 +117,26 @@ static const ble_uuid128_t s_nus_tx = BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0
 static uint16_t s_nus_tx_handle;
 static volatile bool s_nus_sub;         /* l'app est abonnée sur le lien courant */
 static volatile bool s_mc_on;           /* MeshCore actif : visible pour l'app */
+
+/* Table GATT : à incrémenter à chaque service ajouté ou retiré. iOS garde en
+ * cache la table d'un appareil appairé : sans indication « Service Changed »,
+ * l'appli MeshCore ne verrait pas le service NUS ajouté après l'appairage. */
+#define GATT_DB_VERSION 2   /* 2 : service NUS (MeshCore) */
+
+static void gatt_db_check(void)
+{
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open("ble", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_get_u8(h, "gattv", &v);
+    if (v != GATT_DB_VERSION) {
+        ble_svc_gatt_changed(0x0001, 0xFFFF);
+        ESP_LOGI(TAG, "table GATT modifiée (v%d → v%d) : indication Service Changed", v, GATT_DB_VERSION);
+        nvs_set_u8(h, "gattv", GATT_DB_VERSION);
+        nvs_commit(h);
+    }
+    nvs_close(h);
+}
 
 static bool link_authenticated(uint16_t conn)
 {
@@ -676,6 +697,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 app_post_simple(EV_PAIRING_DONE, 0);
             }
             set_state(BLE_ST_SECURED);
+            gatt_db_check();
             ancs_on_encrypted(event->enc_change.conn_handle);
             adv_start_connected();
         } else {
