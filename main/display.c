@@ -41,6 +41,7 @@ static bool s_glance_touch;    /* toucher reçu en coup d'œil, pas encore trait
 static bool s_swallow;         /* doigt posé pendant le coup d'œil : ignoré jusqu'au relâcher */
 static bool s_touch_asleep;    /* CST9217 en veille profonde : il faut un reset pour le réveiller */
 static SemaphoreHandle_t s_te_sem;
+static int64_t s_slpin_us;     /* dernier SLPIN : la dalle exige 120 ms avant SLPOUT */
 
 /* Écran allumé sans interaction ni animation depuis TURBO_IDLE_MS : le CPU
  * redescend au minimum. Il remonte dès qu'un toucher remet l'inactivité LVGL
@@ -355,10 +356,12 @@ esp_err_t display_init(void)
     xl9555_output(XIO_DISP_EN, true);
     gpio_config_t rst = { .pin_bit_mask = 1ULL << BOARD_LCD_RST, .mode = GPIO_MODE_OUTPUT };
     gpio_config(&rst);
-    gpio_set_level(BOARD_LCD_RST, 0);
-    vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level(BOARD_LCD_RST, 1);
-    vTaskDelay(pdMS_TO_TICKS(30));
+    vTaskDelay(pdMS_TO_TICKS(5));
+    gpio_set_level(BOARD_LCD_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    gpio_set_level(BOARD_LCD_RST, 1);
+    vTaskDelay(pdMS_TO_TICKS(150));      /* CO5300 : prêt ~120 ms après le reset */
 
     spi_bus_config_t bus = {
         .data0_io_num = BOARD_LCD_D0,
@@ -396,9 +399,15 @@ esp_err_t display_init(void)
                                 BOARD_LCD_D2, BOARD_LCD_D3, BOARD_LCD_RST, BOARD_LCD_TE };
     for (size_t i = 0; i < sizeof keep / sizeof keep[0]; i++) gpio_sleep_sel_dis(keep[i]);
 
-    lcd_init_seq();
-    lcd_cmd(0x11, NULL, 0);              /* SLPOUT */
-    vTaskDelay(pdMS_TO_TICKS(120));
+    /* comme LilyGoLib : la séquence deux fois (la première peut tomber
+     * pendant le démarrage interne de la dalle), puis réveil et allumage */
+    for (int k = 0; k < 2; k++) {
+        lcd_init_seq();
+        lcd_cmd(0x11, NULL, 0);          /* SLPOUT */
+        vTaskDelay(pdMS_TO_TICKS(120));
+        lcd_cmd(0x29, NULL, 0);          /* DISPON */
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
 
     size_t bsz = BOARD_LCD_W * BUF_LINES * 2;
     void *b1 = heap_caps_malloc(bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -451,6 +460,7 @@ esp_err_t display_init(void)
     /* l'écran reste éteint (veille) jusqu'au premier display_set_on(true) */
     lcd_cmd(0x28, NULL, 0);              /* DISPOFF */
     lcd_cmd(0x10, NULL, 0);              /* SLPIN */
+    s_slpin_us = esp_timer_get_time();
     s_on = false;
     touch_power(false);
     lv_indev_enable(s_indev, false);
@@ -499,6 +509,10 @@ static void set_on(bool on, bool glance, uint8_t level)
             power_hold_active(true);             /* CPU max pour le premier rendu */
             s_turbo = true;
         }
+        /* SLPOUT moins de 120 ms après SLPIN est ignoré : la dalle restait
+         * endormie (écran noir) quand le premier allumage suivait l'init */
+        int64_t since = esp_timer_get_time() - s_slpin_us;
+        if (since < 125000) vTaskDelay(pdMS_TO_TICKS((125000 - since) / 1000 + 1));
         lcd_cmd(0x11, NULL, 0);                  /* SLPOUT */
         touch_power(true);
         lv_indev_reset(s_indev, NULL);
@@ -517,6 +531,7 @@ static void set_on(bool on, bool glance, uint8_t level)
         power_backlight(0);
         lcd_cmd(0x28, NULL, 0);                  /* DISPOFF */
         lcd_cmd(0x10, NULL, 0);                  /* SLPIN */
+        s_slpin_us = esp_timer_get_time();
         lv_indev_enable(s_indev, false);
         s_on = false;
         touch_power(false);
