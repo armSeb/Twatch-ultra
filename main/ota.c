@@ -1,5 +1,6 @@
 #include "i18n.h"
 #include "task_psram.h"
+#include "meshcore/mc_port.h"
 #include "esp_attr.h"
 #include "ota.h"
 #include <string.h>
@@ -307,9 +308,16 @@ static esp_err_t update_post(httpd_req_t *r)
                 return fail(r, 0, OTA_EV_ERR_IMAGE, "not_twatch");
             }
             strlcpy(s_new_ver, d->version, sizeof(s_new_ver));
-            if (esp_ota_begin(dst, OTA_WITH_SEQUENTIAL_WRITES, &h) != ESP_OK) {
+            /* effacement de toute la taille de l'image d'un coup, avant de
+             * recevoir la suite : sinon chaque secteur s'efface en cours de
+             * route (~45 ms, cache coupé), le Wi-Fi perd des paquets et TCP
+             * ralentit puis repart. Le téléphone patiente quelques secondes. */
+            int64_t t0 = esp_timer_get_time();
+            if (esp_ota_begin(dst, r->content_len, &h) != ESP_OK) {
                 return fail(r, 0, OTA_EV_ERR_WRITE, "flash_prep");
             }
+            ESP_LOGI(TAG, "emplacement effacé en %d ms", (int)((esp_timer_get_time() - t0) / 1000));
+            s_last_activity_us = esp_timer_get_time();
             checked = true;
         }
         if (esp_ota_write(h, buf, n) != ESP_OK) return fail(r, h, OTA_EV_ERR_WRITE, "flash_write");
@@ -787,6 +795,7 @@ const char *ota_start(void)
 
 void ota_reboot_now(void)
 {
+    mc_stop();                             /* sauve la file de l'app et l'historique MeshCore */
     if (s_httpd) httpd_stop(s_httpd);
     esp_wifi_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -804,6 +813,7 @@ void ota_cancel(void)
          * httpd_stop() attendrait la fin du transfert, à l'infini (montre
          * figée). Redémarrage direct : l'image partielle est dans
          * l'emplacement inactif, jamais activé, rien à défaire. */
+        mc_stop();
         esp_restart();
     }
     ota_reboot_now();

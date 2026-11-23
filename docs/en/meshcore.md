@@ -42,11 +42,14 @@ The **MeshCore** app (first in the app list) shows:
 - the last messages, newest first: direct messages under the contact's name, channel
   messages under `#channel`. Emoji and any UTF-8 text display as on the phone.
 
-The watch keeps the last 64 messages in memory and shows 30. **Reading a message on the
+The watch keeps the last 64 messages (saved on flash, so they survive a restart) and shows 30. **Reading a message on the
 watch does not take it away from the app**: it stays in the app's queue (up to 256 messages)
 and is delivered when the app connects.
 
 When MeshCore is off, the app offers a button to turn it on.
+
+During a Wi-Fi update, MeshCore keeps receiving (Bluetooth is off, so the iPhone app cannot
+connect meanwhile); the queue and the history are saved before the watch restarts.
 
 ## Power
 

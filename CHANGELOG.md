@@ -2,6 +2,20 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.9 — 2026-11-23
+
+- *Pub* face: rim radius 118, between the panel's 100 and 0.2.8's 135.
+- Wi-Fi update: the image's whole size is erased once, before the transfer, instead of
+  sector by sector along the way. Each erase stopped the flash cache for tens of
+  milliseconds, the Wi-Fi dropped packets and TCP slowed down or paused. The transfer now
+  starts after a few seconds of preparation and should run evenly.
+- MeshCore keeps receiving during a Wi-Fi update (it was already running; the iPhone app
+  simply cannot connect while Bluetooth is off). Before every restart (end of update,
+  cancelled update, *Restart the watch*) MeshCore is stopped cleanly, so the app's queue and
+  the watch's message history are saved.
+- The watch's MeshCore history (64 messages) is now kept on flash and comes back after a
+  restart; it is written after 30 s without new messages, or when MeshCore stops.
+
 ## 0.2.8 — 2026-11-23
 
 - *Pub* face: rounder corners (brass rims radius 135 instead of following the panel's 100,

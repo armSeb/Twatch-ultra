@@ -27,7 +27,7 @@
 #define TRACK_A   (PANEL_W / 2 - 18)              /* demi-largeur de la piste */
 #define TRACK_B   (PANEL_H / 2 - 18)              /* demi-hauteur */
 #define TRACK_P   4.0f        /* exposant du « squircle » de la piste (plus bas = plus rond) */
-#define RIM_R     135         /* rayon des cerclages au bord de l'écran : plus rond que la dalle */
+#define RIM_R     118         /* rayon des cerclages au bord de l'écran : plus rond que la dalle */
 #define IDX_LEN   18
 
 /* complications */

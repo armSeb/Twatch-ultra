@@ -29,6 +29,9 @@ static const char *TAG = "mesh";
 
 #define OFFQ_PATH      "/offq"
 #define OFFQ_SAVE_MS   5000     /* file modifiée : sauvegarde après 5 s de calme */
+#define HIST_PATH      "/hist"
+#define HIST_SAVE_MS   30000    /* historique montre : sauvegarde après 30 s de calme */
+#define HIST_MAGIC     0x48430001u
 #define BUSY_TICK_MS   20       /* tâche active (émission, échanges avec l'app) */
 #define IDLE_TICK_MS   1000
 #define BUSY_HOLD_MS   3000     /* reste active un moment après un événement */
@@ -299,6 +302,7 @@ static int s_hist_n, s_hist_head;       /* head : prochain emplacement */
 static uint32_t s_seq;
 static SemaphoreHandle_t s_hist_mx;
 static mc_msg_cb_t s_msg_cb;
+static int64_t s_hist_dirty_at;          /* 0 : rien à sauver */
 
 /* tronque sans couper un caractère UTF-8 */
 static void copy_utf8(char *dst, size_t cap, const char *src)
@@ -316,6 +320,7 @@ static void hist_add(mc_msg_t *m)
     s_hist[s_hist_head] = *m;
     s_hist_head = (s_hist_head + 1) % HIST_N;
     if (s_hist_n < HIST_N) s_hist_n++;
+    if (!s_hist_dirty_at) s_hist_dirty_at = esp_timer_get_time();
     xSemaphoreGive(s_hist_mx);
     if (s_msg_cb) s_msg_cb(m);
 }
@@ -331,6 +336,48 @@ extern "C" bool mc_history_get(int i, mc_msg_t *out)
     if (ok) *out = s_hist[(s_hist_head - 1 - i + HIST_N) % HIST_N];
     xSemaphoreGive(s_hist_mx);
     return ok;
+}
+
+/* Historique de la montre sur la FAT : survit aux redémarrages (fin de
+ * mise à jour OTA comprise). Format : magique, nombre, puis les messages
+ * du plus ancien au plus récent. Écrit seulement après un temps calme ou à
+ * l'arrêt, pour ménager la flash. Copie faite sous le verrou, écriture hors
+ * verrou (l'interface lit l'historique pendant ce temps). */
+static void hist_save(void)
+{
+    EXT_RAM_BSS_ATTR static mc_msg_t snap[HIST_N];   /* tâche mesh seule ; PSRAM */
+    xSemaphoreTake(s_hist_mx, portMAX_DELAY);
+    uint32_t n = (uint32_t)s_hist_n;
+    for (uint32_t i = 0; i < n; i++) snap[i] = s_hist[(s_hist_head - (int)n + (int)i + HIST_N) % HIST_N];
+    s_hist_dirty_at = 0;
+    xSemaphoreGive(s_hist_mx);
+    File f = SPIFFS.open(HIST_PATH, "w", true);
+    uint32_t hdr[2] = { HIST_MAGIC, n };
+    bool ok = f && f.write((const uint8_t *)hdr, sizeof hdr) == sizeof hdr &&
+              f.write((const uint8_t *)snap, n * sizeof(mc_msg_t)) == n * sizeof(mc_msg_t);
+    f.close();
+    if (!ok) ESP_LOGW(TAG, "historique non sauvegardé");
+}
+
+static void hist_load(void)
+{
+    File f = SPIFFS.open(HIST_PATH, "r");
+    if (!f) return;
+    uint32_t hdr[2] = { 0, 0 };
+    if (f.read((uint8_t *)hdr, sizeof hdr) == sizeof hdr && hdr[0] == HIST_MAGIC && hdr[1] <= HIST_N) {
+        int n = 0;
+        while (n < (int)hdr[1] && f.read((uint8_t *)&s_hist[n], sizeof(mc_msg_t)) == sizeof(mc_msg_t)) {
+            s_hist[n].from[MC_NAME_MAX - 1] = 0;           /* fichier abîmé : chaînes bornées */
+            s_hist[n].text[MC_TEXT_MAX] = 0;
+            s_hist[n].seq = (uint32_t)n + 1;
+            n++;
+        }
+        s_hist_n = n;
+        s_hist_head = n % HIST_N;
+        s_seq = (uint32_t)n;
+        ESP_LOGI(TAG, "%d message(s) dans l'historique", n);
+    }
+    f.close();
 }
 
 class WatchListener : public MyMesh::Listener {
@@ -450,6 +497,7 @@ static void mesh_task(void *arg)
             /* l'app vide la file : on attend la fin de la synchro */
             if (now - s_offq_dirty_at >= OFFQ_SAVE_MS * 1000LL && !s_ble->pending()) offq_save();
         }
+        if (s_hist_dirty_at && now - s_hist_dirty_at >= HIST_SAVE_MS * 1000LL) hist_save();
         update_status();
 
         bool busy = now < s_busy_until || s_mesh->hasPendingWork() || s_ble->pending() ||
@@ -457,6 +505,7 @@ static void mesh_task(void *arg)
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(busy ? BUSY_TICK_MS : IDLE_TICK_MS));
     }
     if (s_mesh->isOfflineQueueDirty()) offq_save();
+    if (s_hist_dirty_at) hist_save();
     radio_driver.stop();
     s_task = NULL;
     vTaskDelete(NULL);
@@ -485,6 +534,7 @@ extern "C" esp_err_t mc_start(void)
         s_store->begin();
         s_mesh->begin();                    /* identité, préférences, contacts, canaux */
         offq_load();
+        hist_load();
         s_mesh->startInterface(*s_ble);
         s_mesh->setListener(&s_listener);
         heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);

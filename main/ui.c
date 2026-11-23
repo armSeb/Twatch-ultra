@@ -1915,6 +1915,7 @@ static void reboot_confirm_cb(lv_event_t *ev)
     /* redémarrage voulu : une mise à jour encore « à l'essai » est validée,
      * sinon le bootloader reviendrait à l'ancienne version */
     esp_ota_mark_app_valid_cancel_rollback();
+    mc_stop();                             /* sauve la file de l'app et l'historique MeshCore */
     esp_restart();
 }
 

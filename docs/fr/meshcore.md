@@ -45,11 +45,15 @@ L'app **MeshCore** (la première de la liste) affiche :
   contact, ceux des canaux sous `#canal`. Emoji et tout texte UTF-8 s'affichent comme sur le
   téléphone.
 
-La montre garde les 64 derniers messages en mémoire et en affiche 30. **Lire un message sur
+La montre garde les 64 derniers messages (enregistrés en flash : ils survivent à un redémarrage) et en affiche 30. **Lire un message sur
 la montre ne le retire pas à l'app** : il reste dans la file de l'app (256 messages au plus)
 et lui est remis quand elle se connecte.
 
 Quand MeshCore est coupé, l'app propose un bouton pour l'activer.
+
+Pendant une mise à jour par Wi-Fi, MeshCore continue de recevoir (le Bluetooth est coupé :
+l'app iPhone ne peut pas se connecter en attendant) ; la file et l'historique sont
+enregistrés avant le redémarrage de la montre.
 
 ## Consommation
 
