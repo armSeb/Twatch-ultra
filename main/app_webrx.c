@@ -31,7 +31,7 @@ extern const app_t app_webrx;
 #define INFO_Y S(88)
 #define MET_Y  S(116)
 #define WF_Y   S(128)
-#define WF_H   S(54)
+#define WF_H   ((UI_H - WF_Y) & ~1)         /* jusqu'en bas de la zone utile (S(54) sur la 2020) */
 #define NDIG   8                        /* 4 chiffres de MHz + 4 décimales (pas de 100 Hz) */
 #define SPAN_DB 50.0f
 
