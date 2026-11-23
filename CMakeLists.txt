@@ -17,6 +17,6 @@ if(DEFINED ENV{TW_DIAG_BARE})
 endif()
 
 # Version affichée (À propos, page de mise à jour) et comparée lors d'une OTA
-set(PROJECT_VER "0.2.11")
+set(PROJECT_VER "0.2.13")
 
 project(twatch_ultra)

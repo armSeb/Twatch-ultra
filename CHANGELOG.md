@@ -2,6 +2,20 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.13 — 2026-11-23
+
+(0.2.12 was a test build only: fast link and no light sleep only while frames flowed.)
+
+- MeshCore app over Bluetooth: while the app is connected, whatever the watch is doing
+  (screen on or off), the link stays fast (15–30 ms, no latency), light sleep is held off
+  and the CPU never drops below 80 MHz, so the watch answers the app at once. Before, it
+  went into light sleep between connection events and down to 40 MHz, and the link with
+  the app was unstable. When the app leaves, the economical parameters (as for iPhone
+  notifications) and light sleep come back. The app is only opened now and then (the watch
+  shows received messages itself), so the battery cost stays limited.
+- BLE journal (*About*): switches to the fast MeshCore link, and frames from the app the
+  watch had to refuse.
+
 ## 0.2.11 — 2026-11-23
 
 - Control center everywhere: pull down from the top edge of the screen (start within the

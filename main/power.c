@@ -48,19 +48,39 @@ void power_hold_active(bool hold)
 /* Plafond du CPU. Avec un maximum de 240 MHz, le mode « APB max » (exigé par
  * le Wi-Fi, l'I2S…) tourne lui aussi à 240 MHz : la radio en marche garde le
  * CPU à fond même écran éteint. Plafonné à 160, ce mode descend à 80 MHz. */
-void power_set_cpu_max(int mhz)
+static int s_max_mhz = POWER_CPU_MAX_MHZ;
+static int s_cnt_floor;            /* demandes de plancher à POWER_CPU_FLOOR_MHZ */
+
+static void pm_apply(void)
 {
 #if CONFIG_PM_ENABLE
+    portENTER_CRITICAL(&s_mux);
     esp_pm_config_t pm = {
-        .max_freq_mhz = mhz > 0 ? mhz : POWER_CPU_MAX_MHZ,
-        .min_freq_mhz = POWER_CPU_MIN_MHZ,
+        .max_freq_mhz = s_max_mhz,
+        .min_freq_mhz = s_cnt_floor ? POWER_CPU_FLOOR_MHZ : POWER_CPU_MIN_MHZ,
         .light_sleep_enable = true,
     };
+    portEXIT_CRITICAL(&s_mux);
     esp_err_t err = esp_pm_configure(&pm);
-    if (err != ESP_OK) ESP_LOGE(TAG, "esp_pm_configure(%d): %s", pm.max_freq_mhz, esp_err_to_name(err));
-#else
-    (void)mhz;
+    if (err != ESP_OK) ESP_LOGE(TAG, "esp_pm_configure(%d-%d): %s", pm.min_freq_mhz, pm.max_freq_mhz,
+                                esp_err_to_name(err));
 #endif
+}
+
+void power_set_cpu_max(int mhz)
+{
+    s_max_mhz = mhz > 0 ? mhz : POWER_CPU_MAX_MHZ;
+    pm_apply();
+}
+
+/* Plancher de fréquence (appli MeshCore connectée) : le CPU ne descend
+ * plus sous 80 MHz au repos, pour répondre sans délai de remontée. */
+void power_hold_cpu_floor(bool hold)
+{
+    portENTER_CRITICAL(&s_mux);
+    bool change = hold ? (s_cnt_floor++ == 0) : (s_cnt_floor > 0 && --s_cnt_floor == 0);
+    portEXIT_CRITICAL(&s_mux);
+    if (change) pm_apply();
 }
 
 void power_hold_nosleep(bool hold)

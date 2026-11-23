@@ -28,6 +28,7 @@ void power_hold_active(bool hold);
 void power_hold_nosleep(bool hold);
 /* plafond CPU (MHz, 80/160/240 ; 0 = défaut) : 160 pendant les apps radio */
 void power_set_cpu_max(int mhz);
+void power_hold_cpu_floor(bool hold);   /* compteur : CPU >= POWER_CPU_FLOOR_MHZ au repos */
 
 /* à appeler sur EV_AXP_IRQ depuis la tâche app ; retourne le masque d'IRQ */
 uint32_t power_handle_irq(void);
