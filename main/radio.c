@@ -240,7 +240,7 @@ static void play_task(void *arg)
         if (s_info.tone != tone) { tone = s_info.tone; tone_fx_init(&fx, tone, sr); }
         tone_fx_run(&fx, pcm, n);
         int v = s_info.volume;
-        int gain = v * v * 8192 / 10000;              /* courbe douce, ×2 à 100 % */
+        int gain = v * v * 16384 / 10000;              /* courbe douce, ×4 à 100 % (limiteur doux) */
         if (open) sound_stream_write(pcm, n, gain);
         else vTaskDelay(pdMS_TO_TICKS(1000 * n / sr));
 

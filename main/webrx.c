@@ -281,7 +281,7 @@ static void play_task(void *arg)
         if (s_info.tone != tone) { tone = s_info.tone; tone_fx_init(&s_fx, tone, WRX_RATE); }
         tone_fx_run(&s_fx, buf, CHUNK);
         int v = s_info.volume;
-        int gain = v * v * 8192 / 10000;           /* courbe douce, ×2 à 100 % */
+        int gain = v * v * 16384 / 10000;           /* courbe douce, ×4 à 100 % (limiteur doux) */
         sound_stream_write(buf, CHUNK, gain);
         lock();
         s_info.buf_ms = (int)((s_wr - s_rd) * 1000 / WRX_RATE);

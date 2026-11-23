@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.6 — 2026-11-23
+
+- Motion sensor: orientation fixed (front/back and face up/down were inverted). Tilt in the
+  flight simulator follows the wrist, and the sensor's wrist-raise gesture sees the right side.
+- Louder sound: beeps +10 dB, Púca sounds +4 dB, radio and web radio up to ×4 at 100 % with a
+  soft limiter instead of hard clipping.
+
 ## 0.2.5 — 2026-11-23
 
 - Display: LVGL renders into a full frame in PSRAM; two small internal DMA strips stream it to

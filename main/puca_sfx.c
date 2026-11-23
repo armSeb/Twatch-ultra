@@ -13,7 +13,7 @@
 
 #define RATE  16000
 #define CHUNK 160
-#define AMP   7000                         /* doux : le haut-parleur est près de l'oreille */
+#define AMP   11000                        /* carré : déjà riche en harmoniques, reste agréable */
 
 typedef struct { uint16_t hz; uint16_t ms; } note_t;     /* hz 0 = silence ; ms 0 = fin */
 
