@@ -82,11 +82,11 @@ Le BHI260AP est un concentrateur de capteurs programmable : le firmware Bosch
 pas et le geste du poignet tournent dedans. Son compteur de pas ne se remet pas à zéro sans
 redémarrer ce firmware : la montre garde sa valeur au dernier zéro logiciel et la soustrait.
 
-La puce est montée face dessous, tournée de 180° autour de Y : la matrice d'orientation
-donnée à l'accéléromètre et au gyroscope est `{ -1, 0, 0,  0, 1, 0,  0, 0, -1 }` (X et Z
-inversés, Y conservé), vérifiée sur la montre avec le jeu de vol et la montre posée à plat.
-Celle de LilyGoLib inverse Y au lieu de Z : haut/bas et face dessus/dessous sont alors
-échangés, et le geste du poignet en souffre.
+La puce est tournée de 180° autour de Z (`TOP_LAYER_BOTTOM_RIGHT_CORNER` de LilyGoLib) : la
+matrice d'orientation donnée à l'accéléromètre et au gyroscope est `{ -1, 0, 0,  0, -1, 0,  0, 0, 1 }`.
+Le geste du poignet de Bosch s'appuie sur ce repère (Z positif écran vers le haut) ; la 0.2.6
+avait essayé une rotation de 180° autour de Y, qui l'a cassé. Le sens du tangage du jeu de vol
+se règle dans l'app.
 
 ## Pièges
 
