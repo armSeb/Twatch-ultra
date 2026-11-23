@@ -324,7 +324,17 @@ static void lora_task(void *arg)
 {
     txreq_t *r = heap_caps_malloc(sizeof *r, MALLOC_CAP_INTERNAL);
     rx_continuous();
+    int64_t beat = esp_timer_get_time();
     while (s_run) {
+        /* pouls toutes les 30 s : mode de la puce (5 = réception), compteurs */
+        if (esp_timer_get_time() - beat > 30000000) {
+            beat = esp_timer_get_time();
+            uint8_t st = status();
+            ESP_LOGI(TAG, "mode %d, cmd %d, erreurs 0x%04x, TX %lu/%lu ratés, RX %lu/%lu abîmés, bruit %d dBm, DIO1 %d",
+                     (st >> 4) & 7, (st >> 1) & 7, errors(), (unsigned long)s_stats.tx_ok,
+                     (unsigned long)s_stats.tx_fail, (unsigned long)s_stats.rx_ok, (unsigned long)s_stats.rx_crc,
+                     s_noise, gpio_get_level(BOARD_LORA_IRQ));
+        }
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
         if (!s_run) break;
         uint16_t irq = irq_get();

@@ -157,7 +157,8 @@ bool TWatchRadio::startSendRaw(const uint8_t *bytes, int len)
     sx_stats_t st;
     sx_get_stats(&st);
     tx_mark = st.tx_ok;
-    if (!sx_send(bytes, (size_t)len)) return false;
+    ESP_LOGI(TAG, "émission demandée : %d o (type %d)", len, len ? (bytes[0] >> 2) & 0x0F : -1);
+    if (!sx_send(bytes, (size_t)len)) { ESP_LOGW(TAG, "file radio pleine ou radio arrêtée"); return false; }
     sending = true;
     return true;
 }
