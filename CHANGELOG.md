@@ -2,6 +2,28 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.0 — 2026-11-23
+
+First version tested on the real watch.
+
+- **MeshCore** (companion v1.18) on the SX1262, EU/UK Narrow preset by default (869.618 MHz,
+  BW 62.5 kHz, SF8, CR 4/8). The official MeshCore app connects over Bluetooth (NUS service)
+  and configures the radio. Messages read on the watch stay in the offline queue for the app;
+  the queue survives reboots. *MeshCore* app on the watch: received messages with emoji,
+  radio and app status. On/off in Settings › Bluetooth.
+- Display: the panel supply (XL9555 pin 7) is power-cycled at boot. The expander keeps its
+  state across ESP resets, so the AMOLED stayed black while its logic ran. Bus at 40 MHz.
+- Visible panel area measured with a test pattern (`DISPLAY_GEOM_TEST`): the *Pub* face rim
+  follows it; flat background instead of a banded RGB565 gradient.
+- Boot after an OTA update: GPIO interrupts left armed by the previous firmware are cleared.
+- Internal RAM: LVGL renders from flash, 20-line draw buffers. Web radio and WebRX play again
+  (the I2S and Wi-Fi ran out of memory).
+- BHI260AP: no more endless FIFO loop (task watchdog) on an event of unknown size.
+- LoRa RF switch on the built-in antenna. Light sleep keeps display, SPI and LoRa pins.
+- USB plugged in: no light sleep, the serial console stays alive.
+- WebRX waterfall fills the screen height. Default radio volume 50 %.
+- Bluetooth name `T-Watch-Ultra`, Wi-Fi access point `twatch-ultra-OTA`.
+
 ## 0.1.0 — 2026-11-23
 
 First version for the **LilyGo T-Watch Ultra**, ported from

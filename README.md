@@ -69,7 +69,11 @@ corners)*
 - Every peripheral the firmware does not use (GNSS, NFC, LoRa, SD card, speaker amplifier)
   has its power rail switched off.
 
-**In progress**: LoRa (SX1262) with MeshCore, history on the SD card.
+- **MeshCore** on the LoRa radio (SX1262), EU/UK Narrow preset by default. The official
+  MeshCore app pairs over Bluetooth as a companion and sets the radio; messages read on the
+  watch are still delivered to the app. Turn it on in Settings › Bluetooth › MeshCore.
+
+**In progress**: MeshCore message alerts, history on the SD card, low-power LoRa receive.
 
 ---
 

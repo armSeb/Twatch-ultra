@@ -75,7 +75,13 @@ arrondis de la dalle)*
 - Tous les périphériques que le firmware n'utilise pas (GNSS, NFC, LoRa, carte SD, ampli du
   haut-parleur) ont leur rail d'alimentation coupé.
 
-**En cours** : LoRa (SX1262) avec MeshCore, historique sur la carte SD.
+- **MeshCore** sur la radio LoRa (SX1262), préréglage EU/UK Narrow par défaut. L'appli
+  MeshCore officielle s'appaire en Bluetooth comme compagnon et règle la radio ; un message lu
+  sur la montre est quand même transmis à l'appli. À activer dans Réglages › Bluetooth ›
+  MeshCore.
+
+**En cours** : alertes des messages MeshCore, historique sur la carte SD, réception LoRa
+basse consommation.
 
 ---
 
