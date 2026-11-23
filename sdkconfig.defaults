@@ -98,7 +98,9 @@ CONFIG_LV_OS_NONE=y
 CONFIG_LV_USE_DRAW_SW=y
 CONFIG_LV_DRAW_SW_COMPLEX=y
 CONFIG_LV_DRAW_SW_ASM_NONE=y
-CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM=y
+# Rendu LVGL depuis la flash (cache) et non l'IRAM : 63 Ko de RAM interne
+# rendus au Bluetooth, au Wi-Fi et à MeshCore (il ne restait que 30 Ko)
+# CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM is not set
 CONFIG_LV_USE_LOG=n
 CONFIG_LV_USE_ASSERT_NULL=y
 CONFIG_LV_USE_ASSERT_MALLOC=y
