@@ -54,7 +54,7 @@ sur un seul bus I2C.
 
 - **Navigation par origine** : chaque écran retient d'où il a été ouvert ; glisser → ou
   l'en-tête « ‹ » y ramène toujours.
-- **Écrans paresseux** : réglages, lecture en cours, lanceur, contrôles rapides et app
+- **Écrans paresseux** : réglages, lecture en cours, lanceur, centre de contrôle et app
   hébergée sont construits à la demande et détruits à l'extinction de l'écran ; la RAM ne
   contient que ce qui est affiché. Écrans permanents : cadran, liste des notifications,
   détail, appel, énergie, appairage, à propos.
@@ -263,7 +263,7 @@ désactivés : le rail est coupé et le capteur ne consomme rien.
 | `main/haptic.c` | pilote haptique DRV2605 |
 | `main/xl9555.c`, `i2c_bus.c` | expandeur d'E/S, bus I2C partagé |
 | `main/motion.c` | BHI260AP : chargement du firmware, pas, lever le poignet, accéléromètre pour les jeux |
-| `main/sound.c` | bips et flux sur l'ampli I2S |
+| `main/sound.c` | bips et flux sur l'ampli I2S, volume général et mode silencieux |
 | `main/wclock.c` | PCF85063 (UTC), fuseau, resynchronisation de l'horloge système |
 | `main/settings.c` | réglages en NVS |
 | `main/i18n.c` | table français → anglais |

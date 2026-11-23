@@ -50,7 +50,7 @@ driver), native `esp_lcd`, ESP-IDF 5 `i2c_master` on a single I2C bus.
 
 - **Navigation by origin**: every screen remembers where it was opened from; swipe → or the
   « ‹ » header always returns there.
-- **Lazy screens**: settings, now playing, launcher, quick controls and the hosted app are
+- **Lazy screens**: settings, now playing, launcher, control center and the hosted app are
   built on demand and destroyed when the screen turns off, so RAM only holds what is shown.
   Permanent screens: watch face, notification list, detail, call, battery, pairing, about.
 - **Apps** (`app.h`): see [apps-and-i18n.md](apps-and-i18n.md). The open app stays built
@@ -247,7 +247,7 @@ nothing.
 | `main/haptic.c` | DRV2605 haptic driver |
 | `main/xl9555.c`, `i2c_bus.c` | I/O expander, shared I2C bus |
 | `main/motion.c` | BHI260AP: firmware upload, steps, raise to wake, accelerometer for games |
-| `main/sound.c` | beeps and streams on the I2S amplifier |
+| `main/sound.c` | beeps and streams on the I2S amplifier, global volume and silent mode |
 | `main/wclock.c` | PCF85063 (UTC), time zone, system clock resync |
 | `main/settings.c` | settings in NVS |
 | `main/i18n.c` | French → English table |

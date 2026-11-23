@@ -36,4 +36,9 @@ uint32_t  display_tap_sample_ms(void);
 typedef void (*display_strip_fn)(uint16_t *px, int y0, int lines, void *ctx);
 bool      display_direct(display_strip_fn fill, void *ctx);
 void      display_direct_end(void);
+/* Observateur du tactile (tâche app, à chaque lecture LVGL) : reçoit ce qui
+ * est transmis à LVGL, après le filtre du coup d'œil. Sert au tirage depuis
+ * le bord haut (ui.c), qui doit voir le doigt avant les objets de l'écran. */
+typedef void (*display_touch_hook_t)(bool down, int x, int y);
+void      display_set_touch_hook(display_touch_hook_t hook);
 void      display_tap_enable(bool en);  /* réglage modifié */      /* CPU max seulement pendant l'interaction */

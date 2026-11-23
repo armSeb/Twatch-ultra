@@ -89,7 +89,7 @@ static void sfx_task(void *arg)
 
 void puca_sfx(puca_sfx_t s)
 {
-    if (s_busy || s < 0 || s >= SFX_COUNT || !TUNES[s]) return;
+    if (s_busy || s < 0 || s >= SFX_COUNT || !TUNES[s] || sound_muted()) return;
     s_busy = true;
     if (task_psram(sfx_task, "pucasfx", 3072, (void *)TUNES[s], 4, NULL, 1) != pdPASS) s_busy = false;
 }

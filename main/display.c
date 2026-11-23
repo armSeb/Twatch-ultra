@@ -306,6 +306,8 @@ static void touch_power(bool screen_on)
     }
 }
 
+static display_touch_hook_t s_touch_hook;
+
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
     static int16_t last_x, last_y;
@@ -339,7 +341,10 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
     data->point.x = last_x;
     data->point.y = last_y;
+    if (s_touch_hook) s_touch_hook(data->state == LV_INDEV_STATE_PRESSED, last_x, last_y);
 }
+
+void display_set_touch_hook(display_touch_hook_t hook) { s_touch_hook = hook; }
 
 /* ------------------------------------------------------------------ */
 /* Réveil par double tap : écran éteint, le CST9217 reste actif ; sa     */

@@ -41,6 +41,8 @@ autorités publiques habituelles (Let's Encrypt, etc.) ; un certificat auto-sign
 | Glisser → ou ‹ | quitter l'app : l'écoute s'arrête, le Bluetooth revient |
 
 - L'écoute reprend au **dernier volume utilisé** (15 % la première fois, ou s'il était resté à 0).
+- Ce volume agit *à l'intérieur* du volume général de la montre (centre de contrôle, tiré
+  du bord haut sans quitter l'app) ; en mode silencieux, rien ne sort.
 - **Squelch** : coupe le son tant que le signal reste sous le seuil (appliqué par le serveur).
   Tout à gauche : coupé. Le niveau du signal est affiché sous le curseur.
 - **Tonalité** (5 paliers, retenue) : *Neutre*, *Claire*, *Voix*, *Douce* (par défaut),
