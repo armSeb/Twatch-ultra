@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.24 — 2026-11-24
+
+- Wi-Fi with Bluetooth still answered slowly after 0.2.22. While the Wi-Fi radio runs, the
+  Bluetooth controller's modem sleep is now off too (`ble_wifi_coex()`), so the coexistence
+  arbiter keeps its timing on the access point's beacons. It comes back when Wi-Fi stops.
+- Wi-Fi scans with Bluetooth on use the default active scan times, as the coexistence
+  requires (the driver warned about the custom ones).
+
 ## 0.2.23 — 2026-11-24
 
 - Crash (LoadStoreError in LVGL) when Bluetooth was turned back on after being turned off,

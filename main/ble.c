@@ -83,7 +83,8 @@ static bool    s_cut_noenc;        /* coupure « pas chiffré » : pause avant r
  * parfois l'iPhone ne répond pas à la Security Request et SMP n'abandonne
  * qu'au bout de 30 s. On coupe plus tôt : l'iPhone se reconnecte aussitôt. */
 #define ENC_WATCHDOG_MS 8000
-static struct ble_npl_event s_ev_batt, s_ev_forget, s_ev_pair, s_ev_mc;
+static struct ble_npl_event s_ev_batt, s_ev_forget, s_ev_pair, s_ev_mc, s_ev_coex;
+static volatile bool s_wifi_coex;   /* Wi-Fi radio active : pas de modem sleep Bluetooth */
 
 static int gap_event(struct ble_gap_event *event, void *arg);
 static void adv_start(bool fast, uint32_t fast_ms);
@@ -572,6 +573,17 @@ static void ev_forget_cb(struct ble_npl_event *ev)
     ESP_LOGW(TAG, "tous les appairages effacés");
 }
 
+/* Modem sleep du contrôleur : avec le Wi-Fi, il désynchronise l'arbitrage de
+ * la coexistence et le Wi-Fi rate des balises. Appliqué dans la tâche hôte,
+ * où le contrôleur est forcément actif. */
+static void coex_apply(void)
+{
+    esp_err_t e = s_wifi_coex ? esp_bt_sleep_disable() : esp_bt_sleep_enable();
+    ESP_LOGI(TAG, "modem sleep Bluetooth %s (%s)", s_wifi_coex ? "coupé" : "permis", esp_err_to_name(e));
+}
+
+static void ev_coex_cb(struct ble_npl_event *ev) { coex_apply(); }
+
 static void ev_pair_cb(struct ble_npl_event *ev)
 {
     adv_start(true, ADV_PAIRING_MS);
@@ -868,6 +880,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 /* ------------------------------------------------------------------ */
 static void on_sync(void)
 {
+    if (s_wifi_coex) coex_apply();   /* contrôleur neuf : modem sleep actif par défaut */
     int rc = ble_hs_util_ensure_addr(0);
     if (rc) { ble_diag("ERREUR adresse rc=%d", rc); return; }   /* pas d'assert : pas de reboot */
     /* Adresse aléatoire STATIQUE dérivée de la MAC (stable entre les boots) :
@@ -971,6 +984,7 @@ esp_err_t ble_start(void)
     ble_npl_event_init(&s_ev_forget, ev_forget_cb, NULL);
     ble_npl_event_init(&s_ev_pair, ev_pair_cb, NULL);
     ble_npl_event_init(&s_ev_mc, ev_mc_cb, NULL);
+    ble_npl_event_init(&s_ev_coex, ev_coex_cb, NULL);
     s_ancs_up = !s_hid;
     if (s_ancs_up) ancs_host_init();
 
@@ -1001,6 +1015,7 @@ void ble_stop(void)
         ble_npl_event_deinit(&s_ev_forget);
         ble_npl_event_deinit(&s_ev_pair);
         ble_npl_event_deinit(&s_ev_mc);
+        ble_npl_event_deinit(&s_ev_coex);
         if (s_ancs_up) ancs_host_deinit();
         s_ancs_up = false;
         hid_on_disconnect();
@@ -1053,6 +1068,13 @@ void ble_set_battery(uint8_t pct)
 void ble_forget_all(void)
 {
     if (s_running && !s_stopping) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_forget);
+}
+
+void ble_wifi_coex(bool wifi_on)
+{
+    if (s_wifi_coex == wifi_on) return;
+    s_wifi_coex = wifi_on;
+    if (s_running && !s_stopping) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_coex);
 }
 
 void ble_pairing_mode(void)

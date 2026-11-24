@@ -249,6 +249,7 @@ static void sleep_policy(void)
     bool ch = want != s_ns_held;
     s_ns_held = want;
     portEXIT_CRITICAL(&s_ns_mux);
+    ble_wifi_coex(s_started);
     if (ch) {
         power_hold_nosleep(want);
         ESP_LOGI(TAG, "light sleep %s (Wi-Fi + Bluetooth)", want ? "suspendu" : "permis");
@@ -357,8 +358,10 @@ static bool attempt_locked(void)
     bool seen[WRX_NETS] = { 0 };
     int nseen = 0;
     wifi_scan_config_t sc = { .show_hidden = true };
-    sc.scan_time.active.min = 40;
-    sc.scan_time.active.max = 100;
+    if (!ble_running()) {               /* avec le Bluetooth : durées par défaut (coexistence) */
+        sc.scan_time.active.min = 40;
+        sc.scan_time.active.max = 100;
+    }
     if (esp_wifi_scan_start(&sc, true) == ESP_OK) {
         uint16_t n = 24;
         wifi_ap_record_t *rec = heap_caps_malloc(n * sizeof *rec, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

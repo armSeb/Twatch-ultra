@@ -292,6 +292,7 @@ static void scan_kick(void)
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time.active = { .min = 40, .max = 90 },
     };
+    if (ble_running()) sc.scan_time.active.min = sc.scan_time.active.max = 0;   /* coexistence : durées par défaut */
     if (esp_wifi_scan_start(&sc, false) == ESP_OK) {
         s_scanning = true;
         s_scan_t0 = esp_timer_get_time();
