@@ -6,6 +6,9 @@
 #include <string.h>
 #include "esp_heap_caps.h"
 #ifdef ESP_PLATFORM
+#include "esp_memory_utils.h"
+#endif
+#ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #endif
@@ -24,6 +27,7 @@ static uint8_t *cloud;               /* densité des nuages 128×128 */
 static float *lat;                   /* treillis du bruit 64×64 */
 #ifdef ESP_PLATFORM
 static void worker_stop(void);
+static uint16_t *s_tile[2];          /* tuiles de rendu (voir render_cols), une par cœur */
 #endif
 static volatile int s_prog = -1;     /* -1 : rien ; 0..100 */
 static volatile bool s_abort, s_task;
@@ -259,6 +263,7 @@ void vox_free(void)
 #endif
     heap_caps_free(hmap); heap_caps_free(cmap); heap_caps_free(vmap); heap_caps_free(cloud); heap_caps_free(lat);
     hmap = NULL; cmap = NULL; vmap = NULL; cloud = NULL; lat = NULL;
+    for (int i = 0; i < 2; i++) { heap_caps_free(s_tile[i]); s_tile[i] = NULL; }
     s_prog = -1;
 }
 
@@ -309,8 +314,22 @@ static inline float fsin(float x)                    /* sinus approché par tabl
 
 static const float OCC_Z[VOX_OCC] = { 6, 10, 15, 22, 30, 40, 52, 66, 82, 100, 125, 155, 190, 230, 280, 1000 };
 
-static void render_cols(gsurf_t *s, uint8_t *occ, const vox_cam_t *c, float fy, float t, int c0, int c1)
+/* Image en PSRAM (RAM interne trop fragmentée pour ses 69 Ko) : écrire une
+ * colonne pixel par pixel y touche une ligne de cache différente à chaque
+ * pixel, soit une lecture-écriture PSRAM par pixel (≈ 3× plus lent). Les
+ * colonnes passent donc par une tuile de TILE_W colonnes en RAM interne,
+ * recopiée ligne par ligne (32 octets contigus) dans l'image. */
+#define TILE_W 16
+
+static void tile_flush(gsurf_t *s, const uint16_t *tile, int x0, int n)
 {
+    uint16_t *dst = s->px + x0;
+    for (int y = 0; y < s->h; y++, dst += s->w, tile += TILE_W) memcpy(dst, tile, (size_t)n * 2);
+}
+
+static void render_cols(gsurf_t *s, uint8_t *occ, const vox_cam_t *c, float fy, float t, int c0, int c1, uint16_t *tile)
+{
+    int tx0 = c0;                    /* première colonne de la tuile en cours */
     const int W = s->w, H = s->h;
     if (s_sin[64] == 0) for (int i = 0; i < 256; i++) s_sin[i] = sinf(i * 6.2831853f / 256);
     const float half = W * 0.5f;
@@ -407,8 +426,17 @@ static void render_cols(gsurf_t *s, uint8_t *occ, const vox_cam_t *c, float fy, 
             }
             colbuf[y] = cc;
         }
-        uint16_t *dst = s->px + col;
-        for (int y = 0; y < H; y++, dst += W) *dst = colbuf[y];
+        if (tile) {
+            uint16_t *dst = tile + (col - tx0);
+            for (int y = 0; y < H; y++, dst += TILE_W) *dst = colbuf[y];
+            if (col - tx0 == TILE_W - 1 || col == c1 - 1) {
+                tile_flush(s, tile, tx0, col - tx0 + 1);
+                tx0 = col + 1;
+            }
+        } else {
+            uint16_t *dst = s->px + col;
+            for (int y = 0; y < H; y++, dst += W) *dst = colbuf[y];
+        }
     }
 }
 
@@ -420,14 +448,14 @@ static void render_cols(gsurf_t *s, uint8_t *occ, const vox_cam_t *c, float fy, 
 static SemaphoreHandle_t s_go, s_done;
 static TaskHandle_t s_worker;
 static volatile bool s_worker_quit;
-static struct { gsurf_t *s; uint8_t *occ; const vox_cam_t *c; float fy, t; int c0, c1; } s_job;
+static struct { gsurf_t *s; uint8_t *occ; const vox_cam_t *c; float fy, t; int c0, c1; uint16_t *tile; } s_job;
 
 static void worker_task(void *arg)
 {
     for (;;) {
         xSemaphoreTake(s_go, portMAX_DELAY);
         if (s_worker_quit) break;
-        render_cols(s_job.s, s_job.occ, s_job.c, s_job.fy, s_job.t, s_job.c0, s_job.c1);
+        render_cols(s_job.s, s_job.occ, s_job.c, s_job.fy, s_job.t, s_job.c0, s_job.c1, s_job.tile);
         xSemaphoreGive(s_done);
     }
     xSemaphoreGive(s_done);
@@ -449,6 +477,15 @@ static void worker_stop(void)
 void vox_render(gsurf_t *s, uint8_t *occ, const vox_cam_t *c, float fy, float t)
 {
     if (!vmap || s_prog != 100) return;
+    uint16_t *tile[2] = { NULL, NULL };
+#ifdef ESP_PLATFORM
+    if (esp_ptr_external_ram(s->px) && s->h <= VOX_MAX_H) {
+        for (int i = 0; i < 2; i++) {
+            if (!s_tile[i]) s_tile[i] = heap_caps_malloc(TILE_W * VOX_MAX_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+            tile[i] = s_tile[i];
+        }
+    }
+#endif
 #ifdef ESP_PLATFORM
     if (!s_worker) {
         s_go = xSemaphoreCreateBinary();
@@ -464,13 +501,14 @@ void vox_render(gsurf_t *s, uint8_t *occ, const vox_cam_t *c, float fy, float t)
     if (s_worker) {
         int mid = s->w / 2;
         s_job.s = s; s_job.occ = occ; s_job.c = c; s_job.fy = fy; s_job.t = t; s_job.c0 = 0; s_job.c1 = mid;
+        s_job.tile = tile[0];
         xSemaphoreGive(s_go);
-        render_cols(s, occ, c, fy, t, mid, s->w);
+        render_cols(s, occ, c, fy, t, mid, s->w, tile[1]);
         xSemaphoreTake(s_done, portMAX_DELAY);
         return;
     }
 #endif
-    render_cols(s, occ, c, fy, t, 0, s->w);
+    render_cols(s, occ, c, fy, t, 0, s->w, tile[1]);
 }
 
 bool vox_visible(const uint8_t *occ, int w, int x, int y, float z)

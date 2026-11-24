@@ -2,6 +2,17 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.30 — 2026-11-24
+
+- No more tearing on heavy screens (e.g. pulling menus over the watch face). A full-screen
+  frame that takes longer to draw than the panel's 16.7 ms scan now starts just before the
+  next TE, early enough that the scan never catches up with the write (tear-free up to about
+  32 ms per frame, i.e. 30 fps). Light frames still start on the TE (60 fps).
+- Flight game: the landscape image sits in PSRAM (the largest free internal RAM block is
+  46 KB, the image is 69 KB). Columns are now drawn into a small internal tile per core
+  (6 KB each, only during the game) and copied row by row, instead of touching a different
+  PSRAM cache line for every pixel.
+
 ## 0.2.29 — 2026-11-24
 
 - *Énergie* screen: the animation frame rate is now measured between consecutive frames of

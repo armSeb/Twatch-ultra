@@ -185,6 +185,48 @@ static uint32_t tick_cb(void)
 static uint16_t *s_strip[2];   /* bandes DMA internes : tampons LVGL et display_direct */
 static bool s_te_frame;        /* rendu en cours = grande image : départ sur le TE */
 
+/* Anti-déchirure. La dalle relit sa mémoire de haut en bas en 16,7 ms à
+ * partir du TE. Une grande image part bande par bande au rythme du rendu :
+ * si elle met W ≤ ~15 ms, on part sur le TE et on reste devant le balayage.
+ * Plus lente (écran chargé), le balayage nous rattraperait : on part alors
+ * avant le TE suivant, d'une avance W − 16,7 ms, en réécrivant le haut que
+ * le balayage en cours a déjà lu ; le balayage suivant ne nous rattrape
+ * qu'après la dernière ligne. Sans déchirure jusqu'à W ≈ 32 ms (30 img/s). */
+#define TE_FRAME_US   16667
+#define TE_DIRECT_US  15000      /* W en dessous : départ sur le TE */
+#define TE_MARGIN_US  1200
+static int64_t s_send_t0;      /* départ de la première bande (0 : pas une grande image) */
+static uint32_t s_w_est_us;    /* durée d'envoi estimée d'une grande image */
+static esp_timer_handle_t s_lead_tmr;
+static SemaphoreHandle_t s_lead_sem;
+
+static void lead_tmr_cb(void *arg) { xSemaphoreGive(s_lead_sem); }
+
+/* départ d'une grande image : TE, puis éventuel décalage */
+static void frame_start(void)
+{
+    wait_te();
+    uint32_t w = s_w_est_us;
+    if (w > TE_DIRECT_US && s_lead_tmr) {
+        int64_t d = 2 * TE_FRAME_US - (int64_t)w - TE_MARGIN_US;
+        if (d > 500) {
+            xSemaphoreTake(s_lead_sem, 0);
+            esp_timer_start_once(s_lead_tmr, (uint64_t)d);
+            xSemaphoreTake(s_lead_sem, pdMS_TO_TICKS(40));
+        }
+    }
+    s_send_t0 = esp_timer_get_time();
+}
+
+/* fin d'une grande image : mise à jour de l'estimation (montée immédiate,
+ * descente lente : une image lourde isolée ne doit pas déchirer) */
+static void frame_end(void)
+{
+    uint32_t w = (uint32_t)(esp_timer_get_time() - s_send_t0) + 400;   /* + dernière bande en vol */
+    s_send_t0 = 0;
+    s_w_est_us = w > s_w_est_us ? w : (s_w_est_us * 7 + w) / 8;
+}
+
 /* Mesure du rendu (écran Énergie, journal) : images par seconde et durée
  * d'un rafraîchissement (dessin + envoi), sur la dernière seconde animée. */
 static int64_t s_refr_t0, s_perf_t0;
@@ -249,12 +291,13 @@ static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
     if (s_te_frame) {
         s_te_frame = false;
         lcd_drain();
-        wait_te();
+        frame_start();
     }
     /* lcd_window attend la fin de la bande précédente (l'autre tampon) ;
      * celle-ci part en DMA pendant que LVGL dessine la suivante dans
      * l'autre tampon : flush_ready tout de suite */
     lcd_pixels(a->x1, a->y1, a->x2, a->y2, px);
+    if (lv_display_flush_is_last(d) && s_send_t0) frame_end();
     if (lv_display_flush_is_last(d) && s_refr_t0) {
         uint32_t us = (uint32_t)(esp_timer_get_time() - s_refr_t0);
         s_perf_n++;
@@ -586,6 +629,9 @@ esp_err_t display_init(void)
     gpio_config(&te);
     gpio_isr_handler_add(BOARD_LCD_TE, te_isr, NULL);   /* service installé par power_init */
     gpio_intr_disable(BOARD_LCD_TE);
+    s_lead_sem = xSemaphoreCreateBinary();
+    const esp_timer_create_args_t lt = { .callback = lead_tmr_cb, .name = "lcd_lead" };
+    if (!s_lead_sem || esp_timer_create(&lt, &s_lead_tmr) != ESP_OK) s_lead_tmr = NULL;
 
     /* tactile */
     touch_reset();
