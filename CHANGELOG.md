@@ -2,6 +2,11 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.17 — 2026-11-24
+
+- 0.2.16 merged with 0.2.14 (Energy screen: light sleep share and wakeups). The *sd* task
+  that polls the card-detect line every 3 s shows up in the wakeups per minute.
+
 ## 0.2.16 — 2026-11-24
 
 - MeshCore app: contact and channel rows stay on one line (the last-message preview
@@ -9,8 +14,6 @@ All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
   messages heard with 0 hops show as *direct*.
 
 ## 0.2.15 — 2026-11-24
-
-(0.2.14 is the power-saving build from the other branch.)
 
 - MeshCore app rebuilt with tabs: *Contacts* (chat and room contacts), *Channels* and
   *Radio* (radio status, counters). Lists are sorted alphabetically (leading emoji and
@@ -37,6 +40,18 @@ All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
   and written when one is inserted).
 - SD and NFC rails are now shared by the radio and the SD card (reference counted), so
   the radio stopping no longer cuts the card's power and the reverse.
+
+## 0.2.14 — 2026-11-24
+
+- *Energy* screen: a new line shows, while the screen is off, how much of the time the
+  watch actually spends in light sleep, how many times per minute it wakes up and, when
+  MeshCore runs, how many LoRa interrupts the radio has raised. The AXP2101 cannot
+  measure current, so this tells what keeps the watch awake when the average draw looks
+  too high.
+- Checked against the T-Watch Ultra V1.0 schematic: pins, expander bits and power rails
+  all match. Two small savings come out of it: the PDM microphone sits on the always-on
+  3.3 V rail, so its clock input is now pulled low instead of left floating, and the
+  unused DLDO2 rail is switched off explicitly.
 
 ## 0.2.13 — 2026-11-23
 

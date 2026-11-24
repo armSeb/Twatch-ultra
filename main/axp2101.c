@@ -32,6 +32,7 @@ static const char *TAG = "axp2101";
 #define REG_BTN_CHG_V      0x6A
 #define REG_DC_ONOFF       0x80
 #define REG_LDO_ONOFF0     0x90
+#define REG_LDO_ONOFF1     0x91   /* b0 DLDO2 */
 #define REG_LDO_VOL0       0x92   /* ALDO1 ; +1 par LDO, dans l'ordre des bits de 0x90 */
 #define REG_BAT_PARAMS     0xA1
 #define REG_GAUGE_CTRL     0xA2
@@ -116,6 +117,7 @@ esp_err_t axp_init(void)
     /* au démarrage : écran et capteur seulement, le reste à la demande */
     uint8_t on = (1u << RAIL[AXP_RAIL_DISPLAY].bit) | (1u << RAIL[AXP_RAIL_SENSOR].bit);
     wr(REG_LDO_ONOFF0, on);
+    upd(REG_LDO_ONOFF1, 0x01, 0x00);                   /* DLDO2 : relié à rien (schéma V1.0) */
     upd(REG_DC_ONOFF, 0x1E, 0x00);                     /* DCDC2..5 coupés, DCDC1 intact */
 
     upd(REG_VOFF, 0x07, 0x03);                         /* coupure système à 2,9 V */

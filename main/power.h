@@ -19,6 +19,11 @@ typedef struct {
     int   pct_start;       /* % au début de la période */
     float avg_ma;          /* estimé d'après la baisse du %, 0 si trop tôt */
     float screen_pct;      /* part du temps écran allumé */
+    /* light sleep, mesuré depuis le début de la période (écran éteint) :
+     * part du temps écran éteint passée en sommeil, et réveils par minute */
+    bool  sleep_known;     /* false : mesure indisponible ou trop courte */
+    float sleep_pct;
+    float wakes_per_min;
 } power_telemetry_t;
 
 esp_err_t power_init(void);           /* AXP2101, XL9555, vibreur, PM, IRQ, capteur */
