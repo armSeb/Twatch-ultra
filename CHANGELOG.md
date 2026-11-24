@@ -2,6 +2,10 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.25 — 2026-11-24
+
+- Web page: upload progress (firmware and SD files) showed "%%" instead of "%".
+
 ## 0.2.24 — 2026-11-24
 
 - Wi-Fi with Bluetooth still answered slowly after 0.2.22. While the Wi-Fi radio runs, the
