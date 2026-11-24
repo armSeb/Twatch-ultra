@@ -51,6 +51,10 @@ bouton **Réessayer** relance un essai tout de suite.
   la montre ne passe plus en veille légère (light sleep) : sinon elle rate les balises du
   point d'accès et ne répond que par à-coups. Cela consomme un peu plus ; Wi-Fi seul, la
   veille légère reste.
+- **Couper le Bluetooth** (désactivé par défaut) : tant que le Wi-Fi est allumé, le Bluetooth
+  est suspendu et le Wi-Fi a toute la radio. Avec les deux, l'ESP32-S3 partage son antenne et
+  le Wi-Fi rate des balises (pings de plusieurs secondes) : utile pour un gros transfert. Le
+  Bluetooth revient seul à l'arrêt du Wi-Fi.
 - Si la RAM interne manque à côté du Bluetooth, l'interrupteur global le signale
   (*Mémoire insuffisante*) et ne coupe jamais le Bluetooth. Seules WebRX, Radio et
   l'analyseur peuvent le suspendre le temps de leur écoute, comme avant.
@@ -85,8 +89,8 @@ La page propose quatre onglets, en français ou en anglais :
 
 ### Mise à jour par le serveur web
 
-L'onglet *Mise à jour* envoie le firmware sans couper le Bluetooth ni MeshCore (qui continue
-de recevoir). La montre affiche la progression, vérifie l'image (puce ESP32-S3, projet
+L'onglet *Mise à jour* envoie le firmware sans arrêter MeshCore, qui continue de recevoir en
+LoRa. Le Bluetooth est suspendu le temps de l'envoi, pour la vitesse, et revient si l'envoi échoue. La montre affiche la progression, vérifie l'image (puce ESP32-S3, projet
 T-Watch, empreinte SHA-256), l'installe dans l'emplacement libre puis redémarre. La même
 sécurité qu'avant s'applique : si la nouvelle version plante dans les 30 s, la montre revient
 à l'ancienne. Refus sous 30 % de batterie hors USB.

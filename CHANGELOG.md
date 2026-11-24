@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.26 — 2026-11-24
+
+- New *Settings › Wi-Fi › Turn Bluetooth off* (off by default, also on the web page): while
+  Wi-Fi is on, Bluetooth is paused so Wi-Fi gets the whole radio (with both on, the
+  ESP32-S3 shares its antenna and Wi-Fi misses beacons: pings of several seconds). Bluetooth
+  comes back by itself when Wi-Fi stops. Turning Bluetooth on by hand still wins.
+- Firmware update through the web server: Bluetooth is paused while the image arrives
+  (LoRa MeshCore keeps receiving), and comes back at once if the update fails.
+
 ## 0.2.25 — 2026-11-24
 
 - Web page: upload progress (firmware and SD files) showed "%%" instead of "%".

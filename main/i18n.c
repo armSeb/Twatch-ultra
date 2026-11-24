@@ -498,6 +498,8 @@ static const tr_t EN[] = {
     { "Connecté à %s\n%s", "Connected to %s\n%s" },
     { "Connecté à %s\n%s · %d dBm", "Connected to %s\n%s · %d dBm" },
     { "Coupure sous 30 %", "Off below 30 %" },
+    { "Couper le Bluetooth", "Turn Bluetooth off" },
+    { "Tant que le Wi-Fi est allumé", "While Wi-Fi is on" },
     { "En attente du Wi-Fi…", "Waiting for Wi-Fi…" },
     { "Fichiers de la carte SD", "SD card files" },
     { "Jusqu'à 5 réseaux, essayés dans l'ordre. Ils se modifient aussi depuis le serveur web.",

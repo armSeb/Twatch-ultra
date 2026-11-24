@@ -73,6 +73,10 @@ typedef struct {
 
 void      wifi_mgr_init(void);                       /* au démarrage (tâche app) */
 esp_err_t wifi_acquire(uint32_t holder, uint32_t flags);
+/* Bluetooth suspendu pour le débit (option wifi_noble, mise à jour web) :
+ * réévalue la règle. Tâche app. */
+void      wifi_ble_policy(void);
+void      wifi_web_ota(bool on);        /* une image arrive par le serveur web */
 void      wifi_release(uint32_t holder);
 bool      wifi_held(uint32_t holder);
 /* interrupteur global : retenu dans les réglages ; false = refus (RAM…) */

@@ -258,11 +258,35 @@ static void sleep_policy(void)
 
 void wifi_ble_changed(void) { sleep_policy(); kick_task(); }
 
+/* Bluetooth suspendu pour le débit : option « Couper le Bluetooth » tant que
+ * le Wi-Fi est tenu, ou mise à jour reçue par le serveur web. Tâche app. */
+static bool s_ble_pol;          /* Bluetooth arrêté par cette règle */
+static bool s_web_ota;
+
 static void ble_resume(void)
 {
     if (!s_ble_pauser) return;
     s_ble_pauser = 0;
-    if (settings_get()->ble_enabled && !ble_running()) ble_start();
+    if (!s_ble_pol && settings_get()->ble_enabled && !ble_running()) ble_start();
+}
+
+void wifi_ble_policy(void)
+{
+    bool want = s_web_ota || (settings_get()->wifi_noble && s_holders);
+    if (want && !s_ble_pol && ble_running()) {
+        ble_diag(s_web_ota ? "Wi-Fi : Bluetooth suspendu (mise à jour web)" : "Wi-Fi : Bluetooth suspendu (réglage)");
+        ble_stop();
+        s_ble_pol = !ble_running();
+    } else if (!want && s_ble_pol) {
+        s_ble_pol = false;
+        if (!s_ble_pauser && settings_get()->ble_enabled && !ble_running()) ble_start();
+    }
+}
+
+void wifi_web_ota(bool on)
+{
+    s_web_ota = on;
+    wifi_ble_policy();
 }
 
 static esp_err_t driver_init_locked(uint32_t holder, bool may_pause_ble)
@@ -616,6 +640,7 @@ esp_err_t wifi_acquire(uint32_t holder, uint32_t flags)
         s_holders |= holder;
         sync_holders();
         kick_task();
+        wifi_ble_policy();
         return ESP_OK;
     }
     drv_lock();
@@ -637,6 +662,7 @@ esp_err_t wifi_acquire(uint32_t holder, uint32_t flags)
     if (cur_state() == WIFI_OFF) set_state(WIFI_IDLE, NULL, "");
     sync_holders();
     if (holder & WIFI_HOLD_CONNECT) { s_kick = true; kick_task(); }
+    wifi_ble_policy();
     return ESP_OK;
 }
 
@@ -697,6 +723,7 @@ void wifi_release(uint32_t holder)
     drv_unlock();
     sleep_policy();
     sync_holders();
+    wifi_ble_policy();
     if (!stop_connect) kick_task();
 }
 

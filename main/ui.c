@@ -90,7 +90,7 @@ static void menu_lang_cb(lv_event_t *ev);
 static lv_timer_t *w_clock_t;
 static lv_obj_t *m_sum[11], *m_bt_info, *m_confirm;
 /* Wi-Fi, serveur TCP MeshCore, serveur web */
-static lv_obj_t *m_sw_wifi, *m_wifi_info, *m_wifi_nets, *m_wifi_retry, *m_sw_wlow;
+static lv_obj_t *m_sw_wifi, *m_wifi_info, *m_wifi_nets, *m_wifi_retry, *m_sw_wlow, *m_sw_wnob;
 static lv_obj_t *m_sw_mtcp, *m_mtcp_info;
 static lv_obj_t *m_sw_web, *m_sw_websd, *m_web_info, *m_web_pw, *m_web_modal;
 static lv_timer_t *m_wifi_timer;
@@ -1072,6 +1072,13 @@ static void menu_wlow_cb(lv_event_t *ev)
     settings_save();
 }
 
+static void menu_wnob_cb(lv_event_t *ev)
+{
+    settings_get()->wifi_noble = lv_obj_has_state(m_sw_wnob, LV_STATE_CHECKED);
+    settings_save();
+    wifi_ble_policy();
+}
+
 static void menu_wifi_pick_cb(lv_event_t *ev)
 {
     uint8_t k = (uint8_t)(uintptr_t)lv_event_get_user_data(ev);
@@ -1810,6 +1817,7 @@ static void build_menu(void)
     lv_label_set_long_mode(wh, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(wh, lv_pct(100));
     m_sw_wlow = mk_switch_row(col, _("Coupure sous 30 %"), _("Sur batterie"), menu_wlow_cb);
+    m_sw_wnob = mk_switch_row(col, _("Couper le Bluetooth"), _("Tant que le Wi-Fi est allumé"), menu_wnob_cb);
     mk_section(col, _("PUISSANCE D'ÉMISSION (dBm)"));
     static const char *wpwr_map[4 + 1];
     wpwr_map[0] = "8"; wpwr_map[1] = "13"; wpwr_map[2] = "17"; wpwr_map[3] = "20"; wpwr_map[4] = "";
@@ -2177,6 +2185,7 @@ static void menu_sync_from_settings(void)
         }
     lv_obj_set_state(m_sw_bt, LV_STATE_CHECKED, st->ble_enabled);
     lv_obj_set_state(m_sw_wlow, LV_STATE_CHECKED, st->wifi_lowbatt);
+    lv_obj_set_state(m_sw_wnob, LV_STATE_CHECKED, st->wifi_noble);
     lv_obj_set_state(m_sw_wifi, LV_STATE_CHECKED, wifi_user_on());
     lv_obj_set_state(m_sw_mtcp, LV_STATE_CHECKED, st->mesh_tcp);
     lv_obj_set_state(m_sw_web, LV_STATE_CHECKED, st->web_on);
@@ -3150,7 +3159,7 @@ static void release_menu(void)
     m_sw_steps = m_sw_wrist = m_sw_mesh = m_sw_ant = NULL;
     m_bm_wsens = m_sw_glance = m_bm_gpct = m_bm_gdur = m_bm_wpwr = NULL;
     m_bt_info = m_confirm = m_sd_info = m_sd_btn = m_sd_share = NULL;
-    m_sw_wifi = m_wifi_info = m_wifi_nets = m_wifi_retry = m_sw_wlow = NULL;
+    m_sw_wifi = m_wifi_info = m_wifi_nets = m_wifi_retry = m_sw_wlow = m_sw_wnob = NULL;
     m_sw_mtcp = m_mtcp_info = NULL;
     m_sw_web = m_sw_websd = m_web_info = m_web_pw = m_web_modal = NULL;
     o_info = o_bar = o_status = o_btn = o_pw = o_prev = o_prev_modal = o_title = NULL;
@@ -3427,6 +3436,7 @@ void ui_apply_settings(const settings_t *n)
     }
     settings_save();
     if (n->wifi_pwr != o.wifi_pwr) wifi_apply_power();
+    if (n->wifi_noble != o.wifi_noble) wifi_ble_policy();
     if (n->wifi_net != o.wifi_net) { wifi_set_pick(n->wifi_net); menu_wifi_nets(); }
     /* seul le serveur TCP peut changer ici : le serveur web reste (cette
      * requête attend sa réponse) */

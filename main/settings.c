@@ -51,6 +51,7 @@ void settings_load(void)
     if (nvs_get_u8(h, "wifi", &u8) == ESP_OK) s_set.wifi_on = u8;
     if (nvs_get_u8(h, "wnet", &u8) == ESP_OK && u8 <= WRX_NETS) s_set.wifi_net = u8;
     if (nvs_get_u8(h, "wlow", &u8) == ESP_OK) s_set.wifi_lowbatt = u8;
+    if (nvs_get_u8(h, "wnob", &u8) == ESP_OK) s_set.wifi_noble = u8;
     if (nvs_get_u8(h, "mtcp", &u8) == ESP_OK) s_set.mesh_tcp = u8;
     if (nvs_get_u8(h, "web", &u8) == ESP_OK) s_set.web_on = u8;
     if (nvs_get_u8(h, "websd", &u8) == ESP_OK) s_set.web_sd = u8;
@@ -87,6 +88,7 @@ void settings_save(void)
     nvs_set_u8(h, "wifi", s_set.wifi_on);
     nvs_set_u8(h, "wnet", s_set.wifi_net);
     nvs_set_u8(h, "wlow", s_set.wifi_lowbatt);
+    nvs_set_u8(h, "wnob", s_set.wifi_noble);
     nvs_set_u8(h, "mtcp", s_set.mesh_tcp);
     nvs_set_u8(h, "web", s_set.web_on);
     nvs_set_u8(h, "websd", s_set.web_sd);

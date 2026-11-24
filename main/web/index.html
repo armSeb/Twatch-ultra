@@ -114,7 +114,7 @@ g_screen:"Écran",g_notif:"Notifications et son",g_wake:"Réveil et mouvement",g
 bright:"Luminosité",tmo:"Mise en veille (s)",face:"Cadran",lang:"Langue",vib:"Vibreur",nwake:"Allumer l'écran à chaque notification",
 dnd:"Ne pas déranger",silent:"Silencieux",vol:"Volume",tap:"Double tape pour réveiller",wrist:"Lever le poignet",wsens:"Sensibilité du geste",
 glance:"Coup d'œil",gpct:"Luminosité du coup d'œil (%)",gdur:"Durée du coup d'œil (s)",steps:"Podomètre",mesh:"MeshCore",
-ant:"Antenne LoRa externe",mtcp:"Serveur TCP MeshCore (port 5000)",wpwr:"Puissance d'émission",wlow:"Couper sous 30 % de batterie",wnet:"Réseau",
+ant:"Antenne LoRa externe",mtcp:"Serveur TCP MeshCore (port 5000)",wpwr:"Puissance d'émission",wlow:"Couper sous 30 % de batterie",wnob:"Couper le Bluetooth tant que le Wi-Fi est allumé (plus de débit)",wnet:"Réseau",
 websd:"Accès aux fichiers de la carte SD",auto:"Automatique",low:"Basse",mid:"Moyenne",high:"Haute",
 saved:"Enregistré.",err:"Erreur : ",bad_pw:"Mot de passe incorrect.",locked:"Trop d'essais : réessayer dans %s s.",
 sending:"Envoi… %s %",checking:"Vérification…",fwdone:"Version %s installée : la montre redémarre.",
@@ -139,7 +139,7 @@ g_screen:"Screen",g_notif:"Notifications and sound",g_wake:"Wake and motion",g_r
 bright:"Brightness",tmo:"Screen timeout (s)",face:"Watch face",lang:"Language",vib:"Vibration",nwake:"Turn screen on for each notification",
 dnd:"Do not disturb",silent:"Silent",vol:"Volume",tap:"Double tap to wake",wrist:"Raise to wake",wsens:"Gesture sensitivity",
 glance:"Glance",gpct:"Glance brightness (%)",gdur:"Glance duration (s)",steps:"Step counter",mesh:"MeshCore",
-ant:"External LoRa antenna",mtcp:"MeshCore TCP server (port 5000)",wpwr:"Transmit power",wlow:"Turn off below 30 % battery",wnet:"Network",
+ant:"External LoRa antenna",mtcp:"MeshCore TCP server (port 5000)",wpwr:"Transmit power",wlow:"Turn off below 30 % battery",wnob:"Turn Bluetooth off while Wi-Fi is on (faster)",wnet:"Network",
 websd:"SD card file access",auto:"Automatic",low:"Low",mid:"Medium",high:"High",
 saved:"Saved.",err:"Error: ",bad_pw:"Wrong password.",locked:"Too many attempts: retry in %s s.",
 sending:"Uploading… %s %",checking:"Checking…",fwdone:"Version %s installed: the watch restarts.",
@@ -230,7 +230,7 @@ let cfg=null;
 const LV=()=>({face:[[0,L==="fr"?"Rétro":"Retro"],[2,"Pub"],[1,"Digital"]],lang:[[0,"Français"],[1,"English"]],tmo:[5,8,10,15,30],gpct:[10,25,50],gdur:[3,4,6],
  wsens:[[0,t("low")],[1,t("mid")],[2,t("high")]],wpwr:[[0,"8 dBm"],[1,"13 dBm"],[2,"17 dBm"],[3,"20 dBm"]]});
 const GROUPS=[["g_screen",["bright","tmo","face","lang"]],["g_notif",["vib","nwake","dnd","silent","vol"]],
- ["g_wake",["tap","wrist","wsens","glance","gpct","gdur","steps"]],["g_radio",["bt","mesh","ant","mtcp"]],["g_wifi",["wnet","wpwr","wlow","websd"]]];
+ ["g_wake",["tap","wrist","wsens","glance","gpct","gdur","steps"]],["g_radio",["bt","mesh","ant","mtcp"]],["g_wifi",["wnet","wpwr","wlow","wnob","websd"]]];
 async function loadSettings(){msg("sm","");const r=await api("/api/settings");if(!r.ok){if(r.status!==401)msg("sm",errText(r.j.err||"offline"),"bad");return}cfg=r.j;buildSettings()}
 function buildSettings(){const f=$("sf");f.replaceChildren();const lv=LV();
  for(const[g,keys]of GROUPS){const c=el("div",{class:"card"},el("h2",{text:t(g)}));

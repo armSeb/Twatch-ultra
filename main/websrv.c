@@ -557,6 +557,7 @@ static const field_t FIELDS[] = {
     { "mtcp",   FO(mesh_tcp),         F_BOOL, 0, 1 },
     { "wpwr",   FO(wifi_pwr),         F_U8,   0, 3 },
     { "wlow",   FO(wifi_lowbatt),     F_BOOL, 0, 1 },
+    { "wnob",   FO(wifi_noble),       F_BOOL, 0, 1 },
     { "wnet",   FO(wifi_net),         F_U8,   0, WRX_NETS },
     { "websd",  FO(web_sd),           F_BOOL, 0, 1 },
 };
@@ -662,14 +663,20 @@ static esp_err_t settings_post(httpd_req_t *r)
 /* ------------------------------------------------------------------ */
 /* Mise à jour, réseaux                                                 */
 /* ------------------------------------------------------------------ */
+static void ota_ble_on(void *on) { wifi_web_ota(!on); }
+
 static esp_err_t ota_post(httpd_req_t *r)
 {
     if (!csrf_ok(r)) return err_json(r, "403 Forbidden", "csrf");
     if (!authed(r)) return err_json(r, "401 Unauthorized", "auth");
     sec_headers(r);
     s_busy_fd = httpd_req_to_sockfd(r);
+    /* Bluetooth suspendu pendant la réception : la radio entière au Wi-Fi
+     * (la coexistence rend le transfert lent et irrégulier). LoRa continue. */
+    app_call(ota_ble_on, (void *)0, 8000);
     esp_err_t e = ota_http_update(r, true);
     s_busy_fd = -1;
+    if (!ota_installed()) app_call(ota_ble_on, (void *)1, 8000);   /* échec : rendu tout de suite */
     return e;
 }
 

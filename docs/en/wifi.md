@@ -45,6 +45,10 @@ During long waits the Wi-Fi radio is off to save battery. **Retry** tries again 
   Radio, MeshCore TCP client, web transfer). With both radios on, the watch no longer enters
   light sleep: it would miss the access point's beacons and answer only in bursts. This costs
   a little more; with Wi-Fi alone, light sleep stays.
+- **Turn Bluetooth off** (off by default): while Wi-Fi is on, Bluetooth is paused and Wi-Fi
+  gets the whole radio. With both on, the ESP32-S3 shares its antenna and Wi-Fi misses
+  beacons (pings of several seconds): useful for a big transfer. Bluetooth comes back by
+  itself when Wi-Fi stops.
 - If internal RAM runs short next to Bluetooth, the global switch says so (*Not enough
   memory*) and never turns Bluetooth off. Only WebRX, Radio and the analyzer may pause it
   while they play, as before.
@@ -78,8 +82,8 @@ The page has four tabs, in French or English:
 
 ### Updating through the web server
 
-The *Update* tab uploads the firmware without turning Bluetooth or MeshCore off (MeshCore
-keeps receiving). The watch shows progress, checks the image (ESP32-S3 chip, T-Watch project,
+The *Update* tab uploads the firmware without stopping MeshCore, which keeps receiving over
+LoRa. Bluetooth is paused during the upload, for speed, and comes back if it fails. The watch shows progress, checks the image (ESP32-S3 chip, T-Watch project,
 SHA-256 hash), installs it in the free slot and restarts. The same safety net applies: if the
 new version crashes within 30 s, the watch goes back to the old one. Refused below 30 %
 battery when not on USB.

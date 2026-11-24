@@ -44,6 +44,7 @@ static bool s_active;
 static bool s_ble_stopped;     /* Bluetooth arrêté par nous : l'abandon redémarre */
 static char s_pass[9];
 static char s_new_ver[32];
+static volatile bool s_installed;   /* image activée : redémarrage imminent */
 static httpd_handle_t s_httpd;
 static volatile int64_t s_last_activity_us;
 static esp_timer_handle_t s_idle_timer;
@@ -464,6 +465,7 @@ esp_err_t ota_http_update(httpd_req_t *r, bool web)
     httpd_resp_set_type(r, "text/plain; charset=utf-8");
     httpd_resp_set_hdr(r, "Connection", "close");
     httpd_resp_sendstr(r, s_new_ver);
+    s_installed = true;
     post_ev(OTA_EV_DONE);
     return ESP_OK;
 }
@@ -1011,3 +1013,4 @@ bool ota_active(void) { return s_active; }
 const char *ota_ssid(void) { return OTA_SSID; }
 const char *ota_password(void) { return s_pass; }
 const char *ota_new_version(void) { return s_new_ver; }
+bool ota_installed(void) { return s_installed; }
