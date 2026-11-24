@@ -203,7 +203,18 @@ void TWatchBoard::reboot()
 }
 
 uint32_t TWatchClock::getCurrentTime() { return (uint32_t)time(NULL); }
-void TWatchClock::setCurrentTime(uint32_t t) { wclock_set_utc((time_t)t); }
+/* MeshCore suppose une carte sans RTC : au démarrage, MyMesh::begin() met
+ * l'horloge à la dernière modification de contact + 1 s
+ * (bootstrapRTCfromContacts), ce qui reculait l'heure de la montre (et la
+ * RTC) jusqu'à la dernière annonce reçue. Une RTC valide ne recule donc
+ * jamais ici ; l'app compagnon ne peut de toute façon qu'avancer l'heure
+ * (CMD_SET_DEVICE_TIME refuse un temps passé), l'iPhone (CTS) la corrige
+ * dans les deux sens par wclock_set_utc(). */
+void TWatchClock::setCurrentTime(uint32_t t)
+{
+    if (wclock_time_valid() && (time_t)t < time(NULL)) return;
+    wclock_set_utc((time_t)t);
+}
 
 class HwRNG : public mesh::RNG {
 public:

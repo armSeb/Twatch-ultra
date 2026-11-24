@@ -2,6 +2,16 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.41 — 2026-11-24
+
+- Clock: the time no longer goes back at boot. MeshCore assumes a board without an RTC and,
+  when it starts, sets the clock to the last contact change + 1 s
+  (`bootstrapRTCfromContacts()`), which overwrote the watch's valid time and RTC with the
+  time of the last advert received (Seb saw 22:10 instead of 22:36 after a restart, fixed
+  once the iPhone synced the time). The MeshCore clock now never moves a valid RTC
+  backwards; the companion app can only move it forward anyway, and the iPhone time sync
+  (CTS) still corrects it both ways.
+
 ## 0.2.40 — 2026-11-24
 
 - Analog faces (Pub, Retro): the hands no longer jump when the screen wakes. LVGL timers do
