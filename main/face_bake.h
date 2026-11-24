@@ -10,7 +10,7 @@
 #pragma once
 #include "lvgl.h"
 
-/* Remplace base (un conteneur et ses enfants, tous fixes) par une image de
- * même place et même rang. Renvoie l'image, ou base si la mémoire manque
- * (le décor reste alors dessiné à chaque image, comme avant). */
-lv_obj_t *face_bake(lv_obj_t *base);
+/* Remplacera base (un conteneur et ses enfants, tous fixes) par une image de
+ * même place et même rang, au prochain passage des minuteurs LVGL. Si la
+ * mémoire manque, le décor reste dessiné à chaque image, comme avant. */
+void face_bake(lv_obj_t *base);

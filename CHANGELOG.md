@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.34 — 2026-11-24
+
+- 0.2.32 and 0.2.33 did not boot: baking the watch-face decor ran a full render from the
+  `main` task at start-up, whose 3.5 KB stack overflowed. The image is now rendered from an
+  LVGL timer, in the `app` task (8 KB, the one that draws the screen); until then the decor
+  is drawn as objects.
+
 ## 0.2.33 — 2026-11-24
 
 - *Énergie* screen: touching the "Animation" line runs a watch-face benchmark. It renders the
