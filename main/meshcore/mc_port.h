@@ -31,6 +31,17 @@ bool mc_ble_rx(const uint8_t *buf, size_t len); /* écriture sur la caractérist
 /* fourni par ble.c : notification sur la caractéristique TX */
 bool ble_mc_notify(const uint8_t *buf, size_t len);
 
+/* ---- côté TCP (mc_tcp.c) : app MeshCore en TCP/IP ou meshterm ----
+ * Serveur lancé par netsvc.c (réglage, Wi-Fi connecté, MeshCore actif). */
+#define MC_TCP_PORT 5000
+esp_err_t mc_tcp_start(void);
+void      mc_tcp_stop(void);
+bool      mc_tcp_running(void);
+bool      mc_tcp_client(char ip[16]);           /* une app est branchée (son adresse) */
+bool      mc_tcp_send(const uint8_t *buf, size_t len);   /* tâche mesh */
+void      mc_tcp_link(bool up);                 /* mc_port.cpp : app branchée / partie */
+bool      mc_tcp_rx(const uint8_t *buf, size_t len);     /* mc_port.cpp : trame reçue */
+
 /* ---- historique de la montre ----
  * Un anneau des MC_HIST_N derniers messages (reçus, et envoyés depuis l'app)
  * vit en PSRAM, sauvegardé sur la FAT interne. Avec une carte SD, chaque
@@ -102,7 +113,8 @@ typedef struct {
     int8_t   tx_dbm;
     int      contacts;
     int      app_queue;           /* messages pas encore récupérés par l'app */
-    bool     app_connected;
+    bool     app_connected;       /* par Bluetooth ou TCP */
+    bool     tcp_connected;
 } mc_status_t;
 void mc_get_status(mc_status_t *out);
 

@@ -73,8 +73,13 @@ corners)*
   MeshCore iPhone app connects over Bluetooth as a companion and sets the radio; the watch
   shows the latest messages, emoji included, and messages read on the watch are still
   delivered to the app. Built-in or external antenna — [guide](docs/en/meshcore.md).
-- **Settings** by section: display, alerts, motion, Bluetooth, **Wi-Fi** (transmit power,
-  8 to 20 dBm), **MeshCore** (on/off, antenna), battery, update.
+- **Settings** by section: display, alerts, motion, Bluetooth, **Wi-Fi** (on/off, network
+  choice, transmit power 8 to 20 dBm, off below 30 %), **MeshCore** (on/off, antenna, TCP
+  server), SD card, **web server**, battery, update.
+- **Global Wi-Fi** (control center and settings, up to 5 networks), shared with apps, next to
+  Bluetooth. Password-protected **web server**: settings, update without turning Bluetooth
+  off, SD card files. **MeshCore over TCP** (port 5000) for the app or meshterm —
+  [guide](docs/en/wifi.md).
 - Every peripheral the firmware does not use (GNSS, NFC, LoRa, SD card, speaker amplifier)
   has its power rail switched off.
 
@@ -112,6 +117,8 @@ calls still ring. A moon shows on the watch face.
 - **Close it**: swipe ↑ or →, or a short press on the button. The app is back as you left
   it: Radio and WebRX keep playing while you change the volume. One exception: a *Soar*
   game in progress goes back to the title screen.
+- **Wi-Fi**: short tap = on / off (the tile shows the network), long press = Wi-Fi settings.
+  **Settings** are under the gear, top right.
 - **Now playing**, **Settings** and **Torch** quit the app you came from (radio listening
   stops), like the usual back gesture.
 - **Global volume** (− / +, steps of 10 %) applies to every sound of the watch: beeps,
@@ -168,6 +175,7 @@ More: [building, flashing and tests](docs/en/building.md).
 | Architecture, power | [docs/en/architecture.md](docs/en/architecture.md) | [docs/fr/architecture.md](docs/fr/architecture.md) |
 | Hardware notes (pins, power rails, display) | [docs/en/hardware.md](docs/en/hardware.md) | [docs/fr/hardware.md](docs/fr/hardware.md) |
 | MeshCore (LoRa messages) | [docs/en/meshcore.md](docs/en/meshcore.md) | [docs/fr/meshcore.md](docs/fr/meshcore.md) |
+| Wi-Fi, web server, MeshCore over TCP | [docs/en/wifi.md](docs/en/wifi.md) | [docs/fr/wifi.md](docs/fr/wifi.md) |
 | WebRX (OpenWebRX client) | [docs/en/webrx.md](docs/en/webrx.md) | [docs/fr/webrx.md](docs/fr/webrx.md) |
 | Radio (web radios) | [docs/en/radio.md](docs/en/radio.md) | [docs/fr/radio.md](docs/fr/radio.md) |
 | Púca (virtual pet) | [docs/en/puca.md](docs/en/puca.md) | [docs/fr/puca.md](docs/fr/puca.md) |

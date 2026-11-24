@@ -57,4 +57,8 @@ void sd_unlock(void);
 typedef void (*sd_flush_cb_t)(void);
 void sd_add_flusher(sd_flush_cb_t cb);
 void sd_flush_soon(void);       /* demande un vidage rapide (n'importe quelle tâche) */
+/* Fichier gardé ouvert entre deux sd_lock() (transfert du serveur web) :
+ * cb le ferme, appelé sous le verrou juste avant tout démontage (éjection,
+ * retrait, partage USB). Le fichier n'est utilisé que sous sd_lock(). */
+void sd_add_closer(sd_flush_cb_t cb);
 void sd_flush_wait(int ms);     /* vidage tout de suite, attendu (avant un redémarrage) */

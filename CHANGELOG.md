@@ -2,6 +2,28 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.21 — 2026-11-24
+
+- Global Wi-Fi (`wifi_mgr.c`): one owner of the Wi-Fi driver. On/off from a new control-center
+  tile (long press opens the Wi-Fi settings; Settings moved to a gear, top right) and from
+  *Settings › Wi-Fi*, kept across restarts. Up to 5 saved networks (was 3), tried in order or a
+  chosen one; automatic retries (5 s … 5 min, radio off during long waits). WebRX, Radio and the
+  Wi-Fi analyzer reuse the connection when it is up, or hold Wi-Fi while they run.
+- Wi-Fi turns off when the battery drops below 30 % on battery (switchable, on by default).
+- Bluetooth coexistence: the global switch never stops Bluetooth; only WebRX, Radio and the
+  analyzer may still pause it when internal RAM is short, and it comes back when they quit.
+- Web server (off by default, *Settings › Web server*): status, settings, firmware update
+  without turning Bluetooth or MeshCore off, Wi-Fi/WebRX/radio lists, and SD card files
+  (optional: browse, download, upload ≤ 64 MB, new folder, delete; `/meshcore` read-only).
+  Challenge-response login with a random password shown on the watch, HttpOnly SameSite
+  session, lockout after failed attempts, CSRF header + Origin and Host checks, CSP. httpd
+  stack in PSRAM; flash writes go through an internal-stack worker.
+- MeshCore TCP server on port 5000 (*Settings › MeshCore*, off by default), same framing as
+  the upstream `SerialWifiInterface`, for the MeshCore app (TCP/IP) or meshterm; works next
+  to a Bluetooth app.
+- FATFS API in UTF-8 (SD file names with accents over the web).
+- Docs: `docs/fr|en/wifi.md`, new control-center screenshots.
+
 ## 0.2.20 — 2026-11-24
 
 - MeshCore archive on the SD card in JSON Lines (`/meshcore/c-<key>.jsonl`, `g-<key>.jsonl`),

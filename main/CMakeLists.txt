@@ -12,6 +12,7 @@ set(mc_sources ${mc_port} ${mc_up}/companion/MyMesh.cpp ${mc_up}/companion/DataS
 idf_component_register(
     SRCS ${app_sources} ${font_sources} ${mc_sources} ${mc_c}
     INCLUDE_DIRS "." "meshcore"
+    EMBED_TXTFILES "web/index.html"
 )
 
 # Avertissements stricts sur notre code (pas sur les polices générées)

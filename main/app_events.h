@@ -23,6 +23,8 @@ typedef enum {
     EV_OTA,             /* a = code OTA_EV_* (progression, fin, erreur)      */
     EV_APP,             /* a = (index app << 16) | code (app_post_event)     */
     EV_MOTION,          /* ligne INT du BHI260AP (geste « lever le poignet ») */
+    EV_WIFI,            /* a = WIFI_EV_* (wifi_mgr.h)                        */
+    EV_CALL,            /* a = (app_call_t *) : fonction à exécuter ici (app_call) */
     EV_COUNT,
 } app_ev_type_t;
 
@@ -37,6 +39,10 @@ extern uint32_t g_wake_cnt[EV_COUNT];
 
 bool app_post(const app_event_t *ev);
 bool app_post_from_isr(const app_event_t *ev, BaseType_t *hp_woken);
+
+/* exécute fn(arg) sur la tâche app et attend la fin (au plus timeout_ms
+ * avant le début) ; false = non exécuté. Jamais depuis la tâche app. */
+bool app_call(void (*fn)(void *), void *arg, int timeout_ms);
 
 static inline bool app_post_simple(app_ev_type_t type, int32_t a)
 {

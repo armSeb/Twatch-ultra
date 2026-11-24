@@ -168,3 +168,5 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 # FAT interne (MeshCore) : noms longs (« contacts3 », « /bl/<16 hex> »)
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=64
+# noms de fichiers en UTF-8 (carte SD vue par le serveur web)
+CONFIG_FATFS_API_ENCODING_UTF_8=y

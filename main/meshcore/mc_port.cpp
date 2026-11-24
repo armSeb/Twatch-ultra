@@ -218,61 +218,104 @@ TWatchBoard board;
 TWatchClock rtc_clock;
 TWatchSensors sensors;
 
-/* ================================================================== Bluetooth */
-/* Interface « série » du protocole compagnon : une trame = une écriture
- * (RX) ou une notification (TX), comme le firmware MeshCore pour ESP32. */
+/* ================================================================== app compagnon */
+/* Interface « série » du protocole compagnon, par deux chemins :
+ *  - Bluetooth (service NUS, ble.c) : une trame = une écriture (RX) ou une
+ *    notification (TX), comme le firmware MeshCore pour ESP32 ;
+ *  - TCP (mc_tcp.c, port 5000), comme SerialWifiInterface.
+ * Les réponses et les avis vont à l'app qui a parlé en dernier (une seule
+ * est normalement branchée) ; si elle part, l'autre prend le relais. */
 typedef struct { uint8_t len; uint8_t buf[MC_FRAME_MAX]; } frame_t;
-static QueueHandle_t s_ble_rxq;
-static volatile bool s_link;            /* l'app est abonnée aux notifications */
+enum { SRC_BLE = 0, SRC_TCP = 1 };
+static QueueHandle_t s_ble_rxq, s_tcp_rxq;
+static volatile bool s_link;            /* l'app est abonnée aux notifications Bluetooth */
+static volatile bool s_tcp_link;        /* une app est branchée en TCP */
+static volatile uint32_t s_tcp_sess;    /* +1 à chaque connexion TCP (une nouvelle remplace l'ancienne) */
 
-class BleCompanion : public BaseSerialInterface {
+class Companion : public BaseSerialInterface {
 public:
     void enable() override { enabled = true; }
     void disable() override { enabled = false; }
     bool isEnabled() const override { return enabled; }
-    bool isConnected() const override { return s_link; }
+    bool isConnected() const override { return s_link || s_tcp_link; }
     bool isWriteBusy() const override { return n >= TXQ; }
     size_t writeFrame(const uint8_t src[], size_t len) override
     {
-        if (!s_link || !len || len > MC_FRAME_MAX || n >= TXQ) return 0;
-        q[(head + n) % TXQ].len = (uint8_t)len;
-        memcpy(q[(head + n) % TXQ].buf, src, len);
+        if (!len || len > MC_FRAME_MAX || n >= TXQ) return 0;
+        int dst = target();
+        if (dst < 0) return 0;
+        txf_t &f = q[(head + n) % TXQ];
+        f.dst = (uint8_t)dst;
+        f.epoch = epoch[dst];
+        f.len = (uint8_t)len;
+        memcpy(f.buf, src, len);
         n++;
         return len;
     }
     size_t checkRecvFrame(uint8_t dest[]) override
     {
-        bool link = s_link;
-        if (link != was_link) {                         /* l'app arrive ou repart */
-            was_link = link;
-            n = 0;
-            if (!link && s_ble_rxq) xQueueReset(s_ble_rxq);
+        bool up[2] = { s_link, s_tcp_link };
+        uint32_t sess = s_tcp_sess;
+        if (sess != was_sess) { was_sess = sess; if (up[SRC_TCP]) was[SRC_TCP] = false; }  /* autre app TCP */
+        for (int i = 0; i < 2; i++) {
+            if (up[i] == was[i]) continue;              /* l'app arrive ou repart */
+            was[i] = up[i];
+            epoch[i]++;                                 /* ses trames en attente sont oubliées */
+            QueueHandle_t rq = i == SRC_BLE ? s_ble_rxq : s_tcp_rxq;
+            if (!up[i] && rq) xQueueReset(rq);
+            if (up[i]) active = (uint8_t)i;
         }
-        /* une notification tous les 60 ms au plus, comme l'original : iOS
-         * perd des notifications envoyées en rafale */
+        if (!up[active] && up[!active]) active = (uint8_t)!active;
         int64_t now = esp_timer_get_time();
-        if (n && now - last_tx >= 60000) {
-            if (ble_mc_notify(q[head].buf, q[head].len)) {
-                head = (head + 1) % TXQ;
-                n--;
+        /* envois : Bluetooth une notification tous les 60 ms au plus, comme
+         * l'original (iOS perd des notifications envoyées en rafale) ; TCP
+         * plusieurs trames d'affilée */
+        for (int k = 0; k < 4 && n; k++) {
+            txf_t &f = q[head];
+            if (f.epoch != epoch[f.dst] || !up[f.dst]) { pop(); continue; }
+            if (f.dst == SRC_TCP) {
+                mc_tcp_send(f.buf, f.len);              /* échec : la connexion est coupée */
+                pop();
+                continue;
             }
+            if (now - last_tx < 60000) break;
+            if (ble_mc_notify(f.buf, f.len)) pop();
             last_tx = now;                              /* échec (mbufs) : on réessaie */
+            break;
         }
         if (n) s_busy_until = now + 100000;
-        static frame_t f;
-        if (s_ble_rxq && xQueueReceive(s_ble_rxq, &f, 0) == pdTRUE) {
-            memcpy(dest, f.buf, f.len);
-            return f.len;
+        static frame_t fr;
+        for (int i = 0; i < 2; i++) {
+            int src = (active + i) % 2;                 /* l'app active d'abord */
+            QueueHandle_t rq = src == SRC_BLE ? s_ble_rxq : s_tcp_rxq;
+            if (rq && xQueueReceive(rq, &fr, 0) == pdTRUE) {
+                active = (uint8_t)src;
+                memcpy(dest, fr.buf, fr.len);
+                if (uxQueueMessagesWaiting(rq)) s_busy_until = now + 100000;
+                return fr.len;
+            }
         }
         return 0;
     }
     bool pending() const { return n > 0; }
 private:
+    typedef struct { uint8_t dst, epoch, len; uint8_t buf[MC_FRAME_MAX]; } txf_t;
     static const int TXQ = 16;
-    frame_t q[TXQ];
+    txf_t q[TXQ];
     int head = 0, n = 0;
     int64_t last_tx = 0;
-    bool enabled = false, was_link = false;
+    bool enabled = false, was[2] = { false, false };
+    uint8_t epoch[2] = { 0, 0 };
+    uint8_t active = SRC_BLE;
+    uint32_t was_sess = 0;
+    void pop() { head = (head + 1) % TXQ; n--; }
+    int target() const
+    {
+        if ((active == SRC_BLE ? s_link : s_tcp_link)) return active;
+        if (s_link) return SRC_BLE;
+        if (s_tcp_link) return SRC_TCP;
+        return -1;
+    }
 };
 
 extern "C" void mc_ble_link(bool up)
@@ -282,17 +325,29 @@ extern "C" void mc_ble_link(bool up)
     wake_task();
 }
 
-extern "C" bool mc_ble_rx(const uint8_t *buf, size_t len)
+static bool push_rx(QueueHandle_t q, const uint8_t *buf, size_t len)
 {
-    if (!s_ble_rxq || !len || len > MC_FRAME_MAX) return false;
+    if (!q || !len || len > MC_FRAME_MAX) return false;
     frame_t f;
     f.len = (uint8_t)len;
     memcpy(f.buf, buf, len);
-    if (xQueueSend(s_ble_rxq, &f, 0) != pdTRUE) return false;
+    if (xQueueSend(q, &f, 0) != pdTRUE) return false;
     s_busy_until = esp_timer_get_time() + BUSY_HOLD_MS * 1000LL;
     wake_task();
     return true;
 }
+
+extern "C" bool mc_ble_rx(const uint8_t *buf, size_t len) { return push_rx(s_ble_rxq, buf, len); }
+
+extern "C" void mc_tcp_link(bool up)
+{
+    if (up) s_tcp_sess = s_tcp_sess + 1;
+    s_tcp_link = up;
+    s_busy_until = esp_timer_get_time() + BUSY_HOLD_MS * 1000LL;
+    wake_task();
+}
+
+extern "C" bool mc_tcp_rx(const uint8_t *buf, size_t len) { return push_rx(s_tcp_rxq, buf, len); }
 
 /* ================================================================== historique montre */
 /* (mc_hist.c) : chaque message reçu ou envoyé depuis l'app y est copié */
@@ -368,7 +423,7 @@ alignas(DataStore) EXT_RAM_BSS_ATTR static uint8_t s_store_mem[sizeof(DataStore)
 alignas(SimpleMeshTables) EXT_RAM_BSS_ATTR static uint8_t s_tables_mem[sizeof(SimpleMeshTables)];
 static MyMesh *s_mesh;
 static DataStore *s_store;
-static BleCompanion *s_ble;
+static Companion *s_ble;
 static WatchListener s_listener;
 static StdRNG s_fast_rng;
 static int64_t s_offq_dirty_at;
@@ -388,7 +443,8 @@ static void update_status(void)
     t.tx_dbm = p->tx_power_dbm;
     t.contacts = s_mesh->getNumContacts();
     t.app_queue = s_mesh->getOfflineQueueLen();
-    t.app_connected = s_link;
+    t.app_connected = s_link || s_tcp_link;
+    t.tcp_connected = s_tcp_link;
     portENTER_CRITICAL(&s_st_mux);
     s_st = t;
     portEXIT_CRITICAL(&s_st_mux);
@@ -547,8 +603,9 @@ extern "C" esp_err_t mc_start(void)
         mch_init();
         s_rxq = xQueueCreate(RXQ_LEN, sizeof(rxpkt_t));
         s_ble_rxq = xQueueCreate(6, sizeof(frame_t));
-        s_ble = new (std::nothrow) BleCompanion();
-        if (!s_rxq || !s_ble_rxq || !s_ble) {
+        s_tcp_rxq = xQueueCreate(6, sizeof(frame_t));
+        s_ble = new (std::nothrow) Companion();
+        if (!s_rxq || !s_ble_rxq || !s_tcp_rxq || !s_ble) {
             heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
             return ESP_ERR_NO_MEM;
         }

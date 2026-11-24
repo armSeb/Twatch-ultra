@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang=fr>
+<head>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=referrer content=no-referrer>
+<title>T-Watch Ultra</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--fg:#e6edf3;--dim:#8b949e;--acc:#2f81f7;--ok:#3fb950;--bad:#f85149}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:18px;margin:0;flex:1}
+main{max-width:760px;margin:0 auto;padding:16px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+nav button{background:none;border:1px solid var(--line);color:var(--dim)}
+nav button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row label{flex:1}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px}
+.kv dt{color:var(--dim)}.kv dd{margin:0;word-break:break-word}
+button,select,input{font:inherit;color:var(--fg);background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:7px 12px}
+button{cursor:pointer;background:var(--acc);border-color:var(--acc);color:#fff}
+button.sec{background:none;color:var(--fg);border-color:var(--line)}
+button.dang{background:none;color:var(--bad);border-color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--acc)}
+input[type=range]{padding:0;width:160px;accent-color:var(--acc)}
+.msg{min-height:1.4em;margin-top:8px}.ok{color:var(--ok)}.bad{color:var(--bad)}.dim{color:var(--dim)}
+progress{width:100%;height:10px;accent-color:var(--acc)}
+table{width:100%;border-collapse:collapse}
+td{padding:7px 4px;border-top:1px solid var(--line);vertical-align:middle}
+td.n{word-break:break-all}td.s{white-space:nowrap;text-align:right;color:var(--dim)}
+td.a{white-space:nowrap;text-align:right}
+td.a button{padding:4px 9px;margin-left:4px}
+a{color:var(--acc)}
+.crumb{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:8px}
+.crumb a{cursor:pointer}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+#login{max-width:360px;margin:12vh auto}
+#login input{width:100%;margin:10px 0;letter-spacing:.12em}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<header><h1>T-Watch Ultra</h1><button id=lang class=sec></button><button id=out class="sec hide" data-t=logout></button></header>
+<main>
+<div id=login class="card hide">
+ <h2 data-t=login></h2>
+ <p class=dim data-t=pwhelp></p>
+ <form id=lf><input id=pw type=password autocomplete=current-password autocapitalize=off spellcheck=false maxlength=32 required>
+ <button id=lb data-t=connect></button></form>
+ <div id=lm class=msg></div>
+</div>
+<div id=app class=hide>
+ <nav><button data-v=st data-t=t_st></button><button data-v=se data-t=t_se></button><button data-v=up data-t=t_up></button><button data-v=fi data-t=t_fi></button></nav>
+
+ <section id=v_st>
+  <div class=card><h2 data-t=watch></h2><dl class=kv id=kv_w></dl></div>
+  <div class=card><h2>Wi-Fi</h2><dl class=kv id=kv_n></dl></div>
+  <div class=card><h2>MeshCore</h2><dl class=kv id=kv_m></dl></div>
+  <div class=card><h2 data-t=sdcard></h2><dl class=kv id=kv_s></dl></div>
+ </section>
+
+ <section id=v_se class=hide>
+  <form id=sf></form>
+  <div class=tools><button id=ss data-t=save></button><button id=sr class=sec data-t=reload></button></div>
+  <div id=sm class=msg></div>
+ </section>
+
+ <section id=v_up class=hide>
+  <div class=card><h2 data-t=fw></h2>
+   <p class=dim data-t=fwhelp></p>
+   <p><span class=dim data-t=cur></span> <b id=ver></b></p>
+   <input id=ff type=file accept=".bin">
+   <div class=tools><button id=fb data-t=send disabled></button></div>
+   <progress id=fp class=hide max=100 value=0></progress>
+   <div id=fm class=msg></div>
+  </div>
+  <div class=card><h2 data-t=nets></h2><p class=dim data-t=netshelp></p><a href="/webrx" data-t=netsopen></a></div>
+ </section>
+
+ <section id=v_fi class=hide>
+  <div class=card>
+   <div class=crumb id=cr></div>
+   <table><tbody id=fl></tbody></table>
+   <div id=fmore class="dim hide" data-t=more></div>
+   <div class=tools>
+    <input id=uf type=file multiple class=hide>
+    <button id=ub data-t=upload></button><button id=mk class=sec data-t=mkdir></button><button id=rf class=sec data-t=reload></button>
+   </div>
+   <progress id=up class=hide max=100 value=0></progress>
+   <div id=um class=msg></div>
+   <div id=sdfree class=dim></div>
+  </div>
+ </section>
+</div>
+</main>
+<script>
+"use strict";
+const T={fr:{login:"Connexion",pwhelp:"Mot de passe affiché sur la montre : Réglages > Serveur web.",connect:"Se connecter",logout:"Déconnexion",
+t_st:"État",t_se:"Réglages",t_up:"Mise à jour",t_fi:"Fichiers",watch:"Montre",sdcard:"Carte SD",save:"Enregistrer",reload:"Actualiser",
+fw:"Firmware",fwhelp:"Choisir le fichier twatch-ultra-x.y.z.bin. La montre le vérifie, l'installe dans l'emplacement libre puis redémarre ; MeshCore continue de recevoir pendant l'envoi.",
+cur:"Version actuelle :",send:"Envoyer",nets:"Réseaux Wi-Fi, WebRX et radios",netshelp:"Réseaux connus (jusqu'à 5), serveurs WebRX et webradios.",netsopen:"Ouvrir la page",
+more:"Dossier trop grand : liste coupée.",upload:"Envoyer des fichiers",mkdir:"Nouveau dossier",dl:"Télécharger",del:"Supprimer",
+version:"Version",uptime:"Allumée depuis",battery:"Batterie",usb:"sur USB",charging:"en charge",network:"Réseau",ip:"Adresse",signal:"Signal",
+bt:"Bluetooth",on:"actif",off:"coupé",node:"Nœud",radio:"Radio",contacts:"Contacts",queue:"Messages en attente",app:"Appli",tcp:"Serveur TCP",
+none:"aucune",state:"État",free:"Libre",mem:"Mémoire libre",
+sd_mounted:"montée",sd_ejected:"éjectée",sd_failed:"illisible",sd_shared:"prêtée au PC (USB)",sd_absent:"absente",
+g_screen:"Écran",g_notif:"Notifications et son",g_wake:"Réveil et mouvement",g_radio:"Bluetooth et MeshCore",g_wifi:"Wi-Fi et serveur web",
+bright:"Luminosité",tmo:"Mise en veille (s)",face:"Cadran",lang:"Langue",vib:"Vibreur",nwake:"Allumer l'écran à chaque notification",
+dnd:"Ne pas déranger",silent:"Silencieux",vol:"Volume",tap:"Double tape pour réveiller",wrist:"Lever le poignet",wsens:"Sensibilité du geste",
+glance:"Coup d'œil",gpct:"Luminosité du coup d'œil (%)",gdur:"Durée du coup d'œil (s)",steps:"Podomètre",mesh:"MeshCore",
+ant:"Antenne LoRa externe",mtcp:"Serveur TCP MeshCore (port 5000)",wpwr:"Puissance d'émission",wlow:"Couper sous 30 % de batterie",wnet:"Réseau",
+websd:"Accès aux fichiers de la carte SD",auto:"Automatique",low:"Basse",mid:"Moyenne",high:"Haute",
+saved:"Enregistré.",err:"Erreur : ",bad_pw:"Mot de passe incorrect.",locked:"Trop d'essais : réessayer dans %s s.",
+sending:"Envoi… %s %%",checking:"Vérification…",fwdone:"Version %s installée : la montre redémarre.",
+exists:"« %s » existe déjà. Le remplacer ?",confirmdel:"Supprimer « %s » ?",newdir:"Nom du dossier :",
+e_busy:"Une mise à jour est déjà en cours.",e_battery:"Batterie sous 30 % : brancher la montre.",e_not_esp32:"Ce n'est pas un firmware ESP32-S3.",
+e_not_twatch:"Ce n'est pas un firmware T-Watch Ultra.",e_bad_size:"Taille de fichier invalide.",e_corrupt:"Image corrompue (empreinte fausse).",
+e_net:"Transfert interrompu.",e_flash_prep:"Effacement impossible.",e_flash_write:"Erreur d'écriture.",e_rejected:"Image refusée.",e_activate:"Activation impossible.",
+e_no_slot:"Pas d'emplacement libre.",e_sd_off:"Accès aux fichiers coupé (Réglages > Serveur web).",e_sd_shared:"Carte prêtée au PC par l'USB.",
+e_sd_none:"Pas de carte montée.",e_readonly:"Dossier en lecture seule.",e_space:"Pas assez de place.",e_big:"Fichier trop gros (64 Mo au plus).",
+e_path:"Nom invalide (caractères interdits : \\ / : * ? \" < > |).",e_nodir:"Dossier introuvable.",e_nofile:"Fichier introuvable.",e_notempty:"Dossier non vide.",
+e_isdir:"Un dossier porte ce nom.",e_write:"Écriture impossible.",e_csrf:"Requête refusée.",e_value:"Valeur refusée : ",e_auth:"Session expirée.",offline:"Montre injoignable."},
+en:{login:"Sign in",pwhelp:"Password shown on the watch: Settings > Web server.",connect:"Sign in",logout:"Sign out",
+t_st:"Status",t_se:"Settings",t_up:"Update",t_fi:"Files",watch:"Watch",sdcard:"SD card",save:"Save",reload:"Refresh",
+fw:"Firmware",fwhelp:"Pick the twatch-ultra-x.y.z.bin file. The watch checks it, installs it in the free slot and restarts; MeshCore keeps receiving during the upload.",
+cur:"Current version:",send:"Upload",nets:"Wi-Fi networks, WebRX and radios",netshelp:"Known networks (up to 5), WebRX servers and web radios.",netsopen:"Open the page",
+more:"Folder too large: list truncated.",upload:"Upload files",mkdir:"New folder",dl:"Download",del:"Delete",
+version:"Version",uptime:"Up for",battery:"Battery",usb:"on USB",charging:"charging",network:"Network",ip:"Address",signal:"Signal",
+bt:"Bluetooth",on:"on",off:"off",node:"Node",radio:"Radio",contacts:"Contacts",queue:"Queued messages",app:"App",tcp:"TCP server",
+none:"none",state:"State",free:"Free",mem:"Free memory",
+sd_mounted:"mounted",sd_ejected:"ejected",sd_failed:"unreadable",sd_shared:"shared with PC (USB)",sd_absent:"none",
+g_screen:"Screen",g_notif:"Notifications and sound",g_wake:"Wake and motion",g_radio:"Bluetooth and MeshCore",g_wifi:"Wi-Fi and web server",
+bright:"Brightness",tmo:"Screen timeout (s)",face:"Watch face",lang:"Language",vib:"Vibration",nwake:"Turn screen on for each notification",
+dnd:"Do not disturb",silent:"Silent",vol:"Volume",tap:"Double tap to wake",wrist:"Raise to wake",wsens:"Gesture sensitivity",
+glance:"Glance",gpct:"Glance brightness (%)",gdur:"Glance duration (s)",steps:"Step counter",mesh:"MeshCore",
+ant:"External LoRa antenna",mtcp:"MeshCore TCP server (port 5000)",wpwr:"Transmit power",wlow:"Turn off below 30 % battery",wnet:"Network",
+websd:"SD card file access",auto:"Automatic",low:"Low",mid:"Medium",high:"High",
+saved:"Saved.",err:"Error: ",bad_pw:"Wrong password.",locked:"Too many attempts: retry in %s s.",
+sending:"Uploading… %s %%",checking:"Checking…",fwdone:"Version %s installed: the watch restarts.",
+exists:"“%s” already exists. Replace it?",confirmdel:"Delete “%s”?",newdir:"Folder name:",
+e_busy:"An update is already running.",e_battery:"Battery below 30 %: plug the watch in.",e_not_esp32:"Not an ESP32-S3 firmware.",
+e_not_twatch:"Not a T-Watch Ultra firmware.",e_bad_size:"Invalid file size.",e_corrupt:"Corrupt image (bad hash).",
+e_net:"Transfer interrupted.",e_flash_prep:"Erase failed.",e_flash_write:"Write error.",e_rejected:"Image rejected.",e_activate:"Activation failed.",
+e_no_slot:"No free slot.",e_sd_off:"File access is off (Settings > Web server).",e_sd_shared:"Card shared with the PC over USB.",
+e_sd_none:"No card mounted.",e_readonly:"Read-only folder.",e_space:"Not enough space.",e_big:"File too large (64 MB max).",
+e_path:"Invalid name (forbidden: \\ / : * ? \" < > |).",e_nodir:"Folder not found.",e_nofile:"File not found.",e_notempty:"Folder not empty.",
+e_isdir:"A folder has that name.",e_write:"Write failed.",e_csrf:"Request refused.",e_value:"Value refused: ",e_auth:"Session expired.",offline:"Watch unreachable."}};
+let L=(()=>{try{const v=localStorage.getItem("tw_lang");if(v==="fr"||v==="en")return v}catch(e){}return(navigator.language||"fr").slice(0,2)==="fr"?"fr":"en"})();
+const $=id=>document.getElementById(id);
+const t=(k,a)=>{let s=(T[L][k]!==undefined?T[L][k]:k);return a===undefined?s:s.replace("%s",a)};
+function el(tag,attrs,...kids){const e=document.createElement(tag);if(attrs)for(const k in attrs){if(k==="text")e.textContent=attrs[k];else if(k.startsWith("on"))e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k])}for(const c of kids)e.append(c);return e}
+function errText(code,key){const k="e_"+code;return T[L][k]!==undefined?t(k)+(key?key:""):t("err")+code}
+function msg(id,text,cls){const m=$(id);m.textContent=text||"";m.className="msg "+(cls||"")}
+function applyLang(){document.documentElement.lang=L;$("lang").textContent=L==="fr"?"EN":"FR";
+ document.querySelectorAll("[data-t]").forEach(e=>e.textContent=t(e.dataset.t));if(cfg)buildSettings();if(stat)showStatus(stat)}
+
+/* ---- SHA-256 (pas de crypto.subtle hors HTTPS) ---- */
+function sha256(str){const b=new TextEncoder().encode(str),K=[],H=[];let p=2;
+ const fr=x=>(x-Math.floor(x))*4294967296|0;
+ for(let n=0;n<64;p++){let q=true;for(let d=2;d*d<=p;d++)if(p%d===0){q=false;break}if(q){if(n<8)H[n]=fr(Math.pow(p,1/2));K[n++]=fr(Math.pow(p,1/3))}}
+ const l=b.length,nb=((l+9+63)>>6)<<6,m=new Uint8Array(nb);m.set(b);m[l]=0x80;const dv=new DataView(m.buffer);
+ dv.setUint32(nb-4,l*8>>>0);dv.setUint32(nb-8,Math.floor(l/536870912));
+ const w=new Int32Array(64),r=(x,n)=>x>>>n|x<<32-n;
+ for(let o=0;o<nb;o+=64){for(let i=0;i<16;i++)w[i]=dv.getInt32(o+i*4);
+  for(let i=16;i<64;i++){const a=w[i-15],c=w[i-2];w[i]=(w[i-16]+(r(a,7)^r(a,18)^a>>>3)+w[i-7]+(r(c,17)^r(c,19)^c>>>10))|0}
+  let[a,bb,c,d,e,f,g,h]=H;
+  for(let i=0;i<64;i++){const t1=(h+(r(e,6)^r(e,11)^r(e,25))+(e&f^~e&g)+K[i]+w[i])|0,t2=((r(a,2)^r(a,13)^r(a,22))+(a&bb^a&c^bb&c))|0;
+   h=g;g=f;f=e;e=(d+t1)|0;d=c;c=bb;bb=a;a=(t1+t2)|0}
+  H[0]=H[0]+a|0;H[1]=H[1]+bb|0;H[2]=H[2]+c|0;H[3]=H[3]+d|0;H[4]=H[4]+e|0;H[5]=H[5]+f|0;H[6]=H[6]+g|0;H[7]=H[7]+h|0}
+ return H.map(x=>(x>>>0).toString(16).padStart(8,"0")).join("")}
+
+/* ---- requêtes ---- */
+async function api(path,opt){opt=opt||{};const h={};if(opt.method==="POST")h["X-TW"]="1";
+ if(opt.json!==undefined){h["Content-Type"]="application/json";opt.body=JSON.stringify(opt.json)}
+ let r;try{r=await fetch(path,{method:opt.method||"GET",headers:h,body:opt.body,credentials:"same-origin",cache:"no-store"})}
+ catch(e){return{ok:false,status:0,j:{err:"offline"}}}
+ let j={};try{j=await r.json()}catch(e){}
+ if(r.status===401&&path!=="/api/login"){showLogin(t("e_auth"));}
+ return{ok:r.ok,status:r.status,j}}
+function xhr(url,file,prog){return new Promise(res=>{const x=new XMLHttpRequest();x.open("POST",url);x.setRequestHeader("X-TW","1");
+ x.upload.onprogress=e=>{if(e.lengthComputable)prog(Math.floor(e.loaded*100/e.total))};
+ x.onload=()=>res({status:x.status,text:x.responseText});x.onerror=()=>res({status:0,text:"net"});x.send(file)})}
+
+/* ---- connexion ---- */
+function showLogin(m){$("app").classList.add("hide");$("out").classList.add("hide");$("login").classList.remove("hide");msg("lm",m||"","bad");$("pw").focus()}
+$("lf").addEventListener("submit",async ev=>{ev.preventDefault();const pw=$("pw").value.trim().toLowerCase();if(!pw)return;$("lb").disabled=true;
+ const n=await api("/api/nonce");
+ if(n.ok&&n.j.n){const r=await api("/api/login",{method:"POST",json:{n:n.j.n,h:sha256(n.j.n+":"+pw)}});
+  if(r.ok){$("pw").value="";$("login").classList.add("hide");start()}
+  else msg("lm",r.status===429?t("locked",r.j.s):r.status===401?t("bad_pw"):errText(r.j.err||"offline"),"bad")}
+ else msg("lm",errText(n.j.err||"offline"),"bad");
+ $("lb").disabled=false});
+$("out").onclick=async()=>{await api("/api/logout",{method:"POST"});cfg=stat=null;showLogin()};
+$("lang").onclick=()=>{L=L==="fr"?"en":"fr";try{localStorage.setItem("tw_lang",L)}catch(e){}applyLang()};
+
+/* ---- vues ---- */
+let view="st",timer=null;
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>show(b.dataset.v));
+function show(v){view=v;document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+ for(const k of["st","se","up","fi"])$("v_"+k).classList.toggle("hide",k!==v);
+ if(v==="st")loadStatus();if(v==="se")loadSettings();if(v==="fi")list(cwd);if(v==="up")loadStatus()}
+async function start(){$("app").classList.remove("hide");$("out").classList.remove("hide");show(view);
+ clearInterval(timer);timer=setInterval(()=>{if(view==="st"&&!document.hidden)loadStatus()},5000)}
+
+/* ---- état ---- */
+let stat=null;
+const size=n=>n<1024?n+" o":n<1048576?(n/1024).toFixed(1)+" Ko":n<1073741824?(n/1048576).toFixed(1)+" Mo":(n/1073741824).toFixed(2)+" Go";
+const sizeU=n=>L==="fr"?size(n).replace(".",","):size(n).replace(" o"," B").replace("Ko","KB").replace("Mo","MB").replace("Go","GB");
+function dur(s){const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+(L==="fr"?" j ":" d "):"")+h+" h "+m+" min"}
+function kv(id,rows){const d=$(id);d.replaceChildren();for(const[k,v]of rows){d.append(el("dt",{text:k}),el("dd",{text:v}))}}
+async function loadStatus(){const r=await api("/api/status");if(!r.ok)return;stat=r.j;showStatus(stat)}
+function showStatus(s){$("ver").textContent=s.v;
+ kv("kv_w",[[t("version"),s.v],[t("uptime"),dur(s.up)],[t("battery"),(s.bat>=0?s.bat+" %":"?")+(s.usb?" · "+t("usb"):"")+(s.chg?" · "+t("charging"):"")],
+  [t("bt"),t(s.bt?"on":"off")],[t("mem"),sizeU(s.heap)+" + PSRAM "+sizeU(s.psram)]]);
+ kv("kv_n",[[t("network"),s.ssid||"—"],[t("ip"),s.ip||"—"],[t("signal"),s.rssi?s.rssi+" dBm":"—"]]);
+ kv("kv_m",s.mesh?[[t("node"),s.node],[t("radio"),s.mfreq.toFixed(3)+" MHz · BW "+s.mbw+" kHz · SF"+s.msf+" · CR4/"+s.mcr+" · "+s.mtx+" dBm"],
+  [t("contacts"),String(s.mcontacts)],[t("queue"),String(s.mqueue)],[t("app"),s.mapp?(s.mclient?"TCP "+s.mclient:"Bluetooth"):t("none")],
+  [t("tcp"),s.mtcp?t("on")+" · "+(s.ip||"")+":5000":t("off")]]:[[t("state"),t("off")]]);
+ kv("kv_s",[[t("state"),t("sd_"+s.sd)]].concat(s.sd==="mounted"?[[t("free"),sizeU(s.sdfree)+" / "+sizeU(s.sdtot)]]:[]));
+ $("ub").disabled=$("mk").disabled=!s.websd}
+
+/* ---- réglages ---- */
+let cfg=null;
+const LV=()=>({face:[[0,L==="fr"?"Rétro":"Retro"],[2,"Pub"],[1,"Digital"]],lang:[[0,"Français"],[1,"English"]],tmo:[5,8,10,15,30],gpct:[10,25,50],gdur:[3,4,6],
+ wsens:[[0,t("low")],[1,t("mid")],[2,t("high")]],wpwr:[[0,"8 dBm"],[1,"13 dBm"],[2,"17 dBm"],[3,"20 dBm"]]});
+const GROUPS=[["g_screen",["bright","tmo","face","lang"]],["g_notif",["vib","nwake","dnd","silent","vol"]],
+ ["g_wake",["tap","wrist","wsens","glance","gpct","gdur","steps"]],["g_radio",["bt","mesh","ant","mtcp"]],["g_wifi",["wnet","wpwr","wlow","websd"]]];
+async function loadSettings(){msg("sm","");const r=await api("/api/settings");if(!r.ok){if(r.status!==401)msg("sm",errText(r.j.err||"offline"),"bad");return}cfg=r.j;buildSettings()}
+function buildSettings(){const f=$("sf");f.replaceChildren();const lv=LV();
+ for(const[g,keys]of GROUPS){const c=el("div",{class:"card"},el("h2",{text:t(g)}));
+  for(const k of keys){if(!(k in cfg))continue;const id="f_"+k;let inp;
+   if(typeof cfg[k]==="boolean"){inp=el("input",{type:"checkbox",id});inp.checked=cfg[k]}
+   else if(k==="bright"||k==="vol"){inp=el("input",{type:"range",id,min:k==="bright"?10:0,max:k==="bright"?255:100});inp.value=cfg[k]}
+   else{inp=el("select",{id});let opts=lv[k];
+    if(k==="wnet"){opts=[[0,t("auto")]];(cfg.nets||[]).forEach((n,i)=>{if(n)opts.push([i+1,n])})}
+    for(const o of opts){const[v,txt]=Array.isArray(o)?o:[o,String(o)];const op=el("option",{value:String(v),text:txt});if(v===cfg[k])op.selected=true;inp.append(op)}}
+   c.append(el("div",{class:"row"},el("label",{for:id,text:t(k)}),inp))}
+  f.append(c)}}
+$("ss").onclick=async()=>{if(!cfg)return;const p={};
+ for(const[,keys]of GROUPS)for(const k of keys){const e=$("f_"+k);if(!e)continue;const v=e.type==="checkbox"?e.checked:parseInt(e.value,10);if(v!==cfg[k])p[k]=v}
+ if(!Object.keys(p).length){msg("sm",t("saved"),"ok");return}
+ $("ss").disabled=true;const r=await api("/api/settings",{method:"POST",json:p});$("ss").disabled=false;
+ if(r.ok){msg("sm",t("saved"),"ok");if(p.lang!==undefined){L=p.lang===1?"en":"fr";try{localStorage.setItem("tw_lang",L)}catch(e){}}await loadSettings();applyLang();msg("sm",t("saved"),"ok")}
+ else if(r.status!==401)msg("sm",r.j.err==="value"?t("e_value")+t(r.j.key):errText(r.j.err||"offline"),"bad")};
+$("sr").onclick=loadSettings;
+
+/* ---- mise à jour ---- */
+$("ff").onchange=()=>{$("fb").disabled=!$("ff").files.length;msg("fm","")};
+$("fb").onclick=async()=>{const f=$("ff").files[0];if(!f)return;$("fb").disabled=$("ff").disabled=true;$("fp").classList.remove("hide");$("fp").value=0;
+ const r=await xhr("/api/ota",f,p=>{$("fp").value=p;msg("fm",p<100?t("sending",p):t("checking"))});
+ $("ff").disabled=false;
+ if(r.status===200){msg("fm",t("fwdone",r.text),"ok");return}
+ $("fb").disabled=false;let code=r.text;try{code=JSON.parse(r.text).err}catch(e){}
+ if(r.status===401)return showLogin(t("e_auth"));
+ msg("fm",errText(r.status?code.trim():"net"),"bad")};
+
+/* ---- fichiers ---- */
+let cwd="/";
+const join=(d,n)=>(d==="/"?"":d)+"/"+n;
+const q=p=>encodeURIComponent(p);
+function crumb(){const c=$("cr");c.replaceChildren();const parts=cwd.split("/").filter(Boolean);let acc="";
+ c.append(el("a",{text:"SD",onclick:()=>list("/")}));
+ for(const p of parts){acc+="/"+p;const to=acc;c.append(" / ",el("a",{text:p,onclick:()=>list(to)}))}}
+async function list(p){msg("um","");const r=await api("/api/sd/list?p="+q(p));const tb=$("fl");
+ if(!r.ok){tb.replaceChildren();$("fmore").classList.add("hide");$("sdfree").textContent="";if(r.status!==401)msg("um",errText(r.j.err||"offline"),"bad");
+  if(r.j.err==="nodir"&&p!=="/")return list("/");return}
+ cwd=r.j.p;crumb();tb.replaceChildren();const ro=r.j.ro;
+ const e=r.j.e.sort((a,b)=>b.d-a.d||a.n.localeCompare(b.n,undefined,{numeric:true,sensitivity:"base"}));
+ if(cwd!=="/"){const up=cwd.slice(0,cwd.lastIndexOf("/"))||"/";tb.append(el("tr",null,el("td",{class:"n"},el("a",{text:"..",onclick:()=>list(up)})),el("td"),el("td")))}
+ for(const f of e){const path=join(cwd,f.n);const acts=el("td",{class:"a"});
+  if(!f.d){const a=el("a",{href:"/api/sd/get?p="+q(path),download:f.n});a.append(el("button",{class:"sec",type:"button",text:t("dl")}));acts.append(a)}
+  if(!ro&&!(cwd==="/"&&/^(logs|meshcore)$/i.test(f.n)))acts.append(el("button",{class:"dang",type:"button",text:t("del"),onclick:()=>del(path,f.n)}));
+  tb.append(el("tr",null,el("td",{class:"n"},f.d?el("a",{text:f.n+"/",onclick:()=>list(path)}):document.createTextNode(f.n)),
+   el("td",{class:"s",text:f.d?"":sizeU(f.s)}),acts))}
+ $("fmore").classList.toggle("hide",!r.j.more);
+ $("ub").disabled=$("mk").disabled=ro;
+ $("sdfree").textContent=t("free")+" : "+sizeU(r.j.free)+" / "+sizeU(r.j.tot)}
+async function del(path,name){if(!confirm(t("confirmdel",name)))return;const r=await api("/api/sd/del?p="+q(path),{method:"POST"});
+ if(!r.ok&&r.status!==401)return msg("um",errText(r.j.err||"offline"),"bad");list(cwd)}
+$("mk").onclick=async()=>{const n=(prompt(t("newdir"))||"").trim();if(!n)return;if(/[\\/:*?"<>|]/.test(n)||n==="."||n==="..")return msg("um",t("e_path"),"bad");
+ const r=await api("/api/sd/mkdir?p="+q(join(cwd,n)),{method:"POST"});if(!r.ok&&r.status!==401)return msg("um",errText(r.j.err||"offline"),"bad");list(cwd)};
+$("rf").onclick=()=>list(cwd);
+$("ub").onclick=()=>$("uf").click();
+$("uf").onchange=async()=>{const files=[...$("uf").files];$("uf").value="";if(!files.length)return;$("ub").disabled=true;$("up").classList.remove("hide");
+ for(const f of files){if(/[\\/:*?"<>|]/.test(f.name)){msg("um",f.name+" : "+t("e_path"),"bad");continue}
+  const path=join(cwd,f.name);let ov=0;
+  for(;;){$("up").value=0;const r=await xhr("/api/sd/put?p="+q(path)+(ov?"&o=1":""),f,p=>{$("up").value=p;msg("um",f.name+" — "+t("sending",p))});
+   let j={};try{j=JSON.parse(r.text)}catch(e){}
+   if(r.status===409&&j.err==="exists"&&!ov){if(confirm(t("exists",f.name))){ov=1;continue}break}
+   if(r.status===401){$("up").classList.add("hide");return showLogin(t("e_auth"))}
+   if(r.status!==200){msg("um",f.name+" : "+errText(r.status?j.err||"net":"net"),"bad");$("up").classList.add("hide");$("ub").disabled=false;return list(cwd).then(()=>msg("um",f.name+" : "+errText(r.status?j.err||"net":"net"),"bad"))}
+   break}}
+ $("up").classList.add("hide");$("ub").disabled=false;await list(cwd);msg("um",t("saved"),"ok")};
+
+/* ---- démarrage ---- */
+applyLang();
+(async()=>{const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store"}).catch(()=>null);
+ if(r&&r.ok){start()}else showLogin(r?"":t("offline"))})();
+</script>
+</body>
+</html>

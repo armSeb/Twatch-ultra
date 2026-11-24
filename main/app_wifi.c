@@ -2,12 +2,13 @@
  * app_wifi.c — analyseur Wi-Fi : réseaux à portée (RSSI, canal, sécurité),
  * occupation des canaux 2,4 GHz, fiche détaillée de chaque point d'accès.
  *
- * Énergie : le Wi-Fi n'existe que tant que l'app est visible, écran allumé.
- *   on_show  → esp_wifi_init (mode station, rien n'est enregistré en NVS)
- *   relève   → esp_wifi_start + balayage actif (~1,2 s), puis esp_wifi_stop :
- *              la radio est coupée entre deux relèves (4 s)
- *   on_hide  → (écran éteint, autre écran, autre app) arrêt et esp_wifi_deinit,
- *              toute la mémoire du pilote est rendue.
+ * Énergie : l'app ne tient le Wi-Fi (wifi_mgr) que tant qu'elle est visible,
+ * écran allumé.
+ *   on_show  → wifi_acquire (mode station, rien n'est enregistré en NVS)
+ *   relève   → radio allumée + balayage actif (~1,2 s), puis radio coupée
+ *              entre deux relèves (4 s), sauf si le Wi-Fi global est connecté
+ *   on_hide  → (écran éteint, autre écran, autre app) wifi_release : sans
+ *              autre utilisateur, toute la mémoire du pilote est rendue.
  * Le Bluetooth reste connecté pendant les balayages (coexistence logicielle).
  *
  * Le modèle (points d'accès, historique RSSI) vit en PSRAM et survit à la mise
@@ -25,13 +26,13 @@
 #include "power.h"
 #include "display.h"
 #include "esp_wifi.h"
+#include "wifi_mgr.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "src/misc/lv_area_private.h"   /* lv_area_intersect */
 
-static const char *TAG = "wifi_app";
 
 #define MAX_AP      40
 #define MAX_REC     40
@@ -72,8 +73,6 @@ static uint32_t s_scan_no;
 static wifi_ap_record_t *s_rec; /* tampon de relève, alloué pendant la vie du Wi-Fi */
 
 static bool    s_inited, s_started, s_scanning, s_paused, s_visible, s_err_mem;
-static bool    s_ble_paused;   /* Bluetooth arrêté par l'app faute de RAM, à relancer en sortant */
-static void    ble_resume(void);
 static int64_t s_next_us, s_scan_t0;
 static esp_event_handler_instance_t s_evh;
 static uint8_t s_det[6];        /* AP affiché en détail */
@@ -251,42 +250,21 @@ static bool wifi_up(void)
     if (s_inited) return true;
     if (ota_active()) return false;
     s_err_mem = false;
-    esp_err_t e = esp_event_loop_create_default();
-    if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) { s_err_mem = true; return false; }
     if (!s_rec) {
         s_rec = heap_caps_malloc(sizeof(wifi_ap_record_t) * MAX_REC, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!s_rec) s_rec = malloc(sizeof(wifi_ap_record_t) * MAX_REC);
         if (!s_rec) { s_err_mem = true; return false; }
     }
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    cfg.nvs_enable = 0;                        /* rien à mémoriser */
-    e = esp_wifi_init(&cfg);
-    if (e != ESP_OK && ble_running()) {
-        /* pas assez de RAM interne à côté du Bluetooth : on le suspend le
-         * temps de l'analyse (relancé dans wifi_down) et on réessaie */
-        ESP_LOGW(TAG, "esp_wifi_init: %s, Bluetooth suspendu", esp_err_to_name(e));
-        ble_diag("Wi-Fi : Bluetooth suspendu (RAM)");
-        ble_stop();
-        if (!ble_running()) {
-            s_ble_paused = true;
-            ui_toast(_("Bluetooth en pause pendant l'analyse"));
-            esp_wifi_deinit();                   /* au cas où l'échec ait laissé un état partiel */
-            e = esp_wifi_init(&cfg);
-        }
-    }
-    if (e != ESP_OK) {
-        ESP_LOGW(TAG, "esp_wifi_init: %s (interne libre %u, bloc %u)", esp_err_to_name(e),
-                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    /* Wi-Fi partagé (wifi_mgr) : déjà connecté, il le reste pendant
+     * l'analyse ; sinon la radio n'est allumée que le temps des relèves.
+     * Faute de RAM interne, le Bluetooth est suspendu le temps de l'app. */
+    bool ble_was = ble_running();
+    if (wifi_acquire(WIFI_HOLD_SCAN, WIFI_ACQ_PAUSE_BLE) != ESP_OK) {
         s_err_mem = true;
-        ble_resume();
         return false;
     }
-    esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    esp_wifi_set_mode(WIFI_MODE_STA);
-    esp_wifi_set_country_code("FR", false);    /* canaux 1 à 13 */
+    if (ble_was && wifi_ble_paused()) ui_toast(_("Bluetooth en pause pendant l'analyse"));
     esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, scan_done_handler, NULL, &s_evh);
-    power_set_cpu_max(160);                    /* radio en marche : 80 MHz suffisent écran éteint */
     s_inited = true;
     return true;
 }
@@ -295,30 +273,18 @@ static void wifi_down(void)
 {
     if (!s_inited) return;
     if (s_scanning) esp_wifi_scan_stop();
-    if (s_started) esp_wifi_stop();
     esp_event_handler_instance_unregister(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, s_evh);
-    esp_wifi_deinit();
-    power_set_cpu_max(0);
+    wifi_release(WIFI_HOLD_SCAN);                /* Bluetooth rendu s'il avait été suspendu */
     s_inited = s_started = s_scanning = false;
     free(s_rec);
     s_rec = NULL;
-    /* Bluetooth suspendu : rendu en quittant l'app, pas pendant une simple
-     * mise en veille sur l'app (on éviterait mal des arrêts/relances en boucle) */
-    if (s_ble_paused && display_is_on()) ble_resume();
-}
-
-static void ble_resume(void)
-{
-    if (!s_ble_paused) return;
-    s_ble_paused = false;
-    ble_start();
 }
 
 static void scan_kick(void)
 {
     if (!s_inited || s_scanning) return;
     if (!s_started) {
-        if (esp_wifi_start() != ESP_OK) return;
+        wifi_scan_radio(true);
         s_started = true;
     }
     wifi_scan_config_t sc = {
@@ -330,13 +296,13 @@ static void scan_kick(void)
         s_scanning = true;
         s_scan_t0 = esp_timer_get_time();
     } else {
-        s_next_us = esp_timer_get_time() + 1000000;
+        s_next_us = esp_timer_get_time() + 1000000;   /* connexion du Wi-Fi global en cours : plus tard */
     }
 }
 
 static void radio_off(void)
 {
-    if (s_started) { esp_wifi_stop(); s_started = false; }
+    if (s_started) { wifi_scan_radio(false); s_started = false; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -920,7 +886,6 @@ static void create(lv_obj_t *scr)
 static void destroy(void)
 {
     wifi_down();
-    ble_resume();
     if (v_tick) lv_timer_delete(v_tick);
     v_tick = NULL;
     v_scr = v_status = v_tabs = v_list = v_chart = v_best = v_empty = NULL;

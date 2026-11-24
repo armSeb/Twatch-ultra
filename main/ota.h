@@ -16,6 +16,7 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include "esp_http_server.h"
 
 /* codes EV_OTA (champ a) */
 #define OTA_EV_PROGRESS_MAX 100   /* 0..100 : pourcentage reçu */
@@ -47,3 +48,13 @@ const char *ota_new_version(void);         /* version de l'image reçue (après 
 void        ota_reboot_now(void);
 const char *ota_other_version(void);       /* version de l'autre emplacement, NULL si inutilisable */
 const char *ota_boot_other(void);          /* y revenir (redémarre) ; sinon raison de l'échec */
+
+/* ---- serveur web de la montre (websrv.c), tâche httpd ----
+ * Image reçue dans le corps de la requête (POST) : mêmes vérifications que
+ * par le point d'accès. web = true : refus sous 30 % de batterie hors USB. */
+esp_err_t   ota_http_update(httpd_req_t *r, bool web);
+void        ota_http_abort(void);          /* arrêt du serveur : la réception en cours s'arrête */
+bool        ota_web_receiving(void);       /* une image arrive par le serveur web */
+/* page « Wi-Fi, WebRX et radios » et son enregistrement (sans redémarrage) */
+esp_err_t   ota_webrx_page(httpd_req_t *r);
+esp_err_t   ota_webrx_save(httpd_req_t *r);
