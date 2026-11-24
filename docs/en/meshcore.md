@@ -67,11 +67,25 @@ state, in memory and on flash: they survive a restart. With a **micro-SD card**,
 is also archived on it, one file per conversation in `/meshcore`, and older messages are read
 back from the card.
 
+The archive files (`c-<key>.jsonl` for a contact, `g-<key>.jsonl` for a channel) are JSON
+Lines, readable on a computer: one line per message, padded with spaces to 512 bytes so the
+watch can jump straight to older ones. For example:
+
+```json
+{"seq":42,"ts":1764000000,"time":"2026-11-24 17:00","dir":"in","conv":"#fr","sender":"Bob","text":"Hi","snr":-5.25,"hops":3}
+```
+
+`ts` is the sender's timestamp (UTC), `time` the same in local time, `dir` `in` (received) or
+`out` (sent from the app), `sender` the author on a channel, `hops` 0 for a direct message.
+With `jq`: `jq -r '.time + " " + .sender + " " + .text' g-*.jsonl`. The old `.bin` files (0.2.15
+to 0.2.19) are no longer read.
+
 The card is detected when inserted (within about 3 s, 15 s with the screen off), mounted at
 once and unmounted if pulled out. *Settings › SD card* shows the free space and offers **Eject card** (buffers written,
 then unmounted: it can be removed) and **Mount card again**. It must be formatted as FAT32.
-The watch log is also written to it every minute (every 5 min with the screen off, to save
-battery), in `/logs/YYYY-MM-DD.log`.
+The watch log is also written to it, in `/logs/YYYY-MM-DD.log`. To spare the card and the
+battery, the log and the archive stay in memory and are only written every 10 minutes (sooner
+if the log fills up), and before a restart, an eject or sharing.
 
 **Share with the computer** shows up when the watch is plugged into a computer: the card
 appears there as a USB drive, readable and writable (about 1 MB/s, the bus is shared with the

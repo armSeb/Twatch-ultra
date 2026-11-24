@@ -52,8 +52,9 @@ bool sd_lock(void);             /* false : pas de carte montée (rien n'est pris
 void sd_unlock(void);
 
 /* Tampons à vider sur la carte : appelés par la tâche « sd » toutes les
- * minutes (5 min écran éteint) et avant un démontage ou un partage, carte
- * montée (sd_lock() non tenu). */
+ * 10 min et avant un démontage ou un partage, carte montée (sd_lock() non
+ * tenu). */
 typedef void (*sd_flush_cb_t)(void);
 void sd_add_flusher(sd_flush_cb_t cb);
 void sd_flush_soon(void);       /* demande un vidage rapide (n'importe quelle tâche) */
+void sd_flush_wait(int ms);     /* vidage tout de suite, attendu (avant un redémarrage) */

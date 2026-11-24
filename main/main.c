@@ -8,6 +8,7 @@
  *   - hôte NimBLE (cœur 0) : GAP/GATT/ANCS, ne fait que poster des événements.
  *   - esp_timer : motif du vibreur uniquement.
  */
+#include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -206,7 +207,7 @@ static void handle_event(const app_event_t *ev)
         wclock_set_tz_offset_min(off);
         wclock_set_utc((time_t)(ev->t - (int64_t)off * 60));
         ui_on_time_changed();
-        ESP_LOGI(TAG, "heure synchronisée (décalage %+ld min)", (long)off);
+        ESP_LOGI(TAG, "heure synchronisée, fuseau UTC%c%ld:%02ld", off < 0 ? '-' : '+', labs((long)off) / 60, labs((long)off) % 60);
         break;
     }
     default:

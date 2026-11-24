@@ -97,8 +97,49 @@ static void t_sender(void)
     CHECK(memcmp(a, b, 6) != 0);
 }
 
+static void t_arch(void)
+{
+    char rec[MC_ARCH_REC];
+    mc_msg_t m = { .seq = 42, .ts = 1764000000, .kind = MC_CONV_CHANNEL, .flags = 0, .snr_q4 = -21, .hops = 3 };
+    strcpy(m.from, "#fr \"test\"");
+    strcpy(m.text, "Bob\xF0\x9F\x91\x8B: salut \\ \"toi\"\nligne 2\x01 \xC3\xA9t\xC3\xA9");
+    mc_arch_encode(&m, 60, rec);
+    CHECK(rec[MC_ARCH_REC - 1] == '\n');
+    CHECK(memchr(rec, '\n', MC_ARCH_REC - 1) == NULL);       /* une seule ligne */
+    CHECK(strstr(rec, "\"time\":\"2025-11-24 17:00\"") != NULL);
+    CHECK(strstr(rec, "\"sender\":\"Bob\xF0\x9F\x91\x8B\"") != NULL);
+    CHECK(strstr(rec, "\"snr\":-5.25,\"hops\":3}") != NULL);
+    mc_msg_t d;
+    memset(&d, 0x55, sizeof d);
+    CHECK(mc_arch_decode(rec, sizeof rec, &d));
+    CHECK(d.seq == 42 && d.ts == 1764000000 && d.snr_q4 == -21 && d.hops == 3);
+    CHECK(d.flags == MC_F_READ);
+    CHECK(!strcmp(d.from, m.from));
+    CHECK(!strcmp(d.text, m.text));
+
+    /* envoyé, direct, texte plein de guillemets : tronqué proprement */
+    mc_msg_t o = { .seq = 7, .ts = 5, .kind = MC_CONV_CONTACT, .flags = MC_F_OUT, .snr_q4 = 0, .hops = 0xFF };
+    memset(o.from, '"', MC_NAME_MAX - 1); o.from[MC_NAME_MAX - 1] = 0;
+    memset(o.text, '"', MC_TEXT_MAX); o.text[MC_TEXT_MAX] = 0;
+    mc_arch_encode(&o, 0, rec);
+    CHECK(rec[MC_ARCH_REC - 1] == '\n');
+    CHECK(mc_arch_decode(rec, sizeof rec, &d));
+    CHECK(d.flags == (MC_F_READ | MC_F_OUT) && d.hops == 0xFF && d.seq == 7);
+    CHECK(!strcmp(d.from, o.from));
+    CHECK(strlen(d.text) > 100 && strspn(d.text, "\"") == strlen(d.text));
+
+    /* lignes abîmées */
+    CHECK(!mc_arch_decode("                \n", 17, &d));
+    const char *bad = "{\"seq\":3,\"ts\":1,\"conv\":\"x\",\"text\":\"pas fini";
+    CHECK(!mc_arch_decode(bad, strlen(bad), &d));
+    const char *esc = "{\"seq\":3,\"ts\":1,\"conv\":\"x\",\"text\":\"\\ud83d\\ude00 \\u00e9\"}";
+    CHECK(mc_arch_decode(esc, strlen(esc), &d));
+    CHECK(!strcmp(d.text, "\xF0\x9F\x98\x80 \xC3\xA9"));
+}
+
 int main(void)
 {
+    t_arch();
     t_copy();
     t_sort();
     t_frames();

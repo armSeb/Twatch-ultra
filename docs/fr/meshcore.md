@@ -72,11 +72,26 @@ lu / non lu, en mémoire et en flash : ils survivent à un redémarrage. Avec un
 micro-SD**, chaque message y est aussi archivé, un fichier par conversation dans `/meshcore`,
 et les plus anciens se relisent depuis la carte.
 
+Les fichiers d'archive (`c-<clé>.jsonl` pour un contact, `g-<clé>.jsonl` pour un canal) sont
+en JSON Lines, lisibles sur PC : une ligne par message, complétée par des espaces à 512 octets
+pour que la montre puisse sauter directement aux plus anciens. Par exemple :
+
+```json
+{"seq":42,"ts":1764000000,"time":"2026-11-24 17:00","dir":"in","conv":"#fr","sender":"Bob","text":"Salut","snr":-5.25,"hops":3}
+```
+
+`ts` est l'horodatage de l'expéditeur (UTC), `time` la même heure en heure locale, `dir`
+`in` (reçu) ou `out` (envoyé depuis l'app), `sender` l'auteur sur un canal, `hops` 0 pour un
+message direct. Avec `jq` : `jq -r '.time + " " + .sender + " " + .text' g-*.jsonl`. Les
+anciens fichiers `.bin` (0.2.15 à 0.2.19) ne sont plus lus.
+
 La carte est détectée à l'insertion (en 3 s environ, 15 s écran éteint), montée tout de suite
 et démontée si on la retire. *Réglages › Carte SD* affiche l'espace libre et propose **Éjecter la carte** (les
 tampons sont écrits, puis la carte est démontée : on peut la retirer) et **Remonter la carte**.
-Elle doit être formatée en FAT32. Le journal de la montre y est aussi écrit chaque minute
-(toutes les 5 min écran éteint, pour la batterie), dans `/logs/AAAA-MM-JJ.log`.
+Elle doit être formatée en FAT32. Le journal de la montre y est aussi écrit, dans
+`/logs/AAAA-MM-JJ.log`. Pour ménager la carte et la batterie, journal et archive restent en
+mémoire et ne sont écrits que toutes les 10 minutes (plus tôt si le journal se remplit), ainsi
+qu'avant un redémarrage, une éjection ou un partage.
 
 **Partager avec le PC** apparaît quand la montre est branchée à un ordinateur : la carte y
 apparaît comme une clé USB, en lecture et en écriture (environ 1 Mo/s, le bus est partagé avec

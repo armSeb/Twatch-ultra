@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include "mc_text.h"
 #include "sdcard.h"
+#include "wclock.h"
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "esp_timer.h"
@@ -21,16 +22,10 @@ static const char *TAG = "mchist";
 #define HIST_MAGIC_V1 0x48430001u          /* 0.2.0 à 0.2.13 : sans conversation ni état lu */
 #define HIST_SAVE_US  (30 * 1000000LL)     /* sauvegarde après 30 s de calme */
 #define ARCH_DIR      SD_ROOT "/meshcore"
-#define ARCH_MAGIC    0x3141434Du          /* « MCA1 » */
 #define ARCH_BLK      8                    /* enregistrements lus d'un coup */
 #define QFRAME_MAX    200
 
-typedef struct {
-    uint32_t magic;
-    mc_msg_t m;
-    uint8_t  pad[256 - 4 - sizeof(mc_msg_t)];
-} arch_rec_t;
-_Static_assert(sizeof(arch_rec_t) == 256, "enregistrement d'archive : 256 octets");
+typedef struct { char b[MC_ARCH_REC]; } arch_rec_t;     /* une ligne JSON (mc_text.h) */
 
 typedef struct { uint32_t magic, n, seq, arch_seq; } hist_hdr_t;
 
@@ -293,35 +288,42 @@ void mch_load(void)
 /* ------------------------------------------------------------------ carte SD */
 static void arch_path(char *b, size_t n, uint8_t kind, const uint8_t *p)
 {
-    snprintf(b, n, ARCH_DIR "/%c-%02x%02x%02x%02x%02x%02x.bin", kind == MC_CONV_CHANNEL ? 'g' : 'c',
+    snprintf(b, n, ARCH_DIR "/%c-%02x%02x%02x%02x%02x%02x.jsonl", kind == MC_CONV_CHANNEL ? 'g' : 'c',
              p[0], p[1], p[2], p[3], p[4], p[5]);
 }
 
 /* tâche « sd » : copie sur la carte les messages pas encore archivés */
 static void arch_flush(void)
 {
-    EXT_RAM_BSS_ATTR static arch_rec_t rec[MC_HIST_N];
+    EXT_RAM_BSS_ATTR static mc_msg_t msg[MC_HIST_N];
+    EXT_RAM_BSS_ATTR static arch_rec_t rec;
     int n = 0;
     lock();
     for (int i = s_n - 1; i >= 0; i--) {
         if (AT(i).seq <= s_arch_seq) continue;
-        memset(&rec[n], 0, sizeof rec[n]);
-        rec[n].magic = ARCH_MAGIC;
-        rec[n].m = AT(i);
-        n++;
+        msg[n++] = AT(i);
     }
     unlock();
+    int32_t tz = wclock_tz_offset_min();
     if (!n || !sd_lock()) return;
     mkdir(ARCH_DIR, 0775);
     uint32_t done = 0;
     char path[64];
     for (int i = 0; i < n; i++) {
-        arch_path(path, sizeof path, rec[i].m.kind, rec[i].m.peer);
+        arch_path(path, sizeof path, msg[i].kind, msg[i].peer);
+        mc_arch_encode(&msg[i], tz, rec.b);
         FILE *f = fopen(path, "ab");
-        bool ok = f && fwrite(&rec[i], sizeof rec[i], 1, f) == 1;
+        bool ok = f != NULL;
+        long pos = ok && fseek(f, 0, SEEK_END) == 0 ? ftell(f) : 0;
+        if (ok && pos % (long)sizeof rec) {     /* ligne coupée (coupure de courant) : on réaligne */
+            static const char pad[MC_ARCH_REC] = { [0 ... MC_ARCH_REC - 2] = ' ', [MC_ARCH_REC - 1] = '\n' };
+            size_t fill = sizeof rec - (size_t)(pos % (long)sizeof rec);
+            ok = fwrite(pad + sizeof pad - fill, 1, fill, f) == fill;
+        }
+        ok = ok && fwrite(&rec, sizeof rec, 1, f) == 1;
         if (f && fclose(f) != 0) ok = false;
         if (!ok) { ESP_LOGW(TAG, "archive SD : écriture ratée"); break; }
-        done = rec[i].m.seq;
+        done = msg[i].seq;
     }
     sd_unlock();
     /* pas de sauvegarde exprès pour ce numéro : il part avec la prochaine. Un
@@ -359,11 +361,12 @@ static int arch_read(uint8_t kind, const uint8_t *peer, uint32_t before, mc_msg_
                 fread(blk, sizeof(arch_rec_t), cnt, f) != cnt) break;
             long j = (long)cnt - 1;
             for (; j >= 0 && got < max; j--) {
-                mc_msg_t *m = &blk[j].m;
-                if (blk[j].magic != ARCH_MAGIC || !same(m, kind, peer) || m->seq >= lim) continue;
+                mc_msg_t *m = &out[got];
+                if (!mc_arch_decode(blk[j].b, sizeof blk[j].b, m) || m->seq >= lim) continue;
+                m->kind = kind;
+                memcpy(m->peer, peer, MC_PEER_LEN);
                 sanitize(m);
-                m->flags |= MC_F_READ;
-                out[got++] = *m;
+                got++;
                 lim = m->seq;
             }
             end = start + j + 1;            /* au besoin, on repart du prochain non lu */

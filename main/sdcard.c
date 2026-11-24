@@ -20,14 +20,15 @@
 
 static const char *TAG = "sd";
 
-/* Économies : écran éteint, la tâche se réveille 5 fois moins souvent et ne
- * vide les tampons que toutes les 5 min (sdlog demande un vidage anticipé si
- * son tampon se remplit). L'espace libre n'est recalculé qu'à la demande. */
+/* Économies : écran éteint, la tâche se réveille 5 fois moins souvent. Les
+ * tampons (journal, archive MeshCore) ne sont écrits que toutes les 10 min,
+ * plus tôt si le journal se remplit, et avant un redémarrage, une éjection
+ * ou un partage : peu d'écritures, la carte reste au repos. L'espace libre
+ * n'est recalculé qu'à la demande. */
 #define POLL_ON_MS     3000      /* lecture du contact SD_DET (I2C, ~0,1 ms) */
 #define POLL_OFF_MS    15000
 #define SETTLE_MS      600       /* carte qui s'enfonce : contacts qui rebondissent */
-#define FLUSH_ON_S     60        /* vidage des tampons sur la carte */
-#define FLUSH_OFF_S    300
+#define FLUSH_S        600       /* vidage des tampons sur la carte */
 #define SD_KHZ         20000     /* bus partagé avec la radio (8 MHz) et le NFC */
 #define MAX_FLUSHERS   4
 
@@ -43,6 +44,7 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static sd_info_t s_info;
 static sd_flush_cb_t s_flush[MAX_FLUSHERS];
 static int s_nflush;
+static volatile uint32_t s_flushes;      /* vidages faits (sd_flush_wait) */
 
 static void set_state(sd_state_t st)
 {
@@ -332,7 +334,8 @@ static void sd_task(void *arg)
         if (s_state != SD_MOUNTED) continue;
         if ((req & (REQ_EJECT | REQ_FLUSH)) || now >= next_flush) {
             run_flushers();
-            next_flush = now + (display_is_on() ? FLUSH_ON_S : FLUSH_OFF_S) * 1000000LL;
+            s_flushes++;
+            next_flush = now + FLUSH_S * 1000000LL;
         }
         if (req & REQ_EJECT) {
             do_unmount(SD_EJECTED);
@@ -412,6 +415,14 @@ esp_err_t sd_share(bool on)
 bool sd_share_host_seen(void) { return s_state == SD_SHARED && usb_msc_host_seen(); }
 
 void sd_flush_soon(void) { request(REQ_FLUSH); }
+
+void sd_flush_wait(int ms)
+{
+    if (s_state != SD_MOUNTED || xTaskGetCurrentTaskHandle() == s_task) return;
+    uint32_t n = s_flushes;
+    request(REQ_FLUSH);
+    for (int t = 0; t < ms && s_flushes == n && s_state == SD_MOUNTED; t += 20) vTaskDelay(pdMS_TO_TICKS(20));
+}
 
 bool sd_lock(void)
 {

@@ -13,7 +13,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 
-#define RING     (32 * 1024)
+#define RING     (64 * 1024)
 #define LOG_LINE_MAX 200
 #define CHUNK    4096
 
@@ -39,7 +39,7 @@ static void ring_put(const char *p, size_t n)
     }
     if (s_attached && !s_asked && s_wr - s_rd >= RING / 2) s_asked = ask = true;
     portEXIT_CRITICAL(&s_rmux);
-    if (ask) sd_flush_soon();               /* écran éteint, la carte n'est vidée que toutes les 5 min */
+    if (ask) sd_flush_soon();               /* sinon la carte n'est écrite que toutes les 10 min */
 }
 
 static int hook(const char *fmt, va_list ap)

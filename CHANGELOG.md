@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.20 — 2026-11-24
+
+- MeshCore archive on the SD card in JSON Lines (`/meshcore/c-<key>.jsonl`, `g-<key>.jsonl`),
+  readable on a computer: one message per line, padded to 512 bytes so the watch can still seek
+  to older messages. Channel messages carry the sender in its own field. A line cut by a power
+  loss is padded over before the next append. The old `.bin` files are no longer read (no
+  conversion, as Seb asked).
+- Fewer SD writes: log and archive are written every 10 min instead of every 1–5 min, sooner
+  when the log buffer (now 64 KB of PSRAM) is half full, and before a restart (menu or update),
+  an eject or sharing.
+- Time sync log line reads "fuseau UTC+1:00" instead of "décalage +60 min".
+
 ## 0.2.19 — 2026-11-24
 
 - SD card shared with a computer over USB: *Settings › SD card › Share with the computer*

@@ -2050,6 +2050,7 @@ static void reboot_confirm_cb(lv_event_t *ev)
      * sinon le bootloader reviendrait à l'ancienne version */
     esp_ota_mark_app_valid_cancel_rollback();
     mc_stop();                             /* sauve la file de l'app et l'historique MeshCore */
+    sd_flush_wait(2000);                   /* journal et archive sur la carte */
     esp_restart();
 }
 

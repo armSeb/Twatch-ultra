@@ -3,6 +3,7 @@
 #include "meshcore/mc_port.h"
 #include "esp_attr.h"
 #include "ota.h"
+#include "sdcard.h"
 #include <string.h>
 #include <stdio.h>
 #include "esp_log.h"
@@ -796,6 +797,7 @@ const char *ota_start(void)
 void ota_reboot_now(void)
 {
     mc_stop();                             /* sauve la file de l'app et l'historique MeshCore */
+    sd_flush_wait(2000);                   /* journal et archive sur la carte */
     if (s_httpd) httpd_stop(s_httpd);
     esp_wifi_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
