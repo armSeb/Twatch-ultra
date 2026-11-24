@@ -3339,7 +3339,11 @@ uint32_t ui_timeout_ms(void)
 void ui_on_wake(void)
 {
     if (s_cur == SCR_APP && s_app_cur && s_app_cur->on_show) s_app_cur->on_show();
-    if (s_cur == SCR_WATCH) { watch_update_time(true); watch_refresh_status(); }
+    if (s_cur == SCR_WATCH) {
+        watch_update_time(true);
+        watch_refresh_status();
+        face_bake_flush();               /* aiguilles à l'heure dès la première image */
+    }
     if (s_cur == SCR_POWER) power_refresh();
 }
 

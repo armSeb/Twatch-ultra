@@ -23,7 +23,8 @@ int  sound_last_error(void);       /* 0 = dernier son joué, sinon esp_err_t */
 
 /* Flux audio continu (une seule tâche écrivain). open : ampli + I2S à `rate`
  * Hz ; write : échantillons mono 16 bits, gain en Q12 (4096 = ×1), bloquant
- * au rythme du son ; mono NULL = silence. Les bips sont ignorés pendant un flux. */
+ * au rythme du son ; mono NULL = silence. Les flux du volume général passent
+ * un passe-haut (protection du HP, 250 Hz) puis un limiteur doux. Les bips sont ignorés pendant un flux. */
 esp_err_t sound_stream_open(int rate);
 /* idem, hors volume général et mode silencieux : réservé aux sons émis à la
  * demande pour un appareil tiers (tonalité d'ouverture de relais) */

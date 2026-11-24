@@ -140,6 +140,34 @@ static void sound_task(void *arg)
 /* ------------------------------------------------------------------ */
 static i2s_chan_handle_t s_stream;
 
+/* Protection du haut-parleur : le petit HP ne rend rien sous ~300 Hz, mais
+ * le grave et l'infra-grave lui font faire de grandes excursions qui
+ * saturent (et mangent la marge avant le limiteur). Passe-haut Butterworth
+ * d'ordre 4 (deux biquads RBJ, Q 0,54 et 1,31) à SPK_HP_HZ, -24 dB/octave,
+ * sur tous les flux du volume général (radio, WebRX, démo, jeux). */
+#define SPK_HP_HZ 250.0f
+typedef struct { float b0, b1, b2, a1, a2, z1, z2; } spk_bq_t;
+static spk_bq_t s_hp[2];
+static bool s_hp_on;
+
+static void hp_init(spk_bq_t *q, float f, float Q, int rate)
+{
+    float w = 2 * (float)M_PI * f / rate, c = cosf(w), al = sinf(w) / (2 * Q), a0 = 1 + al;
+    q->b0 = q->b2 = (1 + c) / 2 / a0;
+    q->b1 = -(1 + c) / a0;
+    q->a1 = -2 * c / a0;
+    q->a2 = (1 - al) / a0;
+    q->z1 = q->z2 = 0;
+}
+
+static inline float hp_run(spk_bq_t *q, float v)      /* forme directe II transposée */
+{
+    float y = q->b0 * v + q->z1;
+    q->z1 = q->b1 * v - q->a1 * y + q->z2;
+    q->z2 = q->b2 * v - q->a2 * y;
+    return y;
+}
+
 static esp_err_t stream_open(int rate, bool fixed)
 {
     if (s_stream) return ESP_OK;
@@ -158,6 +186,10 @@ static esp_err_t stream_open(int rate, bool fixed)
         s_busy = false;
     } else {
         s_fixed = fixed;
+        /* flux « fixe » (tonalité de relais) : signal exact, sans filtre */
+        s_hp_on = !fixed;
+        hp_init(&s_hp[0], SPK_HP_HZ, 0.5412f, rate);
+        hp_init(&s_hp[1], SPK_HP_HZ, 1.3066f, rate);
     }
     return e;
 }
@@ -184,15 +216,21 @@ void sound_stream_write(const int16_t *mono, int n, int gain_q12)
 {
     if (!s_stream) return;
     int16_t buf[2 * 128];
-    /* volume général appliqué ici, une fois pour tous les flux ; en int64 :
-     * le gain d'une app peut dépasser ×1 (radio, jusqu'à ×4) */
+    /* volume général appliqué ici, une fois pour tous les flux : le gain
+     * d'une app peut dépasser ×1 (radio jusqu'à ×4, jeux), le limiteur doux
+     * garde les crêtes sous la pleine échelle */
     if (!s_fixed) gain_q12 = (int)(((int64_t)gain_q12 * s_master) >> 12);
     if (gain_q12 == 0) mono = NULL;                 /* silencieux : garde le rythme */
+    const float g = gain_q12 / 4096.0f;
     while (n > 0) {
         int k = n < 128 ? n : 128;
         for (int i = 0; i < k; i++) {
-            int32_t v = mono ? ((int32_t)mono[i] * gain_q12) >> 12 : 0;
-            buf[2 * i] = buf[2 * i + 1] = soft_clip(v);
+            float x = mono ? (float)mono[i] : 0.0f;
+            if (s_hp_on) x = hp_run(&s_hp[1], hp_run(&s_hp[0], x));   /* silence : la traîne s'éteint */
+            float v = x * g;
+            if (v > 1e6f) v = 1e6f;                 /* borne avant conversion entière */
+            if (v < -1e6f) v = -1e6f;
+            buf[2 * i] = buf[2 * i + 1] = soft_clip((int32_t)v);
         }
         size_t w;
         i2s_channel_write(s_stream, buf, 2 * k * sizeof(int16_t), &w, pdMS_TO_TICKS(500));
@@ -207,6 +245,7 @@ void sound_stream_close(void)
     amp_off(s_stream);
     s_stream = NULL;
     s_fixed = false;
+    s_hp_on = false;
     s_busy = false;
 }
 
