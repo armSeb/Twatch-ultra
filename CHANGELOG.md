@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.16 — 2026-11-24
+
+- MeshCore app: contact and channel rows stay on one line (the last-message preview
+  wrapped and overlapped the next row); channel sender names no longer collapse to "…";
+  messages heard with 0 hops show as *direct*.
+
 ## 0.2.15 — 2026-11-24
 
 (0.2.14 is the power-saving build from the other branch.)
