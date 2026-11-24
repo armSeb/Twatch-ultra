@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.37 — 2026-11-24 (test)
+
+- Flash and PSRAM clocks raised from 80 to 120 MHz. Both chips are rated for 133 MHz in quad
+  mode (Winbond W25Q128JV flash, AP Memory APS6404L PSRAM); on the ESP32-S3 a 120 MHz quad
+  PSRAM requires the flash at 120 MHz too. The W25Q128JV needs no high-performance mode or
+  dummy-cycle change, so the bootloader is unchanged and OTA works (the app tunes the bus
+  itself at start-up). ESP-IDF logs a warning at boot because it does not list this chip.
+  Expected: faster PSRAM reads everywhere (analog faces, flight simulator).
+
 ## 0.2.36 — 2026-11-24
 
 - Analog faces: Seb measured 0.2.35 at 26.2 ms (Pub) and 21.2 ms (Retro) per frame, down from
