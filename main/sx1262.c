@@ -342,6 +342,7 @@ static void lora_task(void *arg)
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
         if (!s_run) break;
         uint16_t irq = irq_get();
+        if (irq) s_stats.irq++;
         if (irq & (IRQ_PREAMBLE | IRQ_HEADER_VALID))
             s_rx_busy_until = esp_timer_get_time() + (int64_t)sx_airtime_ms(SX_MAX_PKT) * 1000;
         if (irq & (IRQ_RX_DONE | IRQ_CRC_ERR | IRQ_HEADER_ERR | IRQ_TIMEOUT)) {

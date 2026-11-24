@@ -53,5 +53,7 @@ void      sx_set_antenna(bool external);
 esp_err_t sx_last_error(void);
 
 /* compteurs (diagnostic) */
-typedef struct { uint32_t rx_ok, rx_crc, tx_ok, tx_fail; } sx_stats_t;
+/* irq : interruptions DIO1 traitées (préambules, en-têtes, paquets), chacune
+ * réveille la montre */
+typedef struct { uint32_t rx_ok, rx_crc, tx_ok, tx_fail, irq; } sx_stats_t;
 void      sx_get_stats(sx_stats_t *out);

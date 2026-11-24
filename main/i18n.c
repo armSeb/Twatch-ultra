@@ -16,6 +16,8 @@ static const tr_t EN[] = {
     { "%d %% → %d %% en %luh%02lu", "%d %% → %d %% in %luh%02lu" },
     { "Moy. ~%.1f mA, reste ~%.0f h", "Avg ~%.1f mA, ~%.0f h left" },
     { "Écran %.0f %% du temps · PMU %.0f °C", "Screen %.0f %% of the time · PMU %.0f °C" },
+    { "Veille %.0f %% · %.1f réveils/min", "Asleep %.0f %% · %.1f wakeups/min" },
+    { "Veille : mesure en cours…", "Sleep: measuring…" },
     { "Préc. %u %% → %u %% en %luh%02lu, %s", "Prev. %u %% → %u %% in %luh%02lu, %s" },
     { "Pas encore de décharge enregistrée", "No discharge recorded yet" },
 

@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.14 — 2026-11-24
+
+- *Energy* screen: a new line shows, while the screen is off, how much of the time the
+  watch actually spends in light sleep, how many times per minute it wakes up and, when
+  MeshCore runs, how many LoRa interrupts the radio has raised. The AXP2101 cannot
+  measure current, so this tells what keeps the watch awake when the average draw looks
+  too high.
+- Checked against the T-Watch Ultra V1.0 schematic: pins, expander bits and power rails
+  all match. Two small savings come out of it: the PDM microphone sits on the always-on
+  3.3 V rail, so its clock input is now pulled low instead of left floating, and the
+  unused DLDO2 rail is switched off explicitly.
+
 ## 0.2.13 — 2026-11-23
 
 (0.2.12 was a test build only: fast link and no light sleep only while frames flowed.)
