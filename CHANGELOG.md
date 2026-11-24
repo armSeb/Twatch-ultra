@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.29 — 2026-11-24
+
+- *Énergie* screen: the animation frame rate is now measured between consecutive frames of
+  the animation (0.2.28 divided by a whole second that included still time, so it read ~9).
+- Flight game: HUD text is skipped on the screen strips it does not touch (each frame is
+  sent in 32 strips and every text used to be walked for each one), so a frame goes out faster.
+  The pause screen also shows the CPU clock, where the landscape image lives (internal RAM
+  or PSRAM) and the largest free internal RAM block, to find what slows the rendering.
+
 ## 0.2.28 — 2026-11-24
 
 - Smoother LVGL animations (screen slides, scrolling, MeshCore tabs). LVGL now draws straight

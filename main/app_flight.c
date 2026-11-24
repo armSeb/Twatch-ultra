@@ -26,6 +26,10 @@
 #include "nvs.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#ifdef ESP_PLATFORM
+#include "esp_private/esp_clk.h"
+#include "esp_memory_utils.h"
+#endif
 #include "esp_random.h"
 #include "demo_gfx.h"
 #include "demo_synth.h"
@@ -483,6 +487,13 @@ static void hud_draw(gsurf_t *d)
             hud_c(d, b, 196, 1, g_rgb(150, 150, 160));
             snprintf(b, sizeof b, _("CALCUL %d MS · ENVOI %d MS"), s_rend_ms, s_pres_ms);
             hud_c(d, b, 210, 1, g_rgb(150, 150, 160));
+#ifdef ESP_PLATFORM
+            /* diagnostic : fréquence du CPU, image du relief en RAM interne ou PSRAM */
+            snprintf(b, sizeof b, "CPU %d MHZ · %s · INT %u KO", esp_clk_cpu_freq() / 1000000,
+                     esp_ptr_internal(S.px) ? "INT" : "PSRAM",
+                     (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+            hud_c(d, b, 222, 1, g_rgb(150, 150, 160));
+#endif
         }
         break;
     }

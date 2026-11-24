@@ -36,9 +36,9 @@ uint32_t  display_tap_sample_ms(void);
 typedef void (*display_strip_fn)(uint16_t *px, int y0, int lines, void *ctx);
 bool      display_direct(display_strip_fn fill, void *ctx);
 void      display_direct_end(void);
-/* Fluidité mesurée sur la dernière seconde animée (≥ 10 images) */
+/* Fluidité de la dernière seconde animée */
 typedef struct {
-    uint16_t fps;          /* images par seconde */
+    uint16_t fps;          /* images par seconde pendant l'animation */
     uint32_t avg_us;       /* rafraîchissement moyen : mise en page, dessin, envoi */
     uint32_t max_us;
 } display_perf_t;

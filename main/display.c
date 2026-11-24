@@ -213,6 +213,12 @@ static void render_start_cb(lv_event_t *e)
     }
 }
 
+/* Débit pendant une animation : intervalle entre deux rafraîchissements
+ * qui se suivent (< 100 ms), pas le nombre d'images sur une seconde où
+ * l'écran a pu rester immobile une partie du temps. */
+static int64_t s_refr_prev;
+static uint32_t s_perf_gap_us, s_perf_gap_n;
+
 static void refr_start_cb(lv_event_t *e) { s_refr_t0 = esp_timer_get_time(); }
 
 static void refr_ready_cb(lv_event_t *e)
@@ -220,15 +226,15 @@ static void refr_ready_cb(lv_event_t *e)
     int64_t now = esp_timer_get_time();
     if (now - s_perf_t0 >= 1000000) {
         /* une seconde écoulée : on garde la mesure si l'écran s'animait */
-        if (s_perf_n >= 10) {
-            s_perf.fps = (uint16_t)((uint64_t)s_perf_n * 1000000 / (now - s_perf_t0));
+        if (s_perf_n >= 5 && s_perf_gap_n >= 4) {
+            s_perf.fps = (uint16_t)((1000000ULL * s_perf_gap_n + s_perf_gap_us / 2) / s_perf_gap_us);
             s_perf.avg_us = s_perf_sum_us / s_perf_n;
             s_perf.max_us = s_perf_max_us;
             ESP_LOGI(TAG, "%u img/s, rafraîchissement moy. %lu µs, max %lu µs", s_perf.fps,
                      (unsigned long)s_perf.avg_us, (unsigned long)s_perf.max_us);
         }
         s_perf_t0 = now;
-        s_perf_n = s_perf_sum_us = s_perf_max_us = 0;
+        s_perf_n = s_perf_sum_us = s_perf_max_us = s_perf_gap_us = s_perf_gap_n = 0;
     }
     s_refr_t0 = 0;            /* rien dessiné : ce passage ne compte pas */
 }
@@ -254,6 +260,11 @@ static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
         s_perf_n++;
         s_perf_sum_us += us;
         if (us > s_perf_max_us) s_perf_max_us = us;
+        if (s_refr_prev && s_refr_t0 - s_refr_prev < 100000) {
+            s_perf_gap_us += (uint32_t)(s_refr_t0 - s_refr_prev);
+            s_perf_gap_n++;
+        }
+        s_refr_prev = s_refr_t0;
         s_refr_t0 = 0;
     }
     lv_display_flush_ready(d);
