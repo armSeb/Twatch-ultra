@@ -4,6 +4,7 @@
 #include "board.h"
 #include "spi_bus.h"
 #include "xl9555.h"
+#include "axp2101.h"
 #include "esp_vfs_fat.h"
 #include "driver/sdspi_host.h"
 #include "sdmmc_cmd.h"
@@ -63,13 +64,37 @@ static void run_flushers(void)
     for (int i = 0; i < s_nflush; i++) if (s_flush[i]) s_flush[i]();
 }
 
+static bool try_mount(void);
+
+/* contact SD_DET : niveau bas quand la carte est en place (vu sur la montre) */
+static esp_err_t card_present(bool *present)
+{
+    bool lvl = true;
+    esp_err_t e = xl9555_read(XIO_SD_DET, &lvl);
+    *present = !lvl;
+    return e;
+}
+
+/* Une carte déjà là au démarrage est restée dans l'état où l'ESP l'a laissée
+ * (l'AXP2101 garde ses rails à travers un redémarrage) : il lui arrive de ne
+ * plus répondre. Quelques essais, espacés, avant de la dire illisible. */
 static void do_mount(void)
+{
+    for (int i = 0; i < 3; i++) {
+        if (try_mount()) return;
+        bool det = false;
+        if (card_present(&det) == ESP_OK && !det) { set_state(SD_ABSENT); return; }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    set_state(SD_FAILED);
+}
+
+static bool try_mount(void)
 {
     spi_peers_get();                         /* rails SD et NFC, CS hauts */
     if (spi_shared_get() != ESP_OK) {
         spi_peers_put();
-        set_state(SD_FAILED);
-        return;
+        return false;
     }
     vTaskDelay(pdMS_TO_TICKS(20));           /* rail tout juste allumé : mise sous tension de la carte */
 
@@ -94,13 +119,13 @@ static void do_mount(void)
         spi_peers_hold_cs(BOARD_SD_CS);      /* le pilote a rendu la broche : CS haut */
         spi_shared_put();
         spi_peers_put();
-        set_state(SD_FAILED);
-        return;
+        return false;
     }
     set_state(SD_MOUNTED);
     refresh_info();
     ESP_LOGI(TAG, "carte « %s » montée : %llu Mo, %llu Mo libres", s_info.name,
              (unsigned long long)(s_info.total >> 20), (unsigned long long)(s_info.free >> 20));
+    return true;
 }
 
 static void do_unmount(sd_state_t next)
@@ -132,7 +157,7 @@ static void sd_task(void *arg)
         portEXIT_CRITICAL(&s_mux);
 
         bool det = false;
-        if (xl9555_read(XIO_SD_DET, &det) != ESP_OK) continue;   /* I2C occupé : on verra au tour suivant */
+        if (card_present(&det) != ESP_OK) continue;   /* I2C occupé : on verra au tour suivant */
         int64_t now = esp_timer_get_time();
 
         if (!det) {                                              /* arrachée (ou jamais là) */
@@ -141,7 +166,7 @@ static void sd_task(void *arg)
         }
         if (s_state == SD_ABSENT) {                              /* insertion : on laisse les contacts se poser */
             vTaskDelay(pdMS_TO_TICKS(SETTLE_MS));
-            if (xl9555_read(XIO_SD_DET, &det) != ESP_OK || !det) continue;
+            if (card_present(&det) != ESP_OK || !det) continue;
             do_mount();
             next_flush = now + 5 * 1000000LL;                    /* journaux du démarrage, vite */
             next_info = now + INFO_S * 1000000LL;
@@ -180,6 +205,10 @@ static void request(uint32_t r)
 void sd_init(void)
 {
     if (s_task) return;
+    /* avant la radio : personne n'a encore les rails du bus. Carte remise
+     * à zéro par une vraie coupure d'alimentation (voir do_mount) */
+    axp_rail(AXP_RAIL_SD, false);
+    vTaskDelay(pdMS_TO_TICKS(100));
     s_mx = xSemaphoreCreateMutex();
     /* pile interne : la tâche écrit aussi pendant qu'une écriture en flash
      * (OTA, FAT interne) coupe l'accès à la PSRAM */

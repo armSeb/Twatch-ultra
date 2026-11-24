@@ -49,6 +49,7 @@ enum { MC_CONV_CONTACT = 0, MC_CONV_CHANNEL = 1 };
 #define MC_F_READ  0x01           /* lu (montre ou app) */
 #define MC_F_OUT   0x02           /* envoyé par nous (depuis l'app) */
 #define MC_F_APP   0x04           /* récupéré par l'app */
+#define MC_F_LEGACY 0x08          /* repris de l'historique 0.2.13 : conversation retrouvée par son nom */
 
 typedef struct {
     uint32_t seq;                 /* croissant, jamais réutilisé */

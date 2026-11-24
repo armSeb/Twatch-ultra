@@ -226,6 +226,11 @@ public:
   bool saveOfflineQueue(File &f) const;
   void loadOfflineQueue(File &f);
   int  getOfflineQueueLen() const { return offline_queue_len; }
+  int  getOfflineQueueFrame(int i, const uint8_t **frame) const {
+    if (i < 0 || i >= offline_queue_len) return 0;
+    *frame = offline_queue[i].buf;
+    return offline_queue[i].len;
+  }
   bool isOfflineQueueDirty() const { return offline_queue_dirty; }
   void clearOfflineQueueDirty() { offline_queue_dirty = false; }
 

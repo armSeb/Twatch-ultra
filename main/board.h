@@ -68,7 +68,7 @@
 #define XIO_DRV_EN              6     /* alimentation DRV2605 */
 #define XIO_DISP_EN             7     /* alimentation de l'écran */
 #define XIO_TOUCH_RST           8
-#define XIO_SD_DET              10    /* carte présente = 1 */
+#define XIO_SD_DET              10    /* carte présente = 0 */
 #define XIO_LORA_RF_SW          11    /* commutateur d'antenne LoRa */
 
 /* ---------- Bus SPI partagé : LoRa, NFC, carte SD ---------- */

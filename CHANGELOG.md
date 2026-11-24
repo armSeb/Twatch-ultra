@@ -2,6 +2,19 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.18 — 2026-11-24
+
+- MeshCore history from 0.2.13 and earlier is taken over (it was ignored, so channels
+  looked empty after the update): messages are marked read and attached to their contact
+  or channel by name. Messages still waiting in the iPhone app's queue but missing from
+  the watch history are copied into it too, unread.
+- SD card already in the watch at power-up: its rail is cut briefly before the radio
+  starts (the AXP2101 keeps it on across a restart, leaving the card in the state the
+  previous run left it), and mounting is tried three times, a second apart, before the
+  card is called unreadable.
+- SD card detection was inverted (the detect contact reads low when a card is in):
+  a card in place was seen as absent, and a removed one as present.
+
 ## 0.2.17 — 2026-11-24
 
 - 0.2.16 merged with 0.2.14 (Energy screen: light sleep share and wakeups). The *sd* task

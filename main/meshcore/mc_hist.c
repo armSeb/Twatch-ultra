@@ -18,6 +18,7 @@ static const char *TAG = "mchist";
 #define HIST_PATH     "/mc/hist"
 #define HIST_TMP      "/mc/hist.tmp"
 #define HIST_MAGIC    0x3248434Du          /* « MCH2 » */
+#define HIST_MAGIC_V1 0x48430001u          /* 0.2.0 à 0.2.13 : sans conversation ni état lu */
 #define HIST_SAVE_US  (30 * 1000000LL)     /* sauvegarde après 30 s de calme */
 #define ARCH_DIR      SD_ROOT "/meshcore"
 #define ARCH_MAGIC    0x3141434Du          /* « MCA1 » */
@@ -122,6 +123,36 @@ void mch_frame_synced(const uint8_t *frame, int len)
     if (hit) notify(NULL);
 }
 
+bool mch_has_qkey(uint32_t qkey)
+{
+    bool hit = false;
+    lock();
+    for (int i = 0; i < s_n && !hit; i++) hit = AT(i).qkey == qkey;
+    unlock();
+    return hit;
+}
+
+bool mch_import(const mc_msg_t *m)
+{
+    lock();
+    /* déjà repris de l'ancien historique (même texte, même conversation) */
+    for (int i = 0; i < s_n; i++) {
+        const mc_msg_t *e = &AT(i);
+        if ((e->flags & MC_F_LEGACY) && e->kind == m->kind && !strcmp(e->from, m->from) &&
+            !strcmp(e->text, m->text)) {
+            unlock();
+            return false;
+        }
+    }
+    s_ring[s_head] = *m;
+    s_ring[s_head].seq = ++s_seq;
+    s_head = (s_head + 1) % MC_HIST_N;
+    if (s_n < MC_HIST_N) s_n++;
+    touch();
+    unlock();
+    return true;
+}
+
 int mc_history_count(void) { return s_n; }
 uint32_t mc_history_last_seq(void) { return s_ver; }
 void mc_set_msg_cb(mc_msg_cb_t cb) { s_cb = cb; }
@@ -171,11 +202,68 @@ void mch_save_if_due(int64_t now)
     if (s_dirty_at && now - s_dirty_at >= HIST_SAVE_US) mch_save_now();
 }
 
+/* message de l'historique 0.2.0 à 0.2.13 */
+typedef struct {
+    uint32_t seq, ts;
+    bool     channel;
+    int8_t   snr_q4;
+    uint8_t  hops;
+    char     from[MC_NAME_MAX];
+    char     text[MC_TEXT_MAX + 1];
+} msg_v1_t;
+
+/* identifiant provisoire tiré du nom, remplacé par le vrai dès que la liste
+ * des contacts et canaux est connue (mch_peers_set) */
+static void legacy_peer(uint8_t kind, const char *name, uint8_t out[MC_PEER_LEN])
+{
+    uint32_t a = mc_fnv32(name, strlen(name)), b = a * 2654435761u + kind;
+    memcpy(out, &a, 4);
+    memcpy(out + 4, &b, 2);
+}
+
+/* reprise de l'ancien historique : messages tenus pour lus (ils avaient été
+ * vus dans l'ancienne app) */
+static bool load_v1(FILE *f, uint32_t n)
+{
+    static msg_v1_t o;
+    int k = 0;
+    while (k < (int)n && k < MC_HIST_N && fread(&o, sizeof o, 1, f) == 1) {
+        mc_msg_t *m = &s_ring[k];
+        memset(m, 0, sizeof *m);
+        m->seq = (uint32_t)k + 1;
+        m->ts = o.ts;
+        m->kind = o.channel ? MC_CONV_CHANNEL : MC_CONV_CONTACT;
+        m->flags = MC_F_READ | MC_F_LEGACY;
+        m->snr_q4 = o.snr_q4;
+        m->hops = o.hops;
+        o.from[MC_NAME_MAX - 1] = 0;
+        o.text[MC_TEXT_MAX] = 0;
+        memcpy(m->from, o.from, sizeof m->from);
+        memcpy(m->text, o.text, sizeof m->text);
+        legacy_peer(m->kind, m->from, m->peer);
+        k++;
+    }
+    s_n = k;
+    s_head = k % MC_HIST_N;
+    s_seq = (uint32_t)k;
+    s_arch_seq = 0;
+    if (k) s_dirty_at = esp_timer_get_time();        /* réécrit au nouveau format */
+    ESP_LOGI(TAG, "%d message(s) repris de l'ancien historique", k);
+    return true;
+}
+
 static bool load_from(const char *path)
 {
     FILE *f = fopen(path, "rb");
     if (!f) return false;
     hist_hdr_t h;
+    if (fread(&h, 8, 1, f) == 1 && h.magic == HIST_MAGIC_V1 && h.n <= 4096) {
+        fseek(f, 8, SEEK_SET);
+        bool ok = load_v1(f, h.n);
+        fclose(f);
+        return ok;
+    }
+    fseek(f, 0, SEEK_SET);
     bool ok = fread(&h, sizeof h, 1, f) == 1 && h.magic == HIST_MAGIC && h.n <= MC_HIST_N;
     if (ok) {
         int n = 0;
@@ -301,6 +389,19 @@ void mch_peers_set(const mch_peer_t *p, int n)
     lock();
     memcpy(s_peers, p, (size_t)n * sizeof *p);
     s_npeers = n;
+    /* messages repris de l'ancien historique : rattachés à leur contact ou
+     * canal par le nom */
+    for (int i = 0; i < s_n; i++) {
+        mc_msg_t *e = &AT(i);
+        if (!(e->flags & MC_F_LEGACY)) continue;
+        for (int k = 0; k < n; k++) {
+            if (p[k].kind != e->kind || strcmp(p[k].name, e->from)) continue;
+            memcpy(e->peer, p[k].peer, MC_PEER_LEN);
+            e->flags &= ~MC_F_LEGACY;
+            touch();
+            break;
+        }
+    }
     s_peers_req = false;
     s_ver++;
     unlock();

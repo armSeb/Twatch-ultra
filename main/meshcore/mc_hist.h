@@ -35,6 +35,10 @@ void mch_frame_synced(const uint8_t *frame, int len);   /* trame récupérée pa
 /* ajoute un message ; recv : reçu (qkey et horodatage pris dans la dernière
  * trame mise en file), sinon envoyé depuis l'app */
 void mch_add(mc_msg_t *m, bool recv);
+/* message de la file de l'app absent de l'anneau (mise à jour, anneau
+ * perdu) : ajouté tel quel ; false s'il y est déjà */
+bool mch_has_qkey(uint32_t qkey);
+bool mch_import(const mc_msg_t *m);
 
 /* contacts et canaux connus, recopiés par la tâche mesh sur demande */
 bool mch_peers_wanted(void);

@@ -416,6 +416,54 @@ static void offq_save(void)
     f.close();                          /* remplace l'ancienne version à la fermeture */
 }
 
+/* Messages encore dans la file de l'app mais absents de l'historique de la
+ * montre (mise à jour depuis un ancien format, historique perdu) : copiés
+ * dans l'historique, non lus. Format des trames : voir MyMesh::queueMessage
+ * et onChannelMessageRecv. */
+static void import_queue(void)
+{
+    static mc_msg_t m;
+    static ChannelDetails ch;
+    int got = 0;
+    for (int i = 0; i < s_mesh->getOfflineQueueLen(); i++) {
+        const uint8_t *f;
+        int len = s_mesh->getOfflineQueueFrame(i, &f);
+        uint8_t kind;
+        uint32_t ts;
+        if (!mc_frame_info(f, len, &kind, &ts)) continue;
+        uint32_t k = mc_fnv32(f, (size_t)len);
+        if (mch_has_qkey(k)) continue;
+        bool v3 = f[0] == 16 || f[0] == 17;
+        int at = v3 ? 4 : 1;                        /* clé du contact ou n° de canal */
+        memset(&m, 0, sizeof m);
+        m.kind = kind;
+        m.ts = ts;
+        m.qkey = k;
+        m.snr_q4 = v3 ? (int8_t)f[1] : 0;
+        int text_at;
+        if (kind == MC_CONV_CONTACT) {
+            uint8_t type = f[at + 6 + 1];
+            if (type != TXT_TYPE_PLAIN && type != TXT_TYPE_SIGNED_PLAIN) continue;
+            m.hops = f[at + 6];
+            text_at = at + 6 + 2 + 4 + (type == TXT_TYPE_SIGNED_PLAIN ? 4 : 0);
+            memcpy(m.peer, f + at, MC_PEER_LEN);
+            ContactInfo *c = s_mesh->lookupContactByPubKey(f + at, MC_PEER_LEN);
+            if (c) mc_copy_utf8(m.from, sizeof m.from, c->name, sizeof c->name);
+            else snprintf(m.from, sizeof m.from, "%02x%02x%02x", f[at], f[at + 1], f[at + 2]);
+        } else {
+            if (!s_mesh->getChannel(f[at], ch) || !ch.name[0]) continue;
+            m.hops = f[at + 1];
+            text_at = at + 1 + 2 + 4;
+            channel_peer(ch, m.peer);
+            mc_copy_utf8(m.from, sizeof m.from, ch.name, sizeof ch.name);
+        }
+        if (text_at >= len) continue;
+        mc_copy_utf8(m.text, sizeof m.text, (const char *)f + text_at, (size_t)(len - text_at));
+        if (mch_import(&m)) got++;
+    }
+    if (got) ESP_LOGI(TAG, "%d message(s) de la file de l'app copiés dans l'historique", got);
+}
+
 static void offq_load(void)
 {
     File f = SPIFFS.open(OFFQ_PATH, "r");
@@ -511,6 +559,7 @@ extern "C" esp_err_t mc_start(void)
         s_mesh->begin();                    /* identité, préférences, contacts, canaux */
         offq_load();
         mch_load();
+        import_queue();
         s_mesh->startInterface(*s_ble);
         s_mesh->setListener(&s_listener);
         heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
