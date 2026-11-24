@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.33 — 2026-11-24
+
+- *Énergie* screen: touching the "Animation" line runs a watch-face benchmark. It renders the
+  current face six times without sending anything to the panel and shows the best render
+  time for: everything (T), without line objects such as hands (L), without images such as
+  the baked decor (I), without both (LI) and an empty screen (V). Also logged as `bench`.
+
 ## 0.2.32 — 2026-11-24
 
 - Analog watch faces (Retro and Pub): sliding to or from the face was still choppy (about

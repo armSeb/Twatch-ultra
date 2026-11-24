@@ -282,8 +282,12 @@ static void refr_ready_cb(lv_event_t *e)
     s_refr_t0 = 0;            /* rien dessiné : ce passage ne compte pas */
 }
 
+static bool s_bench;           /* banc de mesure : rendu seul, rien n'est envoyé */
+void display_bench_mode(bool on) { if (on) lcd_drain(); s_bench = on; }
+
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
 {
+    if (s_bench) { s_te_frame = false; lv_display_flush_ready(d); return; }
     int w = lv_area_get_width(a), h = lv_area_get_height(a);
     /* RGB565 → big-endian attendu par la dalle, sur place (RAM interne) */
     lv_draw_sw_rgb565_swap(px, (uint32_t)w * h);

@@ -2287,6 +2287,66 @@ static void power_refresh(void)
 
 static void power_timer_cb(lv_timer_t *t) { power_refresh(); }
 
+/* Banc de mesure du cadran (toucher la ligne « Animation ») : temps de
+ * rendu LVGL d'une image pleine du cadran, sans envoi à la dalle, avec
+ * certaines familles d'objets masquées pour voir ce qui coûte. */
+typedef struct { lv_obj_t *o[96]; int n; } bench_hid_t;
+
+static void bench_hide(lv_obj_t *o, int what, bench_hid_t *h)
+{
+    uint32_t n = lv_obj_get_child_count(o);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *c = lv_obj_get_child(o, (int32_t)i);
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN)) continue;
+        bool hit = what == 3 ||
+                   ((what & 1) && lv_obj_check_type(c, &lv_line_class)) ||
+                   ((what & 2) && lv_obj_check_type(c, &lv_image_class));
+        if (hit && h->n < (int)(sizeof h->o / sizeof h->o[0])) {
+            lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+            h->o[h->n++] = c;
+        } else {
+            bench_hide(c, what, h);
+        }
+    }
+}
+
+static uint32_t bench_one(lv_obj_t *scr, int what)
+{
+    bench_hid_t h = { .n = 0 };
+    if (what) bench_hide(scr, what == 4 ? 3 : what, &h);
+    uint32_t best = UINT32_MAX;
+    for (int k = 0; k < 6; k++) {
+        lv_obj_invalidate(scr);
+        int64_t t0 = esp_timer_get_time();
+        lv_refr_now(NULL);
+        uint32_t us = (uint32_t)(esp_timer_get_time() - t0);
+        if (k && us < best) best = us;              /* 1er passage : caches froids */
+    }
+    for (int i = 0; i < h.n; i++) lv_obj_remove_flag(h.o[i], LV_OBJ_FLAG_HIDDEN);
+    return best;
+}
+
+static void bench_cb(lv_event_t *e)
+{
+    lv_obj_t *back = lv_screen_active();
+    lv_obj_t *scr = s_scr[SCR_WATCH];
+    if (!scr) return;
+    display_bench_mode(true);
+    lv_screen_load(scr);
+    uint32_t r[5];
+    for (int w = 0; w < 5; w++) r[w] = bench_one(scr, w);   /* tout, −lignes, −images, −les deux, vide */
+    lv_screen_load(back);
+    display_bench_mode(false);
+    lv_obj_invalidate(back);
+    ESP_LOGI("bench", "cadran : tout %lu, sans lignes %lu, sans images %lu, sans les deux %lu, vide %lu µs",
+             (unsigned long)r[0], (unsigned long)r[1], (unsigned long)r[2], (unsigned long)r[3], (unsigned long)r[4]);
+    char s[96];
+    snprintf(s, sizeof s, "T%.1f L%.1f I%.1f LI%.1f V%.1f ms", r[0] / 1000.0f, r[1] / 1000.0f, r[2] / 1000.0f,
+             r[3] / 1000.0f, r[4] / 1000.0f);
+    lv_label_set_text(p_lbl[8], s);
+    lv_timer_pause(p_timer);           /* garder le résultat affiché */
+}
+
 static void build_power(void)
 {
     lv_obj_t *s = s_scr[SCR_POWER] = mk_screen();
@@ -2305,6 +2365,9 @@ static void build_power(void)
     lv_obj_set_style_text_align(p_lbl[8], LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(p_lbl[8], LV_LABEL_LONG_DOT);
     lv_obj_align_to(p_lbl[8], p_lbl[7], LV_ALIGN_OUT_BOTTOM_MID, 0, S(2));
+    lv_obj_add_flag(p_lbl[8], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(p_lbl[8], S(10));
+    lv_obj_add_event_cb(p_lbl[8], bench_cb, LV_EVENT_CLICKED, NULL);
     p_timer = lv_timer_create(power_timer_cb, 1000, NULL);
     lv_timer_pause(p_timer);
 }

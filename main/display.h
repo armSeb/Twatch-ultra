@@ -43,6 +43,8 @@ typedef struct {
     uint32_t max_us;
 } display_perf_t;
 void      display_get_perf(display_perf_t *p);
+/* banc de mesure : LVGL dessine sans rien envoyer à la dalle (temps de rendu pur) */
+void      display_bench_mode(bool on);
 /* Observateur du tactile (tâche app, à chaque lecture LVGL) : reçoit ce qui
  * est transmis à LVGL, après le filtre du coup d'œil. Sert au tirage depuis
  * le bord haut (ui.c), qui doit voir le doigt avant les objets de l'écran. */
