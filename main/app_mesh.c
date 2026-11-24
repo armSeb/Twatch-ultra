@@ -175,7 +175,7 @@ static void add_bubble(const mc_msg_t *m, bool at_top)
         text = mc_split_sender(m->text, who, sizeof who);
         if (who[0]) {
             lv_obj_t *h = ui_label(c, &font_small, name_color(who), "");
-            lv_label_set_long_mode(h, LV_LABEL_LONG_DOT);
+            lv_label_set_long_mode(h, LV_LABEL_LONG_WRAP);   /* DOT + largeur au contenu : « … » seul */
             lv_obj_set_style_max_width(h, UI_W * 82 / 100 - S(14), 0);
             emoji_label_set_text(h, who);
         }
@@ -189,7 +189,7 @@ static void add_bubble(const mc_msg_t *m, bool at_top)
     char meta[40], when[16];
     fmt_stamp(m->ts, when, sizeof when);
     if (out) snprintf(meta, sizeof meta, "%s", when);
-    else if (m->hops == 0xFF) snprintf(meta, sizeof meta, "%s · %s", when, _("direct"));
+    else if (m->hops == 0xFF || m->hops == 0) snprintf(meta, sizeof meta, "%s · %s", when, _("direct"));
     else snprintf(meta, sizeof meta, _("%s · %u saut(s)"), when, m->hops);
     lv_obj_t *mt = ui_label(c, &font_small, out ? lv_color_hex(0x93C5FD) : C_DIM, meta);
     if (out) lv_obj_set_style_text_align(mt, LV_TEXT_ALIGN_RIGHT, 0);
@@ -376,7 +376,7 @@ static void add_row(int i)
     snprintf(name, sizeof name, "%s%s", cv->kind == MC_CONV_CHANNEL && cv->name[0] != '#' ? "#" : "", cv->name);
     lv_obj_t *n = ui_label(r, &font_text, C_FG, "");
     lv_label_set_long_mode(n, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(n, UI_W - S(16) - right);
+    lv_obj_set_size(n, UI_W - S(16) - right, lv_font_get_line_height(&font_text));   /* une ligne */
     lv_obj_align(n, LV_ALIGN_TOP_LEFT, 0, 0);
     emoji_label_set_text(n, name);
 
@@ -386,7 +386,7 @@ static void add_row(int i)
     for (char *p = prev; *p; p++) if (*p == '\n') *p = ' ';
     lv_obj_t *pv = ui_label(r, &font_small, cv->unread ? C_FG : C_DIM, "");
     lv_label_set_long_mode(pv, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(pv, UI_W - S(16) - right);
+    lv_obj_set_size(pv, UI_W - S(16) - right, lv_font_get_line_height(&font_small));
     lv_obj_align(pv, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     emoji_label_set_text(pv, prev);
 

@@ -8,7 +8,7 @@ en Bluetooth pour lire et envoyer des messages, gérer contacts et canaux, et r�
 Le protocole est celui du firmware compagnon d'origine (v1.18.0) : l'app voit la montre comme
 n'importe quel appareil MeshCore.
 
-![App MeshCore, réglages MeshCore, réglages Wi-Fi](../img/meshcore.png)
+![App MeshCore : onglet Contacts, conversation de canal, onglet Radio](../img/meshcore.png)
 
 ## Activation
 
@@ -35,19 +35,48 @@ affiche sans les modifier.
 
 ## L'app MeshCore de la montre
 
-L'app **MeshCore** (la première de la liste) affiche :
+L'app **MeshCore** (la première de la liste) a trois onglets :
 
-- une ligne d'état : fréquence et facteur d'étalement, puis *app connectée*, ou le nombre de
-  messages en attente pour l'app ;
-- une ligne radio : paquets émis (`TX`, avec les ratés), reçus (`RX`, avec les abîmés) et le
-  bruit de fond en dBm. Si la radio n'a pas pu démarrer, la ligne dit pourquoi ;
-- les derniers messages, du plus récent au plus ancien : les messages directs sous le nom du
-  contact, ceux des canaux sous `#canal`. Emoji et tout texte UTF-8 s'affichent comme sur le
-  téléphone.
+- **Contacts** : les contacts de discussion et les salons, plus les conversations dont le
+  contact a été supprimé depuis ;
+- **Canaux** : les canaux réglés dans l'app iPhone ;
+- **Radio** : nom du nœud, fréquence, SF et puissance, état de l'app iPhone (connectée, à
+  jour, ou nombre de messages qui l'attendent), compteurs radio (`TX` avec les ratés, `RX`
+  avec les abîmés, bruit de fond) et état de la carte SD.
 
-La montre garde les 64 derniers messages (enregistrés en flash : ils survivent à un redémarrage) et en affiche 30. **Lire un message sur
-la montre ne le retire pas à l'app** : il reste dans la file de l'app (256 messages au plus)
-et lui est remis quand elle se connecte.
+Les listes mettent en tête les conversations qui ont des **non lus**, puis suivent l'ordre
+**alphabétique** (émojis et ponctuation en début de nom ignorés, sans majuscules ni accents).
+Chaque ligne montre le dernier message, son heure et une pastille avec le nombre de non lus ;
+le titre des onglets compte aussi les non lus. Au-delà de 40 lignes, *Afficher plus* charge
+la suite.
+
+Toucher une ligne fait **glisser la conversation** : bulles, les plus anciennes en haut, nom
+de l'expéditeur sur les canaux, messages envoyés depuis l'iPhone à droite, repère *Non lus*.
+*Messages plus anciens* remonte dans l'historique (montre, puis carte SD). Retour : la flèche,
+un glissé vers la droite ou le bouton. Émojis et tout texte UTF-8 s'affichent comme sur le
+téléphone.
+
+### Lu et non lu
+
+- Ouvrir une conversation sur la montre la marque **lue**.
+- Un message que l'app iPhone a **récupéré**, ou une conversation où l'on vient d'**écrire**
+  depuis l'app, passe en lu sur la montre.
+- **Lire un message sur la montre ne le retire pas à l'app** : il reste dans sa file (256
+  messages au plus) et lui est remis quand elle se connecte. Le protocole MeshCore ne sait pas
+  dire à l'app qu'un message est lu : il y apparaît donc comme nouveau.
+
+### Historique et carte SD
+
+La montre garde les **128 derniers messages** (reçus, et envoyés depuis l'app), avec leur état
+lu / non lu, en mémoire et en flash : ils survivent à un redémarrage. Avec une **carte
+micro-SD**, chaque message y est aussi archivé, un fichier par conversation dans `/meshcore`,
+et les plus anciens se relisent depuis la carte.
+
+La carte est détectée à l'insertion (en 3 s environ), montée tout de suite et démontée si on
+la retire. *Réglages › Carte SD* affiche l'espace libre et propose **Éjecter la carte** (les
+tampons sont écrits, puis la carte est démontée : on peut la retirer) et **Remonter la carte**.
+Elle doit être formatée en FAT32. Le journal de la montre y est aussi écrit chaque minute,
+dans `/logs/AAAA-MM-JJ.log`.
 
 Quand MeshCore est coupé, l'app propose un bouton pour l'activer.
 
@@ -77,5 +106,5 @@ alimentées tirent le bus vers le bas et la radio ne répond plus (détails dans
 
 ## Pas encore
 
-Alertes de message (bandeau et vibration), historique sur la carte SD, réception basse
+Alertes de message (bandeau et vibration), réponse depuis la montre, réception basse
 consommation, et liaison TCP pour les clients sur ordinateur.
