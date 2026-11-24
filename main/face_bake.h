@@ -1,16 +1,23 @@
 /*
- * face_bake.h — décor fixe d'un cadran figé en une image.
+ * face_bake.h — cadran analogique figé en image.
  *
- * LVGL redessine l'écran par bandes : un décor riche (échelles de 61 traits,
- * cerclages à grand rayon, dégradé, harpe…) coûtait 30 ms et plus par image
- * pendant les glissements depuis ou vers le cadran. On le dessine une fois
- * dans une image RGB565 en PSRAM ; seules les parties vivantes (aiguilles,
- * guichets, pastilles) restent des objets.
+ * Banc de mesure (0.2.33) : un cadran Pub coûtait 42 ms par image pendant un
+ * glissement, dont ~19 ms pour son décor et ~12 à 19 ms pour ses six aiguilles
+ * (traits épais à bouts ronds, coûteux en rendu logiciel). Tout ce qui ne bouge
+ * pas à chaque seconde (décor, aiguilles des heures, minutes et batterie,
+ * guichets) est construit hors écran et rendu dans une image RGB565 en PSRAM,
+ * refaite seulement quand il change (une fois par minute). À l'affichage,
+ * les carreaux unis de l'image sont remplis directement et seuls les carreaux
+ * détaillés sont lus en PSRAM. Seule la trotteuse reste dessinée en direct.
  */
 #pragma once
 #include "lvgl.h"
 
-/* Remplacera base (un conteneur et ses enfants, tous fixes) par une image de
- * même place et même rang, au prochain passage des minuteurs LVGL. Si la
- * mémoire manque, le décor reste dessiné à chaque image, comme avant. */
-void face_bake(lv_obj_t *base);
+/* holder : l'objet du cadran à l'écran, déjà dimensionné et placé.
+ * Renvoie le conteneur hors écran, de même taille, où construire tout ce
+ * qui est figé. L'image est rendue au prochain passage des minuteurs LVGL
+ * (tâche app : la tâche main n'a pas la pile pour un rendu complet). */
+lv_obj_t *face_bake_create(lv_obj_t *holder);
+
+/* le contenu figé a changé (aiguilles, guichets…) : nouvelle image bientôt */
+void face_bake_dirty(lv_obj_t *holder);

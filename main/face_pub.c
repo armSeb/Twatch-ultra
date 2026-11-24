@@ -358,12 +358,11 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
     lv_obj_set_pos(s_root, -UI_PAD_X, -UI_PAD_Y);       /* hors de la marge de l'écran */
     bubble(s_root);
 
-    /* Décor fixe (fond, cerclages, piste, harpe, graduations) : dessiné une
-     * fois dans une image (face_bake.c) ; seules les parties vivantes restent
-     * des objets redessinés à chaque image d'un glissement. */
-    lv_obj_t *base = lv_obj_create(s_root);
-    lv_obj_remove_style_all(base);
-    lv_obj_set_size(base, BOARD_LCD_W, BOARD_LCD_H);
+    /* Tout ce qui ne bouge pas chaque seconde (fond, cerclages, piste,
+     * graduations, guichets, aiguilles heures/minutes/jauge) est construit
+     * hors écran et affiché en image (face_bake.c), refaite à chaque minute ;
+     * seule la trotteuse reste un objet vivant. */
+    lv_obj_t *base = face_bake_create(s_root);
     lv_obj_set_style_radius(base, BOARD_LCD_VIS_R, 0);
     /* fond uni : un dégradé en RGB565 (sans tramage dans LVGL 9) fait des
      * bandes de teinte, les trois canaux ne changeant pas aux mêmes lignes */
@@ -409,15 +408,16 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
     lv_obj_t *ssb = disc(dial_b, SS_X, SS_Y, SS_D, C_SUB, 1, C_BRASS);
     scale(ssb, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_BRASS, C_CREAM);
 
-    face_bake(base);
-
-    /* complications vivantes et aiguilles : même carré, au-dessus */
-    lv_obj_t *dial = box(s_root, 0, 0, 240, 240, 0);
+    /* complications et aiguilles figées : même carré */
+    lv_obj_t *dial = box(base, 0, 0, 240, 240, 0);
     lv_obj_center(dial);
+    /* partie vivante, au-dessus de l'image : la trotteuse et son axe */
+    lv_obj_t *live = box(s_root, 0, 0, 240, 240, 0);
+    lv_obj_center(live);
     s_fuel_lbl = text(dial, &font_small, C_CREAM, "FUEL");
     lv_obj_set_style_text_letter_space(s_fuel_lbl, S(1), 0);
     lv_obj_align(s_fuel_lbl, LV_ALIGN_TOP_MID, 0, S(FU_Y + 6));
-    lv_obj_t *ssd = box(dial, SS_X - SS_D / 2, SS_Y - SS_D / 2, SS_D, SS_D, 0);   /* calque du compteur */
+    lv_obj_t *ssd = box(live, SS_X - SS_D / 2, SS_Y - SS_D / 2, SS_D, SS_D, 0);   /* calque du compteur */
     s_sec = hand(ssd, SS_D, 2, C_RED, s_pt_sec);
 
     /* 3 h : guichet jour + date */
@@ -472,6 +472,7 @@ void face_pub_set_time(const struct tm *tm, bool force)
         snprintf(b, sizeof(b), "%s %d", DAYS[tm->tm_wday % 7], tm->tm_mday);
         lv_label_set_text(s_date, b);
         s_last_min = tm->tm_min;
+        face_bake_dirty(s_root);
     }
     if (force || tm->tm_sec != s_last_sec) {
         place(s_sec, s_pt_sec, SS_D / 2, SS_D / 2, tm->tm_sec * 6.0f, -6, 23);
@@ -481,8 +482,13 @@ void face_pub_set_time(const struct tm *tm, bool force)
 
 void face_pub_set_status(int pct, bool charging, int link, int notifs)
 {
+    static int l_chg = -1, l_notif = -1;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
+    if (notifs < 0) notifs = 0;
+    if (notifs > 9) notifs = 9;
+    if (pct == s_last_pct && (int)charging == l_chg && link == s_last_link && notifs == l_notif) return;
+    l_chg = charging; l_notif = notifs;
     if (pct != s_last_pct) {
         place(s_fuel_hand, s_pt_fuel, FU_X, FU_Y, -60.0f + pct * 1.2f, -5, 27);
         s_last_pct = pct;
@@ -505,9 +511,10 @@ void face_pub_set_status(int pct, bool charging, int link, int notifs)
         s_last_link = link;
     }
     if (notifs > 0) {
-        lv_label_set_text_fmt(s_badge_txt, "%d", notifs > 9 ? 9 : notifs);
+        lv_label_set_text_fmt(s_badge_txt, "%d", notifs);
         lv_obj_remove_flag(s_badge, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s_badge, LV_OBJ_FLAG_HIDDEN);
     }
+    face_bake_dirty(s_root);
 }

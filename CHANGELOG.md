@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.35 — 2026-11-24
+
+- Analog watch faces (Retro and Pub): the 0.2.34 benchmark showed about 35–42 ms per frame
+  while sliding, 18 ms of it reading the decor image from PSRAM and 12–19 ms drawing the
+  thick round-capped hands. Everything that changes at most once a minute (hour, minute and
+  battery hands, date and status windows, labels, badges) is now part of the baked image,
+  re-rendered on change (once a minute, never during an animation). Only the small seconds
+  hand is still drawn live; it now sits above the main hands.
+- The baked image is split into 16×16 tiles: uniform tiles (the Pub green, the Retro ivory,
+  the black corners) are filled directly without reading PSRAM; only detailed tiles are read.
+- The benchmark's "I" column no longer hides the baked face (it is not an image object).
+
 ## 0.2.34 — 2026-11-24
 
 - 0.2.32 and 0.2.33 did not boot: baking the watch-face decor ran a full render from the
