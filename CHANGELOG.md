@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.28 — 2026-11-24
+
+- Smoother LVGL animations (screen slides, scrolling, MeshCore tabs). LVGL now draws straight
+  into the two small DMA strips in internal RAM while the previous strip is being sent to the
+  panel, instead of drawing a full 400 KB image in PSRAM and reading it back. PSRAM is much
+  slower than internal RAM for pixel work, which held animations to roughly 15–20 frames per
+  second. Same internal RAM budget (2 × 13 KB strips, was 2 × 10 KB), 400 KB of PSRAM freed.
+  Full-screen frames still start on the panel's TE signal.
+- *Énergie* screen: new line with the frame rate and refresh time of the last animation
+  (also logged on the console), to compare builds.
+- Flight game pause screen: average render and send times per frame, next to the frame rate.
+
 ## 0.2.26 — 2026-11-24
 
 - New *Settings › Wi-Fi › Turn Bluetooth off* (off by default, also on the web page): while

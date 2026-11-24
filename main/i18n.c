@@ -20,6 +20,8 @@ static const tr_t EN[] = {
     { "Veille : mesure en cours…", "Sleep: measuring…" },
     { "Préc. %u %% → %u %% en %luh%02lu, %s", "Prev. %u %% → %u %% in %luh%02lu, %s" },
     { "Pas encore de décharge enregistrée", "No discharge recorded yet" },
+    { "Animation %u img/s · %.1f ms (max %.1f)", "Animation %u fps · %.1f ms (max %.1f)" },
+    { "Animation : pas encore mesurée", "Animation: not measured yet" },
 
     /* jours et mois (cadrans) */
     { "dim.", "Sun" }, { "lun.", "Mon" }, { "mar.", "Tue" }, { "mer.", "Wed" },
@@ -464,6 +466,7 @@ static const tr_t EN[] = {
     { "TOUCHE POUR REPRENDRE", "TAP TO RESUME" },
     { "QUITTER", "QUIT" },
     { "%d IMAGES/S", "%d FPS" },
+    { "CALCUL %d MS · ENVOI %d MS", "RENDER %d MS · SEND %d MS" },
     { "NOUVEAU RECORD !", "NEW BEST!" },
     { "TOUCHE POUR REJOUER", "TAP TO PLAY AGAIN" },
     { "Envol", "Soar" },

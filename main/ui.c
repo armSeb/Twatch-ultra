@@ -114,7 +114,7 @@ static void nav_open(scr_id_t id, lv_screen_load_anim_t anim);
 static void menu_refresh_summaries(void);
 static lv_timer_t *m_toast_t;
 /* énergie */
-static lv_obj_t *p_lbl[8];
+static lv_obj_t *p_lbl[9];
 static lv_timer_t *p_timer;
 static lv_timer_t *mu_timer;
 static void media_refresh(bool full);
@@ -2275,6 +2275,14 @@ static void power_refresh(void)
         snprintf(s, sizeof(s), _("Pas encore de décharge enregistrée"));
     }
     lv_label_set_text(p_lbl[7], s);
+
+    /* fluidité de la dernière animation (rendu LVGL + envoi à la dalle) */
+    display_perf_t dp;
+    display_get_perf(&dp);
+    if (dp.fps) snprintf(s, sizeof(s), _("Animation %u img/s · %.1f ms (max %.1f)"), dp.fps,
+                         dp.avg_us / 1000.0f, dp.max_us / 1000.0f);
+    else snprintf(s, sizeof(s), "%s", _("Animation : pas encore mesurée"));
+    lv_label_set_text(p_lbl[8], s);
 }
 
 static void power_timer_cb(lv_timer_t *t) { power_refresh(); }
@@ -2292,6 +2300,11 @@ static void build_power(void)
     }
     lv_label_set_long_mode(p_lbl[7], LV_LABEL_LONG_WRAP);        /* 2 lignes en petit */
     lv_obj_set_height(p_lbl[7], 2 * lv_font_get_line_height(&font_small));
+    p_lbl[8] = mk_label(s, &font_small, C_DIM, "");
+    lv_obj_set_width(p_lbl[8], UI_W - S(60));
+    lv_obj_set_style_text_align(p_lbl[8], LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(p_lbl[8], LV_LABEL_LONG_DOT);
+    lv_obj_align_to(p_lbl[8], p_lbl[7], LV_ALIGN_OUT_BOTTOM_MID, 0, S(2));
     p_timer = lv_timer_create(power_timer_cb, 1000, NULL);
     lv_timer_pause(p_timer);
 }
