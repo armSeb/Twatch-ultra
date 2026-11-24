@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "lvgl.h"
+#include "face_bake.h"
 #include "src/display/lv_display_private.h"   /* act_scr / prev_scr / scr_to_load */
 #include "fonts/fonts.h"
 #include "face_classic.h"
@@ -2300,7 +2301,7 @@ static void bench_hide(lv_obj_t *o, int what, bench_hid_t *h)
         if (lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN)) continue;
         bool hit = what == 3 ||
                    ((what & 1) && lv_obj_check_type(c, &lv_line_class)) ||
-                   ((what & 2) && lv_obj_check_type(c, &lv_image_class));
+                   ((what & 2) && (lv_obj_check_type(c, &lv_image_class) || face_bake_is_view(c)));
         if (hit && h->n < (int)(sizeof h->o / sizeof h->o[0])) {
             lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
             h->o[h->n++] = c;
@@ -2313,7 +2314,7 @@ static void bench_hide(lv_obj_t *o, int what, bench_hid_t *h)
 static uint32_t bench_one(lv_obj_t *scr, int what)
 {
     bench_hid_t h = { .n = 0 };
-    if (what) bench_hide(scr, what == 4 ? 3 : what, &h);
+    if (what) bench_hide(scr, what, &h);
     uint32_t best = UINT32_MAX;
     for (int k = 0; k < 6; k++) {
         lv_obj_invalidate(scr);
@@ -2333,16 +2334,17 @@ static void bench_cb(lv_event_t *e)
     if (!scr) return;
     display_bench_mode(true);
     lv_screen_load(scr);
-    uint32_t r[5];
-    for (int w = 0; w < 5; w++) r[w] = bench_one(scr, w);   /* tout, −lignes, −images, −les deux, vide */
+    uint32_t r[4];
+    for (int w = 0; w < 4; w++) r[w] = bench_one(scr, w);   /* tout, −lignes, −images (dont cadran figé), vide */
     lv_screen_load(back);
     display_bench_mode(false);
     lv_obj_invalidate(back);
-    ESP_LOGI("bench", "cadran : tout %lu, sans lignes %lu, sans images %lu, sans les deux %lu, vide %lu µs",
-             (unsigned long)r[0], (unsigned long)r[1], (unsigned long)r[2], (unsigned long)r[3], (unsigned long)r[4]);
+    int dp = face_bake_detail_pct();
+    ESP_LOGI("bench", "cadran : tout %lu, sans lignes %lu, sans images %lu, vide %lu µs, carreaux détaillés %d %%",
+             (unsigned long)r[0], (unsigned long)r[1], (unsigned long)r[2], (unsigned long)r[3], dp);
     char s[96];
-    snprintf(s, sizeof s, "T%.1f L%.1f I%.1f LI%.1f V%.1f ms", r[0] / 1000.0f, r[1] / 1000.0f, r[2] / 1000.0f,
-             r[3] / 1000.0f, r[4] / 1000.0f);
+    snprintf(s, sizeof s, "T%.1f L%.1f I%.1f V%.1f ms D%d%%", r[0] / 1000.0f, r[1] / 1000.0f, r[2] / 1000.0f,
+             r[3] / 1000.0f, dp);
     lv_label_set_text(p_lbl[8], s);
     lv_timer_pause(p_timer);           /* garder le résultat affiché */
 }

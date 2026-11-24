@@ -3,6 +3,8 @@
  */
 #include "face_bake.h"
 #include "src/misc/lv_area_private.h"   /* lv_area_intersect */
+#include "src/draw/lv_draw_private.h"    /* état des tâches de dessin */
+#include <string.h>
 
 #define TILE 16                       /* carreau : 16 × 16 pixels */
 #define TILE_DETAIL 0xFFFFFFFFu       /* carreau à lire dans l'image */
@@ -18,11 +20,15 @@ typedef struct {
     bool ready;
 } bake_t;
 
+static char s_view_tag;               /* marque l'objet affiché (banc de mesure) */
+static int s_detail_pct = -1;         /* part des carreaux détaillés, dernière image */
+
 static void scan_tiles(bake_t *b)
 {
     const uint8_t *data = b->buf->data;
     uint32_t stride = b->buf->header.stride;
     int w = b->buf->header.w, h = b->buf->header.h;
+    int nd = 0;
     for (int ty = 0; ty < b->th; ty++) {
         for (int tx = 0; tx < b->tw; tx++) {
             int x0 = tx * TILE, y0 = ty * TILE;
@@ -33,15 +39,21 @@ static void scan_tiles(bake_t *b)
             for (int y = y0; y < y1 && solid; y++, row = (const uint16_t *)((const uint8_t *)row + stride))
                 for (int x = 0; x < x1 - x0; x++) if (row[x] != c) { solid = false; break; }
             b->tiles[ty * b->tw + tx] = solid ? c : TILE_DETAIL;
+            nd += !solid;
         }
     }
+    s_detail_pct = nd * 100 / (b->tw * b->th);
 }
 
 static void bake_timer_cb(lv_timer_t *t)
 {
     bake_t *b = lv_timer_get_user_data(t);
     /* pas pendant une animation : le rendu complet (~50 ms) la saccaderait */
-    if (lv_anim_count_running() > 0) { lv_timer_set_period(t, 50); return; }
+    /* ni pendant un glissement au doigt (pas encore une animation) */
+    bool busy = lv_anim_count_running() > 0;
+    for (lv_indev_t *i = lv_indev_get_next(NULL); i && !busy; i = lv_indev_get_next(i))
+        busy = lv_indev_get_state(i) == LV_INDEV_STATE_PRESSED;
+    if (busy) { lv_timer_set_period(t, 50); return; }
     lv_timer_pause(t);
     lv_timer_set_period(t, 0);
     if (!b->buf) {
@@ -60,6 +72,52 @@ static void bake_timer_cb(lv_timer_t *t)
     lv_obj_invalidate(b->view);
 }
 
+static inline void fill16(uint16_t *d, uint16_t c, int n)
+{
+    if (n > 0 && ((uintptr_t)d & 2)) { *d++ = c; n--; }
+    uint32_t c2 = c | ((uint32_t)c << 16);
+    uint32_t *d32 = (uint32_t *)d;
+    for (int i = n >> 1; i > 0; i--) *d32++ = c2;
+    if (n & 1) d[n - 1] = c;
+}
+
+/* Écriture directe dans la bande en cours : sans OS, LVGL exécute chaque
+ * tâche de dessin dès sa création, donc tout ce qui est sous le cadran est
+ * déjà dessiné. On remplit les aplats et on copie les lignes détaillées
+ * nous-mêmes, sans créer des centaines de tâches par image (chacune
+ * repasse par le cache d'images et le mélangeur). */
+static bool draw_direct(bake_t *b, lv_layer_t *layer, const lv_area_t *co, const lv_area_t *clip)
+{
+    lv_draw_buf_t *db = layer->draw_buf;
+    if (!db || layer->color_format != LV_COLOR_FORMAT_RGB565 ||
+        db->header.cf != LV_COLOR_FORMAT_RGB565) return false;
+    for (lv_draw_task_t *t = layer->draw_task_head; t; t = t->next)
+        if (t->state != LV_DRAW_TASK_STATE_READY) return false;
+    lv_area_t a;
+    if (!lv_area_intersect(&a, clip, &layer->buf_area)) return true;
+
+    const uint8_t *src = b->buf->data;
+    uint32_t sstride = b->buf->header.stride, dstride = db->header.stride;
+    int tx0 = (a.x1 - co->x1) / TILE, tx1 = (a.x2 - co->x1) / TILE;
+    for (int32_t y = a.y1; y <= a.y2; y++) {
+        int sy = y - co->y1;
+        const uint32_t *row = b->tiles + (sy / TILE) * b->tw;
+        uint16_t *d = (uint16_t *)(db->data + (size_t)(y - layer->buf_area.y1) * dstride) - layer->buf_area.x1;
+        const uint16_t *s = (const uint16_t *)(src + (size_t)sy * sstride) - co->x1;
+        int tx = tx0;
+        while (tx <= tx1) {
+            uint32_t k = row[tx];
+            int end = tx;
+            while (end < tx1 && row[end + 1] == k) end++;
+            int32_t x1 = LV_MAX(co->x1 + tx * TILE, a.x1), x2 = LV_MIN(co->x1 + end * TILE + TILE - 1, a.x2);
+            if (k == TILE_DETAIL) memcpy(d + x1, s + x1, (size_t)(x2 - x1 + 1) * 2);
+            else fill16(d + x1, (uint16_t)k, x2 - x1 + 1);
+            tx = end + 1;
+        }
+    }
+    return true;
+}
+
 /* Dessin de l'image, bande par bande : carreaux unis en aplats (aucune
  * lecture PSRAM), carreaux détaillés lus dans l'image par plages. */
 static void view_draw_cb(lv_event_t *e)
@@ -71,14 +129,19 @@ static void view_draw_cb(lv_event_t *e)
     lv_obj_get_coords(b->view, &co);
     lv_area_t clip;
     if (!lv_area_intersect(&clip, &layer->_clip_area, &co)) return;
+    /* opacité héritée (fondu d'écran) : dessin par LVGL, qui sait mélanger */
+    lv_opa_t opa = lv_obj_get_style_opa_recursive(b->view, LV_PART_MAIN);
+    if (opa <= LV_OPA_MIN) return;
+    if (opa >= LV_OPA_MAX && draw_direct(b, layer, &co, &clip)) return;
     const lv_area_t clip0 = layer->_clip_area;
 
     lv_draw_image_dsc_t img;
     lv_draw_image_dsc_init(&img);
     img.src = b->buf;
+    img.opa = opa;
     lv_draw_rect_dsc_t fill;
     lv_draw_rect_dsc_init(&fill);
-    fill.bg_opa = LV_OPA_COVER;
+    fill.bg_opa = opa;
 
     int ty0 = (clip.y1 - co.y1) / TILE, ty1 = (clip.y2 - co.y1) / TILE;
     int tx0 = (clip.x1 - co.x1) / TILE, tx1 = (clip.x2 - co.x1) / TILE;
@@ -139,6 +202,7 @@ lv_obj_t *face_bake_create(lv_obj_t *holder)
     lv_obj_remove_flag(b->view, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(b->view, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(b->view, view_draw_cb, LV_EVENT_DRAW_MAIN, b);
+    lv_obj_set_user_data(b->view, &s_view_tag);
 
     lv_obj_set_user_data(holder, b);
     lv_obj_add_event_cb(holder, holder_delete_cb, LV_EVENT_DELETE, b);
@@ -151,4 +215,14 @@ void face_bake_dirty(lv_obj_t *holder)
     bake_t *b = holder ? lv_obj_get_user_data(holder) : NULL;
     if (!b || !b->timer) return;
     lv_timer_resume(b->timer);
+}
+
+bool face_bake_is_view(lv_obj_t *o)
+{
+    return o && lv_obj_get_user_data(o) == &s_view_tag;
+}
+
+int face_bake_detail_pct(void)
+{
+    return s_detail_pct;
 }

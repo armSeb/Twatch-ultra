@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.36 — 2026-11-24
+
+- Analog faces: Seb measured 0.2.35 at 26.2 ms (Pub) and 21.2 ms (Retro) per frame, down from
+  41.7 and 35.2. The baked image is now written straight into the render strip (solid tiles
+  filled, detailed rows copied) instead of going through hundreds of LVGL image and rectangle
+  draw tasks per frame. LVGL's own path is kept for screen fades (inherited opacity).
+- The once-a-minute re-render of a face also waits while a finger is on the screen, so a
+  swipe that has not yet become an animation is no longer interrupted by a ~50 ms render.
+- Benchmark (*Énergie* screen): columns are now T (all), L (without lines: seconds hand),
+  I (without images, including the baked face), V (empty screen), plus D, the share of
+  detailed tiles in the baked image.
+
 ## 0.2.35 — 2026-11-24
 
 - Analog watch faces (Retro and Pub): the 0.2.34 benchmark showed about 35–42 ms per frame
