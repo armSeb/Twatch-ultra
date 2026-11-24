@@ -418,7 +418,7 @@ void ble_mc_set_enabled(bool on)
     if (s_mc_on == on) return;
     s_mc_on = on;
     if (!on && s_nus_sub) { s_nus_sub = false; mc_ble_link(false); }
-    if (s_running) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_mc);
+    if (s_running && !s_stopping) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_mc);
 }
 
 static void co_adv_cb(struct ble_npl_event *ev)
@@ -994,6 +994,13 @@ void ble_stop(void)
         ble_npl_callout_deinit(&s_co_sec);
         ble_npl_callout_deinit(&s_co_readv);
         ble_npl_callout_deinit(&s_co_mc);
+        /* nimble_port_deinit() libère le pool des événements : un pointeur resté
+         * dans s_ev_* serait réutilisé tel quel au prochain ble_npl_event_init()
+         * et écrirait dans de la mémoire rendue au tas (crash LVGL en 0.2.21) */
+        ble_npl_event_deinit(&s_ev_batt);
+        ble_npl_event_deinit(&s_ev_forget);
+        ble_npl_event_deinit(&s_ev_pair);
+        ble_npl_event_deinit(&s_ev_mc);
         if (s_ancs_up) ancs_host_deinit();
         s_ancs_up = false;
         hid_on_disconnect();
@@ -1019,7 +1026,7 @@ void ble_stop(void)
     set_state(BLE_ST_OFF);
 }
 
-bool ble_running(void) { return s_running; }
+bool ble_running(void) { return s_running && !s_stopping; }
 
 void ble_get_info(ble_info_t *o)
 {
@@ -1040,15 +1047,15 @@ void ble_set_battery(uint8_t pct)
 {
     if (pct == s_batt) return;
     s_batt = pct;
-    if (s_running) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_batt);
+    if (s_running && !s_stopping) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_batt);
 }
 
 void ble_forget_all(void)
 {
-    if (s_running) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_forget);
+    if (s_running && !s_stopping) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_forget);
 }
 
 void ble_pairing_mode(void)
 {
-    if (s_running) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_pair);
+    if (s_running && !s_stopping) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_pair);
 }

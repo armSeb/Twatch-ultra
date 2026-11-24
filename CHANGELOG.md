@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.23 — 2026-11-24
+
+- Crash (LoadStoreError in LVGL) when Bluetooth was turned back on after being turned off,
+  for example from the control center after turning Wi-Fi off. NimBLE frees its event pool
+  when Bluetooth stops, but the watch's own events kept their old pointer, and the next start
+  wrote into memory that LVGL had taken back. The events are now released when Bluetooth
+  stops (`ble.c`, `ancs.c`), and nothing is posted to the stack while it is stopping.
+
 ## 0.2.22 — 2026-11-24
 
 - Wi-Fi with Bluetooth on answered in bursts (pings of 1 to 17 s, "host unreachable"):
