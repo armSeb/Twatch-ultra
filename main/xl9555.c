@@ -44,3 +44,12 @@ bool xl9555_input(int pin)
     if (!s_dev || i2c_reg_read(s_dev, REG_IN0, b, 2) != ESP_OK) return false;
     return ((b[0] | (b[1] << 8)) >> pin) & 1;
 }
+
+esp_err_t xl9555_read(int pin, bool *level)
+{
+    uint8_t b[2];
+    if (!s_dev) return ESP_ERR_INVALID_STATE;
+    esp_err_t e = i2c_reg_read(s_dev, REG_IN0, b, 2);
+    if (e == ESP_OK) *level = ((b[0] | (b[1] << 8)) >> pin) & 1;
+    return e;
+}

@@ -241,6 +241,7 @@ void MyMesh::addToOfflineQueue(const uint8_t frame[], int len) {
     memcpy(offline_queue[offline_queue_len].buf, frame, len);
     offline_queue_len++;
   }
+  if (_listener) _listener->onOfflineFrameQueued(frame, len);   // twatch
 }
 
 // twatch : format du fichier : « MCQ1 », puis pour chaque trame sa longueur
@@ -1187,6 +1188,8 @@ void MyMesh::handleCmdFrame(size_t len) {
           next_ack_idx = (next_ack_idx + 1) % EXPECTED_ACK_TABLE_SIZE;
         }
 
+        // twatch : copie du message envoyé dans l'historique de la montre
+        if (_listener && txt_type == TXT_TYPE_PLAIN) _listener->onAppMessageSent(recipient, NULL, msg_timestamp, text, tlen);
         out_frame[0] = RESP_CODE_SENT;
         out_frame[1] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
         memcpy(&out_frame[2], &expected_ack, 4);
@@ -1213,6 +1216,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       ChannelDetails channel;
       bool success = getChannel(channel_idx, channel);
       if (success && sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, len - i)) {
+        if (_listener) _listener->onAppMessageSent(NULL, &channel, msg_timestamp, text, len - i);   // twatch
         writeOKFrame();
       } else {
         writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
@@ -1439,7 +1443,10 @@ void MyMesh::handleCmdFrame(size_t len) {
     int out_len;
     if ((out_len = getFromOfflineQueue(out_frame)) > 0) {
       _serial->writeFrame(out_frame, out_len);
-      if (_listener) _listener->onQueueSizeChanged(offline_queue_len);
+      if (_listener) {
+        _listener->onOfflineFrameSynced(out_frame, out_len);   // twatch
+        _listener->onQueueSizeChanged(offline_queue_len);
+      }
     } else {
       out_frame[0] = RESP_CODE_NO_MORE_MESSAGES;
       _serial->writeFrame(out_frame, 1);

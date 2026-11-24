@@ -31,25 +31,67 @@ bool mc_ble_rx(const uint8_t *buf, size_t len); /* écriture sur la caractérist
 /* fourni par ble.c : notification sur la caractéristique TX */
 bool ble_mc_notify(const uint8_t *buf, size_t len);
 
-/* ---- copie montre des messages reçus ---- */
+/* ---- historique de la montre ----
+ * Un anneau des MC_HIST_N derniers messages (reçus, et envoyés depuis l'app)
+ * vit en PSRAM, sauvegardé sur la FAT interne. Avec une carte SD, chaque
+ * message y est aussi archivé (un fichier par conversation) : les plus
+ * anciens se relisent depuis la carte.
+ *
+ * Lu / non lu : ouvrir une conversation sur la montre la marque lue. Un
+ * message que l'app MeshCore a récupéré (CMD_SYNC_NEXT_MESSAGE) ou une
+ * conversation où l'app vient d'écrire passent en lu sur la montre. */
+#define MC_HIST_N   128
 #define MC_NAME_MAX 32
 #define MC_TEXT_MAX 160
+#define MC_PEER_LEN 6
+
+enum { MC_CONV_CONTACT = 0, MC_CONV_CHANNEL = 1 };
+#define MC_F_READ  0x01           /* lu (montre ou app) */
+#define MC_F_OUT   0x02           /* envoyé par nous (depuis l'app) */
+#define MC_F_APP   0x04           /* récupéré par l'app */
+
 typedef struct {
     uint32_t seq;                 /* croissant, jamais réutilisé */
     uint32_t ts;                  /* horodatage de l'expéditeur (UTC) */
-    bool     channel;             /* message de canal */
+    uint32_t qkey;                /* empreinte de la trame donnée à l'app (0 : aucune) */
+    uint8_t  kind;                /* MC_CONV_* */
+    uint8_t  flags;               /* MC_F_* */
     int8_t   snr_q4;
     uint8_t  hops;                /* 0xFF : direct */
-    char     from[MC_NAME_MAX];   /* contact, ou nom du canal */
+    uint8_t  peer[MC_PEER_LEN];   /* contact : début de sa clé ; canal : empreinte du secret */
+    char     from[MC_NAME_MAX];   /* nom du contact ou du canal */
     char     text[MC_TEXT_MAX + 1];   /* UTF-8 ; « nom: texte » sur un canal */
 } mc_msg_t;
 
 int  mc_history_count(void);
 bool mc_history_get(int i, mc_msg_t *out);      /* 0 = le plus récent */
-uint32_t mc_history_last_seq(void);
+uint32_t mc_history_last_seq(void);             /* change à chaque message ou changement lu/non lu */
 /* appelé (tâche mesh) à chaque message reçu ; à brancher sur app_post */
 typedef void (*mc_msg_cb_t)(const mc_msg_t *m);
 void mc_set_msg_cb(mc_msg_cb_t cb);
+
+/* ---- conversations (onglets Contacts et Canaux) ---- */
+typedef struct {
+    uint8_t  kind;
+    uint8_t  peer[MC_PEER_LEN];
+    char     name[MC_NAME_MAX];
+    uint16_t unread;
+    uint32_t last_ts;             /* 0 : aucun message dans l'anneau */
+    bool     last_out;            /* le dernier message est de nous */
+    char     last[64];            /* aperçu du dernier message */
+} mc_conv_t;
+/* Liste triée : non lus d'abord, puis ordre alphabétique (émojis et
+ * ponctuation de tête ignorés, sans casse ni accents). Contacts : chat et
+ * salons ; plus ceux de l'historique supprimés depuis. Renvoie le nombre total
+ * (peut dépasser max). La liste des contacts et canaux est recopiée par la
+ * tâche mesh après mc_conv_refresh() (rappel mc_set_msg_cb avec NULL). */
+int  mc_conv_list(uint8_t kind, mc_conv_t *out, int max);
+void mc_conv_refresh(void);
+int  mc_unread_total(uint8_t kind);
+void mc_conv_mark_read(uint8_t kind, const uint8_t peer[MC_PEER_LEN]);
+/* messages d'une conversation, du plus récent au plus ancien, de seq
+ * < before (UINT32_MAX : les derniers) : d'abord l'anneau, puis la carte SD */
+int  mc_conv_messages(uint8_t kind, const uint8_t peer[MC_PEER_LEN], uint32_t before, mc_msg_t *out, int max);
 
 /* état courant (diagnostic, écran Réglages) */
 typedef struct {

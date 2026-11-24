@@ -377,34 +377,15 @@ static void lora_task(void *arg)
 }
 
 /* ------------------------------------------------------------------ allumage */
-/* La carte SD (ALDO1) et le NFC (DLDO1) partagent le bus SPI. Hors tension,
- * leurs diodes de protection tirent MISO, MOSI et SCK vers la masse : la
- * SX1262 répondait 0x00. On les alimente, CS tenus hauts (désélectionnés),
- * le temps que la radio tourne, comme LilyGoLib. */
+/* La carte SD (ALDO1) et le NFC (DLDO1) partagent le bus SPI : alimentés
+ * tant que la radio tourne (spi_peers_get, partagé avec la carte SD). */
 static void bus_peers(bool on)
 {
-    const gpio_num_t cs[] = { BOARD_SD_CS, BOARD_NFC_CS };
-    if (on) {
-        axp_rail(AXP_RAIL_SD, true);
-        axp_rail(AXP_RAIL_NFC, true);
-        for (int i = 0; i < 2; i++) {
-            gpio_set_level(cs[i], 1);
-            gpio_config_t o = { .pin_bit_mask = 1ULL << cs[i], .mode = GPIO_MODE_OUTPUT,
-                                .pull_up_en = GPIO_PULLUP_ENABLE };
-            gpio_config(&o);
-            gpio_set_level(cs[i], 1);
-            gpio_sleep_sel_dis(cs[i]);
-        }
-    } else {
-        for (int i = 0; i < 2; i++) {
-            gpio_reset_pin(cs[i]);
-            gpio_set_pull_mode(cs[i], GPIO_FLOATING);
-            gpio_set_direction(cs[i], GPIO_MODE_DISABLE);
-            gpio_sleep_sel_en(cs[i]);
-        }
-        axp_rail(AXP_RAIL_SD, false);
-        axp_rail(AXP_RAIL_NFC, false);
-    }
+    static bool held;                           /* sx_stop peut être appelé deux fois */
+    if (on == held) return;
+    held = on;
+    if (on) spi_peers_get();
+    else spi_peers_put();
 }
 
 static void pins_idle(void)

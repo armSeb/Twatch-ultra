@@ -2,6 +2,36 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.15 — 2026-11-24
+
+(0.2.14 is the power-saving build from the other branch.)
+
+- MeshCore app rebuilt with tabs: *Contacts* (chat and room contacts), *Channels* and
+  *Radio* (radio status, counters). Lists are sorted alphabetically (leading emoji and
+  punctuation ignored, case and accents ignored), with conversations that have unread
+  messages first; each row shows the last message, its time and an unread badge, and the
+  tab titles carry the unread count. Touching a row slides the conversation in: bubbles,
+  oldest at the top, sender name on channels, our own messages (sent from the iPhone app)
+  on the right, an *Unread* marker, and *Older messages* to read further back (ring, then
+  SD card).
+- Read state: opening a conversation on the watch marks it read; a message the MeshCore
+  app has fetched, or a conversation the app just wrote in, becomes read on the watch.
+  Messages read on the watch stay in the app's queue and still reach the app (the MeshCore
+  protocol has no way to tell the app a message was read, so they show as new there).
+- Watch history: a 128-message ring in PSRAM, saved to internal flash, with the read state
+  and messages sent from the app. With an SD card, every message is also archived on it,
+  one file per conversation (`/meshcore`), and older messages are read back from it.
+- SD card: detected when inserted (the card-detect line is polled every 3 s, its interrupt
+  is not wired), mounted at once, unmounted when pulled out. *Settings > SD card* shows the
+  free space and offers *Eject card* (buffers written first, then unmounted) and *Mount
+  card again*. A card in the watch is now always initialised, so it no longer sits in its
+  higher-current power-up state while the radio keeps its rail on.
+- Logs on the SD card: every log line also goes, time-stamped, into a 32 KB PSRAM ring
+  written to `/logs/YYYY-MM-DD.log` every minute (without a card, the last 32 KB are kept
+  and written when one is inserted).
+- SD and NFC rails are now shared by the radio and the SD card (reference counted), so
+  the radio stopping no longer cuts the card's power and the reverse.
+
 ## 0.2.13 — 2026-11-23
 
 (0.2.12 was a test build only: fast link and no light sleep only while frames flowed.)
