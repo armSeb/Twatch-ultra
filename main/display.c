@@ -219,12 +219,13 @@ static void frame_start(void)
 }
 
 /* fin d'une grande image : mise à jour de l'estimation (montée immédiate,
- * descente lente : une image lourde isolée ne doit pas déchirer) */
+ * descente de moitié à chaque image : une image lourde isolée ne doit pas
+ * ralentir toute l'animation qui suit) */
 static void frame_end(void)
 {
     uint32_t w = (uint32_t)(esp_timer_get_time() - s_send_t0) + 400;   /* + dernière bande en vol */
     s_send_t0 = 0;
-    s_w_est_us = w > s_w_est_us ? w : (s_w_est_us * 7 + w) / 8;
+    s_w_est_us = w > s_w_est_us ? w : (s_w_est_us + w) / 2;
 }
 
 /* Mesure du rendu (écran Énergie, journal) : images par seconde et durée

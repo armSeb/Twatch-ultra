@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.31 — 2026-11-24
+
+- "Pub" watch face: slides over it (pulling the menus) dropped to 2–3 frames since 0.2.28.
+  LVGL now draws the screen in 16-line strips and calls the face's decor callback for each
+  strip; the ~250 lines, discs and arcs of the decor were all queued as draw tasks for every
+  strip (about 8000 per frame, each allocated in PSRAM). Only the primitives that touch the
+  strip are submitted now, and the 60 index positions are computed once.
+
 ## 0.2.30 — 2026-11-24
 
 - No more tearing on heavy screens (e.g. pulling menus over the watch face). A full-screen

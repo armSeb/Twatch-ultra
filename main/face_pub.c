@@ -152,9 +152,25 @@ static lv_obj_t *text(lv_obj_t *p, const lv_font_t *f, lv_color_t c, const char 
  * les primitives le placent à l'écran (origine de l'objet + ×UI_K). */
 static float s_ox, s_oy;
 
+/* LVGL dessine l'écran par bandes de 16 lignes et rappelle track_draw_cb
+ * pour chacune : sans tri, les ~250 primitives du décor créaient chacune
+ * une tâche de dessin à chaque bande (≈ 8000 par image), d'où des glissements
+ * à 2-3 images. On ne soumet que ce qui touche la bande (repère 240×240). */
+static lv_area_t s_clip;
+
+static bool visible(float x1, float y1, float x2, float y2, float pad)
+{
+    float ax1 = s_ox + x1 * UI_K - pad, ax2 = s_ox + x2 * UI_K + pad;
+    float ay1 = s_oy + y1 * UI_K - pad, ay2 = s_oy + y2 * UI_K + pad;
+    if (ax1 > ax2) { float t = ax1; ax1 = ax2; ax2 = t; }
+    if (ay1 > ay2) { float t = ay1; ay1 = ay2; ay2 = t; }
+    return ax2 >= s_clip.x1 && ax1 <= s_clip.x2 && ay2 >= s_clip.y1 && ay1 <= s_clip.y2;
+}
+
 static void draw_line(lv_layer_t *layer, float x1, float y1, float x2, float y2, int w, lv_color_t c,
                       lv_opa_t opa, bool round)
 {
+    if (!visible(x1, y1, x2, y2, w * UI_K + 2)) return;
     lv_draw_line_dsc_t d;
     lv_draw_line_dsc_init(&d);
     d.p1.x = (lv_value_precise_t)(s_ox + x1 * UI_K); d.p1.y = (lv_value_precise_t)(s_oy + y1 * UI_K);
@@ -210,6 +226,7 @@ static void draw_disc(lv_layer_t *layer, float cx, float cy, int r, lv_color_t c
 static void draw_harp(lv_layer_t *layer, int ox, int oy)
 {
     float x0 = ox + HP_X - 21, y0 = oy + HP_Y - 29;          /* boîte 42 × 58 */
+    if (!visible(x0 - 6, y0 - 8, x0 + 46, y0 + 64, 4)) return;
     /* caisse : du pied (bas) jusque sous l'extrémité de la console (haut droite) */
     const fpt_t sb0 = { 14, 55 }, sb1 = { 22, 40 }, sb2 = { 31, 22 }, sb3 = { 35, 6 };
     /* colonne : du pied, galbe vers la gauche, jusqu'à la volute */
@@ -244,6 +261,7 @@ static void draw_harp(lv_layer_t *layer, int ox, int oy)
 
 static void draw_disc(lv_layer_t *layer, float cx, float cy, int r, lv_color_t c)
 {
+    if (!visible(cx - r, cy - r, cx + r, cy + r, 2)) return;
     lv_draw_rect_dsc_t d;
     lv_draw_rect_dsc_init(&d);
     d.radius = LV_RADIUS_CIRCLE;
@@ -259,6 +277,7 @@ static void draw_disc(lv_layer_t *layer, float cx, float cy, int r, lv_color_t c
 static void draw_shamrock(lv_layer_t *layer, float cx, float cy)
 {
     static const float ang[3] = { -90.0f, 30.0f, 150.0f };     /* haut, bas-droite, bas-gauche */
+    if (!visible(cx - 22, cy - 22, cx + 22, cy + 26, 4)) return;
     for (int i = 0; i < 3; i++) {
         float a = ang[i] * (float)M_PI / 180.0f;
         float ux = cosf(a), uy = sinf(a);           /* direction de la feuille */
@@ -283,11 +302,18 @@ static void track_draw_cb(lv_event_t *e)
     s_ox = co.x1 + (lv_area_get_width(&co) - S(240)) / 2;     /* repère du dessin : carré centré */
     s_oy = co.y1 + (lv_area_get_height(&co) - S(240)) / 2;
     const int ox = 0, oy = 0;          /* repère du dessin */
+    s_clip = layer->_clip_area;
 
+    /* positions des index sur la piste : calculées une fois (powf) */
+    static struct { float x, y, ux, uy; } tk[60];
+    static bool tk_ok;
+    if (!tk_ok) {
+        for (int m = 0; m < 60; m++) track_pt(m * 6.0f, &tk[m].x, &tk[m].y, &tk[m].ux, &tk[m].uy);
+        tk_ok = true;
+    }
     for (int m = 0; m < 60; m++) {
-        float x, y, ux, uy;
-        track_pt(m * 6.0f, &x, &y, &ux, &uy);
-        x += ox; y += oy;
+        float x = tk[m].x + ox, y = tk[m].y + oy, ux = tk[m].ux, uy = tk[m].uy;
+        if (!visible(x - IDX_LEN - 8, y - IDX_LEN - 8, x + IDX_LEN + 8, y + IDX_LEN + 8, 0)) continue;
         if (m % 5) {
             draw_line(layer, x, y, x - 6 * ux, y - 6 * uy, 1, C_CREAM, LV_OPA_70, false);
             continue;
@@ -314,7 +340,7 @@ static void track_draw_cb(lv_event_t *e)
     a.color = C_RED;
     a.start_angle = 210;            /* LVGL : 0° = 3 h, sens horaire ; E = −60° depuis 12 h */
     a.end_angle = 228;              /* 15 % de 120° = 18° */
-    lv_draw_arc(layer, &a);
+    if (visible(FU_X - FU_D / 2, FU_Y - FU_D / 2, FU_X + FU_D / 2, FU_Y + FU_D / 2, 4)) lv_draw_arc(layer, &a);
 
     draw_harp(layer, ox, oy);
     draw_shamrock(layer, ox + SH_X, oy + SH_Y);
