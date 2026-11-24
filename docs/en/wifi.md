@@ -42,7 +42,9 @@ During long waits the Wi-Fi radio is off to save battery. **Retry** tries again 
   it off.
 - **Bluetooth**: both radios coexist. The iPhone (notifications, MeshCore app) stays connected
   while Wi-Fi runs. The Wi-Fi modem sleeps between beacons, except during a stream (WebRX,
-  Radio, MeshCore TCP client, web transfer).
+  Radio, MeshCore TCP client, web transfer). With both radios on, the watch no longer enters
+  light sleep: it would miss the access point's beacons and answer only in bursts. This costs
+  a little more; with Wi-Fi alone, light sleep stays.
 - If internal RAM runs short next to Bluetooth, the global switch says so (*Not enough
   memory*) and never turns Bluetooth off. Only WebRX, Radio and the analyzer may pause it
   while they play, as before.

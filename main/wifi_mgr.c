@@ -232,6 +232,31 @@ static void radio_stop_locked(void)
     xEventGroupClearBits(s_evg, BIT_IP | BIT_DISC);
 }
 
+/* Light sleep + Bluetooth : avec les deux radios, la puce en light sleep
+ * manque les balises du point d'accès (la coexistence donne les créneaux au
+ * Bluetooth au réveil) ; la station rate ses trames pendant des secondes et
+ * l'AP les lui rend en rafale (ping de 1 à 17 s, « host unreachable »).
+ * Seb 0.2.21. Tant que la radio Wi-Fi tourne avec le Bluetooth actif, pas de
+ * light sleep : le modem Wi-Fi garde son économie (réveil aux balises) et le
+ * CPU descend toujours en fréquence. Sans Bluetooth, le light sleep reste. */
+static bool s_ns_held;
+static portMUX_TYPE s_ns_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void sleep_policy(void)
+{
+    bool want = s_started && ble_running();
+    portENTER_CRITICAL(&s_ns_mux);
+    bool ch = want != s_ns_held;
+    s_ns_held = want;
+    portEXIT_CRITICAL(&s_ns_mux);
+    if (ch) {
+        power_hold_nosleep(want);
+        ESP_LOGI(TAG, "light sleep %s (Wi-Fi + Bluetooth)", want ? "suspendu" : "permis");
+    }
+}
+
+void wifi_ble_changed(void) { sleep_policy(); kick_task(); }
+
 static void ble_resume(void)
 {
     if (!s_ble_pauser) return;
@@ -416,6 +441,7 @@ static void wifi_task(void *arg)
     int fails = 0;
     int64_t next_try = 0, next_rssi = 0;
     for (;;) {
+        sleep_policy();
         TickType_t wait = portMAX_DELAY;
         wifi_state_t st = cur_state();
         int64_t now = esp_timer_get_time();
@@ -604,6 +630,7 @@ esp_err_t wifi_acquire(uint32_t holder, uint32_t flags)
     if (s_started) apply_ps_locked();
     drv_unlock();
     power_set_cpu_max(160);                             /* radio en marche : 80 MHz suffisent écran éteint */
+    sleep_policy();
     if (cur_state() == WIFI_OFF) set_state(WIFI_IDLE, NULL, "");
     sync_holders();
     if (holder & WIFI_HOLD_CONNECT) { s_kick = true; kick_task(); }
@@ -665,6 +692,7 @@ void wifi_release(uint32_t holder)
     }
     s_abort = false;
     drv_unlock();
+    sleep_policy();
     sync_holders();
     if (!stop_connect) kick_task();
 }
@@ -693,6 +721,7 @@ void wifi_scan_radio(bool on)
     if (on) radio_start_locked();
     else radio_stop_locked();
     drv_unlock();
+    sleep_policy();
 }
 
 void wifi_apply_power(void)

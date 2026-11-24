@@ -259,6 +259,7 @@ static void handle_event(const app_event_t *ev)
         ui_on_notif_removed((uint32_t)ev->a);
         break;
     case EV_BLE_STATE:
+        wifi_ble_changed();               /* light sleep : voir wifi_mgr.c */
         ui_on_ble_state(ev->a);
         break;
     case EV_PASSKEY:

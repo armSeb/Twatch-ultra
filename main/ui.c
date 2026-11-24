@@ -3227,17 +3227,21 @@ bool ui_is_home(void) { return s_cur == SCR_WATCH; }
 uint32_t ui_timeout_ms(void)
 {
     uint32_t base = settings_get()->screen_timeout_s * 1000u;
+    /* dans une app ou les réglages : 1 min sans toucher (Seb), le délai
+     * court du réglage ne vaut que pour le cadran et les notifications */
+    const uint32_t use = base > 60000 ? base : 60000;
     if (ota_active()) return 10u * 60 * 1000;   /* écran allumé pendant la mise à jour */
+    if (is_menu_group(s_cur)) return s_cur == SCR_SET_BT || s_cur == SCR_PAIR ? 90000 : use;
     switch (s_cur) {
     case SCR_APP:
         if (s_app_cur && s_app_cur->keep_screen_on && s_app_cur->keep_screen_on()) return UINT32_MAX;
-        if (s_app_cur && s_app_cur->screen_timeout_ms) return s_app_cur->screen_timeout_ms;
-        return base;
+        if (s_app_cur && s_app_cur->screen_timeout_ms > use) return s_app_cur->screen_timeout_ms;
+        return use;
+    case SCR_MEDIA:  return use;
     case SCR_LAUNCHER:
     case SCR_QUICK:  return base > 10000 ? base : 10000;
     case SCR_DETAIL: return base > 15000 ? base : 15000;
     case SCR_CALL:   return 45000;
-    case SCR_MENU:   return base > 20000 ? base : 20000;
     case SCR_POWER:  return 120000;
     case SCR_PAIR:   return 90000;
     case SCR_ABOUT:  return 30000;

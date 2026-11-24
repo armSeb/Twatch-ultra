@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.22 — 2026-11-24
+
+- Wi-Fi with Bluetooth on answered in bursts (pings of 1 to 17 s, "host unreachable"):
+  in light sleep with both radios the watch missed the access point's beacons. While the
+  Wi-Fi radio runs with Bluetooth on, light sleep is now off (the Wi-Fi modem still sleeps
+  between beacons and the CPU still scales down). Without Bluetooth, light sleep stays.
+- Screen timeout: in apps, settings pages and Now playing the screen stays on for 1 min
+  without a touch (or the longer setting), instead of the short watch-face delay (8 s).
+
 ## 0.2.21 — 2026-11-24
 
 - Global Wi-Fi (`wifi_mgr.c`): one owner of the Wi-Fi driver. On/off from a new control-center

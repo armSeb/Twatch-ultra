@@ -47,7 +47,10 @@ bouton **Réessayer** relance un essai tout de suite.
   Au démarrage avec moins de 30 %, il reste éteint.
 - **Bluetooth** : les deux radios cohabitent. L'iPhone (notifications, app MeshCore) reste
   connecté pendant que le Wi-Fi tourne. Le modem Wi-Fi dort entre deux balises, sauf pendant
-  un flux (WebRX, Radio, client MeshCore TCP, transfert web).
+  un flux (WebRX, Radio, client MeshCore TCP, transfert web). Avec les deux radios allumées,
+  la montre ne passe plus en veille légère (light sleep) : sinon elle rate les balises du
+  point d'accès et ne répond que par à-coups. Cela consomme un peu plus ; Wi-Fi seul, la
+  veille légère reste.
 - Si la RAM interne manque à côté du Bluetooth, l'interrupteur global le signale
   (*Mémoire insuffisante*) et ne coupe jamais le Bluetooth. Seules WebRX, Radio et
   l'analyseur peuvent le suspendre le temps de leur écoute, comme avant.

@@ -102,6 +102,9 @@ int8_t    wifi_power_qdbm(void);                     /* même réglage, en quart
 /* tâche app : réseau choisi (0 = automatique, k = réseau k), retenu */
 void      wifi_set_pick(uint8_t pick);
 bool      wifi_ble_paused(void);
+/* Bluetooth démarré ou arrêté (tâche app) : pas de light sleep tant que les
+ * deux radios tournent (balises Wi-Fi manquées sinon) */
+void      wifi_ble_changed(void);
 void      wifi_perf(uint32_t who, bool on);          /* WIFI_PERF_* */
 
 /* analyseur (WIFI_HOLD_SCAN, tâche app) : radio coupée entre deux relèves
