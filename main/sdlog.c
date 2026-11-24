@@ -23,8 +23,12 @@ static portMUX_TYPE s_rmux = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_fmt_mx;          /* tampon de mise en forme partagé */
 static vprintf_like_t s_orig;
 
+static bool s_attached;
+static bool s_asked;                        /* vidage anticipé déjà demandé */
+
 static void ring_put(const char *p, size_t n)
 {
+    bool ask = false;
     portENTER_CRITICAL(&s_rmux);
     for (size_t k = 0; k < n; ) {
         size_t at = (size_t)(s_wr % RING), run = RING - at;
@@ -33,7 +37,9 @@ static void ring_put(const char *p, size_t n)
         k += run;
         s_wr += run;
     }
+    if (s_attached && !s_asked && s_wr - s_rd >= RING / 2) s_asked = ask = true;
     portEXIT_CRITICAL(&s_rmux);
+    if (ask) sd_flush_soon();               /* écran éteint, la carte n'est vidée que toutes les 5 min */
 }
 
 static int hook(const char *fmt, va_list ap)
@@ -76,8 +82,13 @@ static void flush(void)
     if (tm.tm_year + 1900 < 2024) snprintf(path, sizeof path, SD_ROOT "/logs/sans-date.log");
     else snprintf(path, sizeof path, SD_ROOT "/logs/%04d-%02d-%02d.log", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 
+    portENTER_CRITICAL(&s_rmux);
+    bool empty = s_wr == s_rd;
+    s_asked = false;
+    portEXIT_CRITICAL(&s_rmux);
+    if (empty) return;                      /* rien à écrire : la carte reste au repos */
+
     if (!sd_lock()) return;
-    mkdir(SD_ROOT "/logs", 0775);
     FILE *f = NULL;
     for (;;) {
         portENTER_CRITICAL(&s_rmux);
@@ -89,7 +100,10 @@ static void flush(void)
         uint64_t from = s_rd;
         portEXIT_CRITICAL(&s_rmux);
         if (!n) break;
-        if (!f && !(f = fopen(path, "a"))) break;
+        if (!f && !(f = fopen(path, "a"))) {
+            mkdir(SD_ROOT "/logs", 0775);   /* première fois sur cette carte */
+            if (!(f = fopen(path, "a"))) break;
+        }
         if (fwrite(chunk, 1, n, f) != n) break;
         portENTER_CRITICAL(&s_rmux);
         if (s_rd == from) s_rd += n;                             /* sinon déjà avancé (écrasement) */
@@ -109,5 +123,8 @@ void sdlog_init(void)
 
 void sdlog_attach(void)
 {
-    if (s_orig) sd_add_flusher(flush);
+    if (s_orig) {
+        sd_add_flusher(flush);
+        s_attached = true;
+    }
 }

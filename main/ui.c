@@ -86,7 +86,7 @@ static lv_obj_t *m_slider, *m_sw_vib, *m_sw_bt, *m_bm_tmo, *m_bm_face, *m_bm_lan
 static void menu_lang_cb(lv_event_t *ev);
 static lv_timer_t *w_clock_t;
 static lv_obj_t *m_sum[10], *m_bt_info, *m_confirm;
-static lv_obj_t *m_sd_info, *m_sd_btn;
+static lv_obj_t *m_sd_info, *m_sd_btn, *m_sd_share;
 static lv_timer_t *m_sd_timer;
 static lv_obj_t *o_info, *o_bar, *o_status, *o_btn, *o_pw, *o_prev, *o_prev_modal, *o_title;
 static int o_app = -1;           /* ≥ 0 : session « réglages » de cette app (WebRX), sinon mise à jour */
@@ -336,7 +336,7 @@ static void show(scr_id_t id, lv_screen_load_anim_t anim)
     if (id == SCR_ABOUT) about_refresh();
     if (id == SCR_MENU) menu_refresh_summaries();
     if (id == SCR_SET_BT) { menu_bt_refresh(); lv_obj_add_flag(m_confirm, LV_OBJ_FLAG_HIDDEN); }
-    if (id == SCR_SET_SD) { menu_sd_refresh(); lv_timer_resume(m_sd_timer); }
+    if (id == SCR_SET_SD) { sd_refresh_info(); menu_sd_refresh(); lv_timer_resume(m_sd_timer); }
     else if (m_sd_timer) lv_timer_pause(m_sd_timer);
     if (id == SCR_WATCH) { watch_update_time(true); watch_refresh_status(); }
     s_cur = id;
@@ -927,11 +927,19 @@ static void menu_sd_refresh(void)
         snprintf(b, sizeof b, "%s", _("Carte illisible : elle doit être formatée en FAT32."));
         btn = _("Réessayer");
         break;
+    case SD_SHARED:
+        fmt_size(tot, sizeof tot, si.total);
+        snprintf(b, sizeof b, sd_share_host_seen() ? _("Carte de %s ouverte sur le PC. La montre n'y écrit plus en attendant.")
+                                                   : _("Carte de %s prête pour le PC : en attente de sa reconnaissance…"), tot);
+        btn = _("Arrêter le partage");
+        break;
     default:
         snprintf(b, sizeof b, "%s", _("Pas de carte. Elle est détectée dès son insertion."));
         break;
     }
     lv_label_set_text(m_sd_info, b);
+    if (sd_can_share()) lv_obj_remove_flag(m_sd_share, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(m_sd_share, LV_OBJ_FLAG_HIDDEN);
     if (btn) {
         lv_label_set_text(lv_obj_get_child(m_sd_btn, 0), btn);
         lv_obj_remove_flag(m_sd_btn, LV_OBJ_FLAG_HIDDEN);
@@ -948,9 +956,16 @@ static void menu_sd_cb(lv_event_t *ev)
     sd_get_info(&si);
     if (si.state == SD_MOUNTED) {
         if (sd_eject() == ESP_OK) toast(_("Éjection…"));
+    } else if (si.state == SD_SHARED) {
+        if (sd_share(false) == ESP_OK) toast(_("Fin du partage…"));
     } else if (sd_mount() == ESP_OK) {
         toast(_("Montage…"));
     }
+}
+
+static void menu_sd_share_cb(lv_event_t *ev)
+{
+    if (sd_share(true) == ESP_OK) toast(_("Partage avec le PC…"));
 }
 
 static void menu_ant_cb(lv_event_t *ev)
@@ -1292,7 +1307,7 @@ static void menu_refresh_summaries(void)
         snprintf(b, sizeof(b), _("Montée · %s libres"), fr);
     } else {
         snprintf(b, sizeof(b), "%s", si.state == SD_EJECTED ? _("Éjectée") : si.state == SD_FAILED ? _("Illisible") :
-                                     _("Pas de carte"));
+                                     si.state == SD_SHARED ? _("Partagée avec le PC") : _("Pas de carte"));
     }
     lv_label_set_text(m_sum[9], b);
 }
@@ -1553,9 +1568,17 @@ static void build_menu(void)
     lv_obj_set_width(m_sd_info, lv_pct(100));
     m_sd_btn = mk_button(col, "", C_CARD, menu_sd_cb, NULL);
     lv_obj_set_size(m_sd_btn, lv_pct(100), S(44));
+    m_sd_share = mk_button(col, _("Partager avec le PC"), C_CARD, menu_sd_share_cb, NULL);
+    lv_obj_set_size(m_sd_share, lv_pct(100), S(44));
+    lv_obj_add_flag(m_sd_share, LV_OBJ_FLAG_HIDDEN);
     lv_obj_t *sn = mk_label(col, &font_small, C_DIM,
                             _("Messages MeshCore archivés dans /meshcore, journaux dans /logs. Éjecter avant de retirer la carte : "
                               "l'arracher peut abîmer le dernier fichier écrit."));
+    lv_label_set_long_mode(sn, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(sn, lv_pct(100));
+    sn = mk_label(col, &font_small, C_DIM,
+                  _("Partage : montre branchée au PC, la carte y apparaît comme une clé USB (la console USB est coupée "
+                    "pendant ce temps). L'éjecter sur le PC rend la carte à la montre."));
     lv_label_set_long_mode(sn, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(sn, lv_pct(100));
     m_sd_timer = lv_timer_create(menu_sd_timer_cb, 1000, NULL);
@@ -2771,7 +2794,7 @@ static void release_menu(void)
     m_slider = m_sw_vib = m_sw_bt = m_sw_tap = m_sw_nwake = m_bm_tmo = m_bm_face = m_bm_lang = NULL;
     m_sw_steps = m_sw_wrist = m_sw_mesh = m_sw_ant = NULL;
     m_bm_wsens = m_sw_glance = m_bm_gpct = m_bm_gdur = m_bm_wpwr = NULL;
-    m_bt_info = m_confirm = m_sd_info = m_sd_btn = NULL;
+    m_bt_info = m_confirm = m_sd_info = m_sd_btn = m_sd_share = NULL;
     o_info = o_bar = o_status = o_btn = o_pw = o_prev = o_prev_modal = NULL;
     memset(m_sum, 0, sizeof(m_sum));
 }

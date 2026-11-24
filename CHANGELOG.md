@@ -2,6 +2,19 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.19 — 2026-11-24
+
+- SD card shared with a computer over USB: *Settings › SD card › Share with the computer*
+  (shown while plugged in) unmounts the card on the watch and presents it as a USB drive
+  (TinyUSB mass storage, read and write). Ejecting the drive on the computer, *Stop sharing*,
+  unplugging or pulling the card ends it and the watch mounts the card again. The USB serial
+  console is off while sharing. TinyUSB buffers live in PSRAM; 4 KB of internal RAM is only
+  taken while sharing.
+- SD card battery savings: with the screen off the card-detect line is read every 15 s instead
+  of 3 s, buffers are written every 5 min instead of every minute (sooner if the log buffer is
+  half full), the log flush no longer touches the card when there is nothing to write, and free
+  space is only recomputed when the SD card page is opened.
+
 ## 0.2.18 — 2026-11-24
 
 - MeshCore history from 0.2.13 and earlier is taken over (it was ignored, so channels

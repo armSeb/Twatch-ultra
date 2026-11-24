@@ -16,7 +16,10 @@ if(DEFINED ENV{TW_DIAG_BARE})
     idf_build_set_property(COMPILE_DEFINITIONS "TW_DIAG_BARE=1" APPEND)
 endif()
 
+# TinyUSB (partage de la carte SD avec le PC) : configuration de la montre
+idf_build_set_property(COMPILE_DEFINITIONS "CFG_TUSB_CONFIG_FILE=\"${CMAKE_CURRENT_LIST_DIR}/main/usb/tusb_config.h\"" APPEND)
+
 # Version affichée (À propos, page de mise à jour) et comparée lors d'une OTA
-set(PROJECT_VER "0.2.18")
+set(PROJECT_VER "0.2.19")
 
 project(twatch_ultra)

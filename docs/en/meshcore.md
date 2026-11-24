@@ -67,10 +67,19 @@ state, in memory and on flash: they survive a restart. With a **micro-SD card**,
 is also archived on it, one file per conversation in `/meshcore`, and older messages are read
 back from the card.
 
-The card is detected when inserted (within about 3 s), mounted at once and unmounted if pulled
-out. *Settings › SD card* shows the free space and offers **Eject card** (buffers written,
+The card is detected when inserted (within about 3 s, 15 s with the screen off), mounted at
+once and unmounted if pulled out. *Settings › SD card* shows the free space and offers **Eject card** (buffers written,
 then unmounted: it can be removed) and **Mount card again**. It must be formatted as FAT32.
-The watch log is also written to it every minute, in `/logs/YYYY-MM-DD.log`.
+The watch log is also written to it every minute (every 5 min with the screen off, to save
+battery), in `/logs/YYYY-MM-DD.log`.
+
+**Share with the computer** shows up when the watch is plugged into a computer: the card
+appears there as a USB drive, readable and writable (about 1 MB/s, the bus is shared with the
+radio). While shared, the watch stops writing to the card (logs and messages wait in memory,
+MeshCore keeps receiving) and the USB serial console is off. **Ejecting the drive on the
+computer** gives the card back to the watch, which mounts it again; so do *Stop sharing*,
+unplugging the cable or pulling the card, but without an eject on the computer its last writes
+may be lost.
 
 When MeshCore is off, the app offers a button to turn it on.
 

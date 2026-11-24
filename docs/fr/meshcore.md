@@ -72,11 +72,19 @@ lu / non lu, en mémoire et en flash : ils survivent à un redémarrage. Avec un
 micro-SD**, chaque message y est aussi archivé, un fichier par conversation dans `/meshcore`,
 et les plus anciens se relisent depuis la carte.
 
-La carte est détectée à l'insertion (en 3 s environ), montée tout de suite et démontée si on
-la retire. *Réglages › Carte SD* affiche l'espace libre et propose **Éjecter la carte** (les
+La carte est détectée à l'insertion (en 3 s environ, 15 s écran éteint), montée tout de suite
+et démontée si on la retire. *Réglages › Carte SD* affiche l'espace libre et propose **Éjecter la carte** (les
 tampons sont écrits, puis la carte est démontée : on peut la retirer) et **Remonter la carte**.
-Elle doit être formatée en FAT32. Le journal de la montre y est aussi écrit chaque minute,
-dans `/logs/AAAA-MM-JJ.log`.
+Elle doit être formatée en FAT32. Le journal de la montre y est aussi écrit chaque minute
+(toutes les 5 min écran éteint, pour la batterie), dans `/logs/AAAA-MM-JJ.log`.
+
+**Partager avec le PC** apparaît quand la montre est branchée à un ordinateur : la carte y
+apparaît comme une clé USB, en lecture et en écriture (environ 1 Mo/s, le bus est partagé avec
+la radio). Pendant le partage, la montre n'écrit plus sur la carte (journaux et messages
+attendent en mémoire, MeshCore continue de recevoir) et la console série USB est coupée.
+**Éjecter le disque sur le PC** rend la carte à la montre, qui la remonte ; *Arrêter le
+partage*, le débranchement du câble ou le retrait de la carte aussi, mais sans éjection côté PC
+ses dernières écritures peuvent être perdues.
 
 Quand MeshCore est coupé, l'app propose un bouton pour l'activer.
 
