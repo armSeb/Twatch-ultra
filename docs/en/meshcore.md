@@ -8,7 +8,7 @@ connects to it over Bluetooth to read and send messages, manage contacts and cha
 set the radio. The protocol is the upstream companion firmware (v1.18.0), so the app sees the
 watch as an ordinary MeshCore device.
 
-![MeshCore app, MeshCore settings, Wi-Fi settings](../img/meshcore.png)
+![MeshCore app: Contacts tab, channel conversation, Radio tab](../img/meshcore.png)
 
 ## Turning it on
 
@@ -33,18 +33,67 @@ MeshCore app** and saved on the watch; the watch shows them but does not edit th
 
 ## The MeshCore app on the watch
 
-The **MeshCore** app (first in the app list) shows:
+The **MeshCore** app (first in the app list) has three tabs:
 
-- a status line: frequency and spreading factor, then *app connected*, or the number of
-  messages waiting for the app;
-- a radio line: packets sent (`TX`, with failures), received (`RX`, with damaged packets),
-  and the noise floor in dBm. If the radio could not start, the line says why;
-- the last messages, newest first: direct messages under the contact's name, channel
-  messages under `#channel`. Emoji and any UTF-8 text display as on the phone.
+- **Contacts**: chat contacts and rooms, plus conversations whose contact was deleted since;
+- **Channels**: the channels set up in the iPhone app;
+- **Radio**: node name, frequency, SF and power, iPhone app state (connected, up to date, or
+  number of messages waiting for it), radio counters (`TX` with failures, `RX` with damaged
+  packets, noise floor) and SD card state.
 
-The watch keeps the last 64 messages (saved on flash, so they survive a restart) and shows 30. **Reading a message on the
-watch does not take it away from the app**: it stays in the app's queue (up to 256 messages)
-and is delivered when the app connects.
+Lists put conversations with **unread** messages first, then follow **alphabetical** order
+(leading emoji and punctuation ignored, case and accents ignored). Each row shows the last
+message, its time and a badge with the unread count; tab titles count unread messages too.
+Past 40 rows, *Show more* loads the rest.
+
+Touching a row **slides the conversation in**: bubbles, oldest at the top, sender name on
+channels, messages sent from the iPhone on the right, an *Unread* marker. *Older messages*
+goes further back (watch, then SD card). Back: the arrow, a swipe right or the button. Emoji
+and any UTF-8 text display as on the phone.
+
+### Read and unread
+
+- Opening a conversation on the watch marks it **read**.
+- A message the iPhone app has **fetched**, or a conversation you just **wrote** in from the
+  app, becomes read on the watch.
+- **Reading a message on the watch does not take it away from the app**: it stays in its
+  queue (up to 256 messages) and is delivered when the app connects. The MeshCore protocol
+  cannot tell the app a message was read, so it shows as new there.
+
+### History and SD card
+
+The watch keeps the **last 128 messages** (received, and sent from the app) with their read
+state, in memory and on flash: they survive a restart. With a **micro-SD card**, every message
+is also archived on it, one file per conversation in `/meshcore`, and older messages are read
+back from the card.
+
+The archive files (`c-<key>.jsonl` for a contact, `g-<key>.jsonl` for a channel) are JSON
+Lines, readable on a computer: one line per message, padded with spaces to 512 bytes so the
+watch can jump straight to older ones. For example:
+
+```json
+{"seq":42,"ts":1764000000,"time":"2026-11-24 17:00","dir":"in","conv":"#fr","sender":"Bob","text":"Hi","snr":-5.25,"hops":3}
+```
+
+`ts` is the sender's timestamp (UTC), `time` the same in local time, `dir` `in` (received) or
+`out` (sent from the app), `sender` the author on a channel, `hops` 0 for a direct message.
+With `jq`: `jq -r '.time + " " + .sender + " " + .text' g-*.jsonl`. The old `.bin` files (0.2.15
+to 0.2.19) are no longer read.
+
+The card is detected when inserted (within about 3 s, 15 s with the screen off), mounted at
+once and unmounted if pulled out. *Settings › SD card* shows the free space and offers **Eject card** (buffers written,
+then unmounted: it can be removed) and **Mount card again**. It must be formatted as FAT32.
+The watch log is also written to it, in `/logs/YYYY-MM-DD.log`. To spare the card and the
+battery, the log and the archive stay in memory and are only written every 10 minutes (sooner
+if the log fills up), and before a restart, an eject or sharing.
+
+**Share with the computer** shows up when the watch is plugged into a computer: the card
+appears there as a USB drive, readable and writable (about 1 MB/s, the bus is shared with the
+radio). While shared, the watch stops writing to the card (logs and messages wait in memory,
+MeshCore keeps receiving) and the USB serial console is off. **Ejecting the drive on the
+computer** gives the card back to the watch, which mounts it again; so do *Stop sharing*,
+unplugging the cable or pulling the card, but without an eject on the computer its last writes
+may be lost.
 
 When MeshCore is off, the app offers a button to turn it on.
 
@@ -71,5 +120,5 @@ down and the radio does not answer (details in [hardware notes](hardware.md)).
 
 ## Not yet
 
-Message alerts (banner and vibration), history on the SD card, low-power receive, and a
+Message alerts (banner and vibration), replying from the watch, low-power receive, and a
 TCP link for desktop clients.

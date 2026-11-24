@@ -10,3 +10,4 @@
 esp_err_t xl9555_init(void);                 /* toutes les broches en entrée */
 esp_err_t xl9555_output(int pin, bool level); /* passe la broche en sortie */
 bool      xl9555_input(int pin);
+esp_err_t xl9555_read(int pin, bool *level);  /* comme xl9555_input, erreur I2C signalée */

@@ -1,5 +1,7 @@
 /* mc_port.cpp — voir mc_port.h et target.h */
 #include "mc_port.h"
+#include "mc_hist.h"
+#include "mc_text.h"
 #include "target.h"
 #include <SPIFFS.h>
 #include <MyMesh.h>
@@ -29,9 +31,6 @@ static const char *TAG = "mesh";
 
 #define OFFQ_PATH      "/offq"
 #define OFFQ_SAVE_MS   5000     /* file modifiée : sauvegarde après 5 s de calme */
-#define HIST_PATH      "/hist"
-#define HIST_SAVE_MS   30000    /* historique montre : sauvegarde après 30 s de calme */
-#define HIST_MAGIC     0x48430001u
 #define BUSY_TICK_MS   20       /* tâche active (émission, échanges avec l'app) */
 #define IDLE_TICK_MS   1000
 #define BUSY_HOLD_MS   3000     /* reste active un moment après un événement */
@@ -296,88 +295,16 @@ extern "C" bool mc_ble_rx(const uint8_t *buf, size_t len)
 }
 
 /* ================================================================== historique montre */
-#define HIST_N 64
-EXT_RAM_BSS_ATTR static mc_msg_t s_hist[HIST_N];
-static int s_hist_n, s_hist_head;       /* head : prochain emplacement */
-static uint32_t s_seq;
-static SemaphoreHandle_t s_hist_mx;
-static mc_msg_cb_t s_msg_cb;
-static int64_t s_hist_dirty_at;          /* 0 : rien à sauver */
-
-/* tronque sans couper un caractère UTF-8 */
-static void copy_utf8(char *dst, size_t cap, const char *src)
+/* (mc_hist.c) : chaque message reçu ou envoyé depuis l'app y est copié */
+static void fill_pkt(mc_msg_t &m, mesh::Packet *pkt)
 {
-    size_t n = strnlen(src, cap - 1);
-    if (n == cap - 1) while (n > 0 && ((uint8_t)src[n] & 0xC0) == 0x80) n--;
-    memcpy(dst, src, n);
-    dst[n] = 0;
+    m.snr_q4 = pkt->_snr;
+    m.hops = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
 }
 
-static void hist_add(mc_msg_t *m)
+static void channel_peer(const ChannelDetails &ch, uint8_t out[MC_PEER_LEN])
 {
-    xSemaphoreTake(s_hist_mx, portMAX_DELAY);
-    m->seq = ++s_seq;
-    s_hist[s_hist_head] = *m;
-    s_hist_head = (s_hist_head + 1) % HIST_N;
-    if (s_hist_n < HIST_N) s_hist_n++;
-    if (!s_hist_dirty_at) s_hist_dirty_at = esp_timer_get_time();
-    xSemaphoreGive(s_hist_mx);
-    if (s_msg_cb) s_msg_cb(m);
-}
-
-extern "C" int mc_history_count(void) { return s_hist_n; }
-extern "C" uint32_t mc_history_last_seq(void) { return s_seq; }
-extern "C" void mc_set_msg_cb(mc_msg_cb_t cb) { s_msg_cb = cb; }
-extern "C" bool mc_history_get(int i, mc_msg_t *out)
-{
-    if (!s_hist_mx) return false;
-    xSemaphoreTake(s_hist_mx, portMAX_DELAY);
-    bool ok = i >= 0 && i < s_hist_n;
-    if (ok) *out = s_hist[(s_hist_head - 1 - i + HIST_N) % HIST_N];
-    xSemaphoreGive(s_hist_mx);
-    return ok;
-}
-
-/* Historique de la montre sur la FAT : survit aux redémarrages (fin de
- * mise à jour OTA comprise). Format : magique, nombre, puis les messages
- * du plus ancien au plus récent. Écrit seulement après un temps calme ou à
- * l'arrêt, pour ménager la flash. Copie faite sous le verrou, écriture hors
- * verrou (l'interface lit l'historique pendant ce temps). */
-static void hist_save(void)
-{
-    EXT_RAM_BSS_ATTR static mc_msg_t snap[HIST_N];   /* tâche mesh seule ; PSRAM */
-    xSemaphoreTake(s_hist_mx, portMAX_DELAY);
-    uint32_t n = (uint32_t)s_hist_n;
-    for (uint32_t i = 0; i < n; i++) snap[i] = s_hist[(s_hist_head - (int)n + (int)i + HIST_N) % HIST_N];
-    s_hist_dirty_at = 0;
-    xSemaphoreGive(s_hist_mx);
-    File f = SPIFFS.open(HIST_PATH, "w", true);
-    uint32_t hdr[2] = { HIST_MAGIC, n };
-    bool ok = f && f.write((const uint8_t *)hdr, sizeof hdr) == sizeof hdr &&
-              f.write((const uint8_t *)snap, n * sizeof(mc_msg_t)) == n * sizeof(mc_msg_t);
-    f.close();
-    if (!ok) ESP_LOGW(TAG, "historique non sauvegardé");
-}
-
-static void hist_load(void)
-{
-    File f = SPIFFS.open(HIST_PATH, "r");
-    if (!f) return;
-    uint32_t hdr[2] = { 0, 0 };
-    if (f.read((uint8_t *)hdr, sizeof hdr) == sizeof hdr && hdr[0] == HIST_MAGIC && hdr[1] <= HIST_N) {
-        int n = 0;
-        while (n < (int)hdr[1] && f.read((uint8_t *)&s_hist[n], sizeof(mc_msg_t)) == sizeof(mc_msg_t)) {
-            s_hist[n].from[MC_NAME_MAX - 1] = 0;           /* fichier abîmé : chaînes bornées */
-            s_hist[n].text[MC_TEXT_MAX] = 0;
-            s_hist[n].seq = (uint32_t)n + 1;
-            n++;
-        }
-        s_hist_n = n;
-        s_hist_head = n % HIST_N;
-        s_seq = (uint32_t)n;
-        ESP_LOGI(TAG, "%d message(s) dans l'historique", n);
-    }
-    f.close();
+    mc_channel_peer(ch.channel.secret, sizeof ch.channel.secret, out);
 }
 
 class WatchListener : public MyMesh::Listener {
@@ -386,26 +313,49 @@ public:
                        uint32_t ts, const char *text) override
     {
         if (txt_type != TXT_TYPE_PLAIN && txt_type != TXT_TYPE_SIGNED_PLAIN) return;
-        static mc_msg_t m;
+        static mc_msg_t m;                          /* tâche mesh seule */
         memset(&m, 0, sizeof m);
+        m.kind = MC_CONV_CONTACT;
         m.ts = ts;
-        m.snr_q4 = pkt->_snr;
-        m.hops = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
-        copy_utf8(m.from, sizeof m.from, from.name);
-        copy_utf8(m.text, sizeof m.text, text);
-        hist_add(&m);
+        fill_pkt(m, pkt);
+        memcpy(m.peer, from.id.pub_key, MC_PEER_LEN);
+        mc_copy_utf8(m.from, sizeof m.from, from.name, sizeof from.name);
+        mc_copy_utf8(m.text, sizeof m.text, text, SIZE_MAX);
+        mch_add(&m, true);
     }
     void onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails &ch, const char *text) override
     {
         static mc_msg_t m;
         memset(&m, 0, sizeof m);
-        m.ts = (uint32_t)time(NULL);
-        m.channel = true;
-        m.snr_q4 = pkt->_snr;
-        m.hops = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
-        copy_utf8(m.from, sizeof m.from, ch.name);
-        copy_utf8(m.text, sizeof m.text, text);
-        hist_add(&m);
+        m.kind = MC_CONV_CHANNEL;                   /* horodatage : pris dans la trame */
+        fill_pkt(m, pkt);
+        channel_peer(ch, m.peer);
+        mc_copy_utf8(m.from, sizeof m.from, ch.name, sizeof ch.name);
+        mc_copy_utf8(m.text, sizeof m.text, text, SIZE_MAX);
+        mch_add(&m, true);
+    }
+    void onOfflineFrameQueued(const uint8_t *frame, int len) override { mch_frame_queued(frame, len); }
+    void onOfflineFrameSynced(const uint8_t *frame, int len) override { mch_frame_synced(frame, len); }
+    void onAppMessageSent(const ContactInfo *to, const ChannelDetails *ch, uint32_t ts,
+                          const char *text, int len) override
+    {
+        if ((!to && !ch) || len <= 0) return;
+        static mc_msg_t m;
+        memset(&m, 0, sizeof m);
+        m.ts = ts;
+        m.flags = MC_F_OUT | MC_F_READ | MC_F_APP;
+        m.hops = 0xFF;
+        if (to) {
+            m.kind = MC_CONV_CONTACT;
+            memcpy(m.peer, to->id.pub_key, MC_PEER_LEN);
+            mc_copy_utf8(m.from, sizeof m.from, to->name, sizeof to->name);
+        } else {
+            m.kind = MC_CONV_CHANNEL;
+            channel_peer(*ch, m.peer);
+            mc_copy_utf8(m.from, sizeof m.from, ch->name, sizeof ch->name);
+        }
+        mc_copy_utf8(m.text, sizeof m.text, text, (size_t)len);
+        mch_add(&m, false);
     }
     void onQueueSizeChanged(int n) override { }
 };
@@ -430,7 +380,7 @@ static void update_status(void)
 {
     mc_status_t t = {};
     NodePrefs *p = s_mesh->getNodePrefs();
-    copy_utf8(t.name, sizeof t.name, p->node_name);
+    mc_copy_utf8(t.name, sizeof t.name, p->node_name, sizeof p->node_name);
     t.freq_mhz = p->freq;
     t.bw_khz = p->bw;
     t.sf = p->sf;
@@ -466,6 +416,54 @@ static void offq_save(void)
     f.close();                          /* remplace l'ancienne version à la fermeture */
 }
 
+/* Messages encore dans la file de l'app mais absents de l'historique de la
+ * montre (mise à jour depuis un ancien format, historique perdu) : copiés
+ * dans l'historique, non lus. Format des trames : voir MyMesh::queueMessage
+ * et onChannelMessageRecv. */
+static void import_queue(void)
+{
+    static mc_msg_t m;
+    static ChannelDetails ch;
+    int got = 0;
+    for (int i = 0; i < s_mesh->getOfflineQueueLen(); i++) {
+        const uint8_t *f;
+        int len = s_mesh->getOfflineQueueFrame(i, &f);
+        uint8_t kind;
+        uint32_t ts;
+        if (!mc_frame_info(f, len, &kind, &ts)) continue;
+        uint32_t k = mc_fnv32(f, (size_t)len);
+        if (mch_has_qkey(k)) continue;
+        bool v3 = f[0] == 16 || f[0] == 17;
+        int at = v3 ? 4 : 1;                        /* clé du contact ou n° de canal */
+        memset(&m, 0, sizeof m);
+        m.kind = kind;
+        m.ts = ts;
+        m.qkey = k;
+        m.snr_q4 = v3 ? (int8_t)f[1] : 0;
+        int text_at;
+        if (kind == MC_CONV_CONTACT) {
+            uint8_t type = f[at + 6 + 1];
+            if (type != TXT_TYPE_PLAIN && type != TXT_TYPE_SIGNED_PLAIN) continue;
+            m.hops = f[at + 6];
+            text_at = at + 6 + 2 + 4 + (type == TXT_TYPE_SIGNED_PLAIN ? 4 : 0);
+            memcpy(m.peer, f + at, MC_PEER_LEN);
+            ContactInfo *c = s_mesh->lookupContactByPubKey(f + at, MC_PEER_LEN);
+            if (c) mc_copy_utf8(m.from, sizeof m.from, c->name, sizeof c->name);
+            else snprintf(m.from, sizeof m.from, "%02x%02x%02x", f[at], f[at + 1], f[at + 2]);
+        } else {
+            if (!s_mesh->getChannel(f[at], ch) || !ch.name[0]) continue;
+            m.hops = f[at + 1];
+            text_at = at + 1 + 2 + 4;
+            channel_peer(ch, m.peer);
+            mc_copy_utf8(m.from, sizeof m.from, ch.name, sizeof ch.name);
+        }
+        if (text_at >= len) continue;
+        mc_copy_utf8(m.text, sizeof m.text, (const char *)f + text_at, (size_t)(len - text_at));
+        if (mch_import(&m)) got++;
+    }
+    if (got) ESP_LOGI(TAG, "%d message(s) de la file de l'app copiés dans l'historique", got);
+}
+
 static void offq_load(void)
 {
     File f = SPIFFS.open(OFFQ_PATH, "r");
@@ -474,6 +472,31 @@ static void offq_load(void)
     f.close();
     s_mesh->clearOfflineQueueDirty();
     ESP_LOGI(TAG, "%d message(s) en attente pour l'app", s_mesh->getOfflineQueueLen());
+}
+
+/* contacts (discussion, salons) et canaux connus, pour les onglets de l'app */
+static void peers_snapshot(void)
+{
+    EXT_RAM_BSS_ATTR static mch_peer_t p[MCH_PEERS_MAX];    /* tâche mesh seule */
+    static ContactInfo c;
+    static ChannelDetails ch;
+    int n = 0, nc = s_mesh->getNumContacts() + MAX_ANON_CONTACTS;   /* index bruts : réservés en tête */
+    for (int i = 0; i < nc && n < MCH_PEERS_MAX; i++) {
+        if (!s_mesh->getContactByIdx(i, c) || (c.type != ADV_TYPE_CHAT && c.type != ADV_TYPE_ROOM)) continue;
+        p[n].kind = MC_CONV_CONTACT;
+        memcpy(p[n].peer, c.id.pub_key, MC_PEER_LEN);
+        mc_copy_utf8(p[n].name, sizeof p[n].name, c.name, sizeof c.name);
+        n++;
+    }
+    static const uint8_t zero[sizeof ch.channel.secret] = {};
+    for (int i = 0; i < MAX_GROUP_CHANNELS && n < MCH_PEERS_MAX; i++) {
+        if (!s_mesh->getChannel(i, ch) || !ch.name[0] || !memcmp(ch.channel.secret, zero, sizeof zero)) continue;
+        p[n].kind = MC_CONV_CHANNEL;
+        channel_peer(ch, p[n].peer);
+        mc_copy_utf8(p[n].name, sizeof p[n].name, ch.name, sizeof ch.name);
+        n++;
+    }
+    mch_peers_set(p, n);
 }
 
 static void mesh_task(void *arg)
@@ -497,7 +520,8 @@ static void mesh_task(void *arg)
             /* l'app vide la file : on attend la fin de la synchro */
             if (now - s_offq_dirty_at >= OFFQ_SAVE_MS * 1000LL && !s_ble->pending()) offq_save();
         }
-        if (s_hist_dirty_at && now - s_hist_dirty_at >= HIST_SAVE_MS * 1000LL) hist_save();
+        mch_save_if_due(now);
+        if (mch_peers_wanted()) peers_snapshot();
         update_status();
 
         bool busy = now < s_busy_until || s_mesh->hasPendingWork() || s_ble->pending() ||
@@ -505,7 +529,7 @@ static void mesh_task(void *arg)
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(busy ? BUSY_TICK_MS : IDLE_TICK_MS));
     }
     if (s_mesh->isOfflineQueueDirty()) offq_save();
-    if (s_hist_dirty_at) hist_save();
+    mch_save_now();
     radio_driver.stop();
     s_task = NULL;
     vTaskDelete(NULL);
@@ -520,11 +544,11 @@ extern "C" esp_err_t mc_start(void)
          * n'est touché que par les tâches mesh et lora : en PSRAM. Le seuil
          * global (petits blocs en interne) est rétabli juste après. */
         heap_caps_malloc_extmem_enable(16);
-        s_hist_mx = xSemaphoreCreateMutex();
+        mch_init();
         s_rxq = xQueueCreate(RXQ_LEN, sizeof(rxpkt_t));
         s_ble_rxq = xQueueCreate(6, sizeof(frame_t));
         s_ble = new (std::nothrow) BleCompanion();
-        if (!s_hist_mx || !s_rxq || !s_ble_rxq || !s_ble) {
+        if (!s_rxq || !s_ble_rxq || !s_ble) {
             heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
             return ESP_ERR_NO_MEM;
         }
@@ -534,7 +558,8 @@ extern "C" esp_err_t mc_start(void)
         s_store->begin();
         s_mesh->begin();                    /* identité, préférences, contacts, canaux */
         offq_load();
-        hist_load();
+        mch_load();
+        import_queue();
         s_mesh->startInterface(*s_ble);
         s_mesh->setListener(&s_listener);
         heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);

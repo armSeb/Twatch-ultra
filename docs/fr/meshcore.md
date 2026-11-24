@@ -8,7 +8,7 @@ en Bluetooth pour lire et envoyer des messages, gérer contacts et canaux, et r�
 Le protocole est celui du firmware compagnon d'origine (v1.18.0) : l'app voit la montre comme
 n'importe quel appareil MeshCore.
 
-![App MeshCore, réglages MeshCore, réglages Wi-Fi](../img/meshcore.png)
+![App MeshCore : onglet Contacts, conversation de canal, onglet Radio](../img/meshcore.png)
 
 ## Activation
 
@@ -35,19 +35,71 @@ affiche sans les modifier.
 
 ## L'app MeshCore de la montre
 
-L'app **MeshCore** (la première de la liste) affiche :
+L'app **MeshCore** (la première de la liste) a trois onglets :
 
-- une ligne d'état : fréquence et facteur d'étalement, puis *app connectée*, ou le nombre de
-  messages en attente pour l'app ;
-- une ligne radio : paquets émis (`TX`, avec les ratés), reçus (`RX`, avec les abîmés) et le
-  bruit de fond en dBm. Si la radio n'a pas pu démarrer, la ligne dit pourquoi ;
-- les derniers messages, du plus récent au plus ancien : les messages directs sous le nom du
-  contact, ceux des canaux sous `#canal`. Emoji et tout texte UTF-8 s'affichent comme sur le
-  téléphone.
+- **Contacts** : les contacts de discussion et les salons, plus les conversations dont le
+  contact a été supprimé depuis ;
+- **Canaux** : les canaux réglés dans l'app iPhone ;
+- **Radio** : nom du nœud, fréquence, SF et puissance, état de l'app iPhone (connectée, à
+  jour, ou nombre de messages qui l'attendent), compteurs radio (`TX` avec les ratés, `RX`
+  avec les abîmés, bruit de fond) et état de la carte SD.
 
-La montre garde les 64 derniers messages (enregistrés en flash : ils survivent à un redémarrage) et en affiche 30. **Lire un message sur
-la montre ne le retire pas à l'app** : il reste dans la file de l'app (256 messages au plus)
-et lui est remis quand elle se connecte.
+Les listes mettent en tête les conversations qui ont des **non lus**, puis suivent l'ordre
+**alphabétique** (émojis et ponctuation en début de nom ignorés, sans majuscules ni accents).
+Chaque ligne montre le dernier message, son heure et une pastille avec le nombre de non lus ;
+le titre des onglets compte aussi les non lus. Au-delà de 40 lignes, *Afficher plus* charge
+la suite.
+
+Toucher une ligne fait **glisser la conversation** : bulles, les plus anciennes en haut, nom
+de l'expéditeur sur les canaux, messages envoyés depuis l'iPhone à droite, repère *Non lus*.
+*Messages plus anciens* remonte dans l'historique (montre, puis carte SD). Retour : la flèche,
+un glissé vers la droite ou le bouton. Émojis et tout texte UTF-8 s'affichent comme sur le
+téléphone.
+
+### Lu et non lu
+
+- Ouvrir une conversation sur la montre la marque **lue**.
+- Un message que l'app iPhone a **récupéré**, ou une conversation où l'on vient d'**écrire**
+  depuis l'app, passe en lu sur la montre.
+- **Lire un message sur la montre ne le retire pas à l'app** : il reste dans sa file (256
+  messages au plus) et lui est remis quand elle se connecte. Le protocole MeshCore ne sait pas
+  dire à l'app qu'un message est lu : il y apparaît donc comme nouveau.
+
+### Historique et carte SD
+
+La montre garde les **128 derniers messages** (reçus, et envoyés depuis l'app), avec leur état
+lu / non lu, en mémoire et en flash : ils survivent à un redémarrage. Avec une **carte
+micro-SD**, chaque message y est aussi archivé, un fichier par conversation dans `/meshcore`,
+et les plus anciens se relisent depuis la carte.
+
+Les fichiers d'archive (`c-<clé>.jsonl` pour un contact, `g-<clé>.jsonl` pour un canal) sont
+en JSON Lines, lisibles sur PC : une ligne par message, complétée par des espaces à 512 octets
+pour que la montre puisse sauter directement aux plus anciens. Par exemple :
+
+```json
+{"seq":42,"ts":1764000000,"time":"2026-11-24 17:00","dir":"in","conv":"#fr","sender":"Bob","text":"Salut","snr":-5.25,"hops":3}
+```
+
+`ts` est l'horodatage de l'expéditeur (UTC), `time` la même heure en heure locale, `dir`
+`in` (reçu) ou `out` (envoyé depuis l'app), `sender` l'auteur sur un canal, `hops` 0 pour un
+message direct. Avec `jq` : `jq -r '.time + " " + .sender + " " + .text' g-*.jsonl`. Les
+anciens fichiers `.bin` (0.2.15 à 0.2.19) ne sont plus lus.
+
+La carte est détectée à l'insertion (en 3 s environ, 15 s écran éteint), montée tout de suite
+et démontée si on la retire. *Réglages › Carte SD* affiche l'espace libre et propose **Éjecter la carte** (les
+tampons sont écrits, puis la carte est démontée : on peut la retirer) et **Remonter la carte**.
+Elle doit être formatée en FAT32. Le journal de la montre y est aussi écrit, dans
+`/logs/AAAA-MM-JJ.log`. Pour ménager la carte et la batterie, journal et archive restent en
+mémoire et ne sont écrits que toutes les 10 minutes (plus tôt si le journal se remplit), ainsi
+qu'avant un redémarrage, une éjection ou un partage.
+
+**Partager avec le PC** apparaît quand la montre est branchée à un ordinateur : la carte y
+apparaît comme une clé USB, en lecture et en écriture (environ 1 Mo/s, le bus est partagé avec
+la radio). Pendant le partage, la montre n'écrit plus sur la carte (journaux et messages
+attendent en mémoire, MeshCore continue de recevoir) et la console série USB est coupée.
+**Éjecter le disque sur le PC** rend la carte à la montre, qui la remonte ; *Arrêter le
+partage*, le débranchement du câble ou le retrait de la carte aussi, mais sans éjection côté PC
+ses dernières écritures peuvent être perdues.
 
 Quand MeshCore est coupé, l'app propose un bouton pour l'activer.
 
@@ -77,5 +129,5 @@ alimentées tirent le bus vers le bas et la radio ne répond plus (détails dans
 
 ## Pas encore
 
-Alertes de message (bandeau et vibration), historique sur la carte SD, réception basse
+Alertes de message (bandeau et vibration), réponse depuis la montre, réception basse
 consommation, et liaison TCP pour les clients sur ordinateur.

@@ -2,6 +2,83 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.20 — 2026-11-24
+
+- MeshCore archive on the SD card in JSON Lines (`/meshcore/c-<key>.jsonl`, `g-<key>.jsonl`),
+  readable on a computer: one message per line, padded to 512 bytes so the watch can still seek
+  to older messages. Channel messages carry the sender in its own field. A line cut by a power
+  loss is padded over before the next append. The old `.bin` files are no longer read (no
+  conversion, as Seb asked).
+- Fewer SD writes: log and archive are written every 10 min instead of every 1–5 min, sooner
+  when the log buffer (now 64 KB of PSRAM) is half full, and before a restart (menu or update),
+  an eject or sharing.
+- Time sync log line reads "fuseau UTC+1:00" instead of "décalage +60 min".
+
+## 0.2.19 — 2026-11-24
+
+- SD card shared with a computer over USB: *Settings › SD card › Share with the computer*
+  (shown while plugged in) unmounts the card on the watch and presents it as a USB drive
+  (TinyUSB mass storage, read and write). Ejecting the drive on the computer, *Stop sharing*,
+  unplugging or pulling the card ends it and the watch mounts the card again. The USB serial
+  console is off while sharing. TinyUSB buffers live in PSRAM; 4 KB of internal RAM is only
+  taken while sharing.
+- SD card battery savings: with the screen off the card-detect line is read every 15 s instead
+  of 3 s, buffers are written every 5 min instead of every minute (sooner if the log buffer is
+  half full), the log flush no longer touches the card when there is nothing to write, and free
+  space is only recomputed when the SD card page is opened.
+
+## 0.2.18 — 2026-11-24
+
+- MeshCore history from 0.2.13 and earlier is taken over (it was ignored, so channels
+  looked empty after the update): messages are marked read and attached to their contact
+  or channel by name. Messages still waiting in the iPhone app's queue but missing from
+  the watch history are copied into it too, unread.
+- SD card already in the watch at power-up: its rail is cut briefly before the radio
+  starts (the AXP2101 keeps it on across a restart, leaving the card in the state the
+  previous run left it), and mounting is tried three times, a second apart, before the
+  card is called unreadable.
+- SD card detection was inverted (the detect contact reads low when a card is in):
+  a card in place was seen as absent, and a removed one as present.
+
+## 0.2.17 — 2026-11-24
+
+- 0.2.16 merged with 0.2.14 (Energy screen: light sleep share and wakeups). The *sd* task
+  that polls the card-detect line every 3 s shows up in the wakeups per minute.
+
+## 0.2.16 — 2026-11-24
+
+- MeshCore app: contact and channel rows stay on one line (the last-message preview
+  wrapped and overlapped the next row); channel sender names no longer collapse to "…";
+  messages heard with 0 hops show as *direct*.
+
+## 0.2.15 — 2026-11-24
+
+- MeshCore app rebuilt with tabs: *Contacts* (chat and room contacts), *Channels* and
+  *Radio* (radio status, counters). Lists are sorted alphabetically (leading emoji and
+  punctuation ignored, case and accents ignored), with conversations that have unread
+  messages first; each row shows the last message, its time and an unread badge, and the
+  tab titles carry the unread count. Touching a row slides the conversation in: bubbles,
+  oldest at the top, sender name on channels, our own messages (sent from the iPhone app)
+  on the right, an *Unread* marker, and *Older messages* to read further back (ring, then
+  SD card).
+- Read state: opening a conversation on the watch marks it read; a message the MeshCore
+  app has fetched, or a conversation the app just wrote in, becomes read on the watch.
+  Messages read on the watch stay in the app's queue and still reach the app (the MeshCore
+  protocol has no way to tell the app a message was read, so they show as new there).
+- Watch history: a 128-message ring in PSRAM, saved to internal flash, with the read state
+  and messages sent from the app. With an SD card, every message is also archived on it,
+  one file per conversation (`/meshcore`), and older messages are read back from it.
+- SD card: detected when inserted (the card-detect line is polled every 3 s, its interrupt
+  is not wired), mounted at once, unmounted when pulled out. *Settings > SD card* shows the
+  free space and offers *Eject card* (buffers written first, then unmounted) and *Mount
+  card again*. A card in the watch is now always initialised, so it no longer sits in its
+  higher-current power-up state while the radio keeps its rail on.
+- Logs on the SD card: every log line also goes, time-stamped, into a 32 KB PSRAM ring
+  written to `/logs/YYYY-MM-DD.log` every minute (without a card, the last 32 KB are kept
+  and written when one is inserted).
+- SD and NFC rails are now shared by the radio and the SD card (reference counted), so
+  the radio stopping no longer cuts the card's power and the reverse.
+
 ## 0.2.14 — 2026-11-24
 
 - *Energy* screen: a new line shows, while the screen is off, how much of the time the

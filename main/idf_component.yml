@@ -3,3 +3,5 @@ dependencies:
   # Version figée pour la reproductibilité. 9.2.2 = branche 9.2 la plus
   # éprouvée sur ESP32 en rendu logiciel.
   lvgl/lvgl: "9.2.2"
+  # TinyUSB : la carte SD vue comme une clé USB par le PC (main/usb_msc.c)
+  espressif/tinyusb: "0.21.0~6"

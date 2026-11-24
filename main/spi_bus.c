@@ -1,6 +1,7 @@
 /* spi_bus.c — voir spi_bus.h */
 #include "spi_bus.h"
 #include "board.h"
+#include "axp2101.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -60,6 +61,48 @@ void spi_shared_put(void)
             gpio_set_direction(p[i], GPIO_MODE_DISABLE);
             gpio_sleep_sel_en(p[i]);
         }
+    }
+    xSemaphoreGive(s_mux);
+}
+
+/* ------------------------------------------------------------------ voisins */
+static int s_peers;
+
+void spi_peers_hold_cs(int gpio)
+{
+    gpio_num_t g = (gpio_num_t)gpio;
+    gpio_set_level(g, 1);
+    gpio_config_t o = { .pin_bit_mask = 1ULL << g, .mode = GPIO_MODE_OUTPUT, .pull_up_en = GPIO_PULLUP_ENABLE };
+    gpio_config(&o);
+    gpio_set_level(g, 1);
+    gpio_sleep_sel_dis(g);                      /* tenu haut en light sleep aussi */
+}
+
+void spi_peers_get(void)
+{
+    lock();
+    if (s_peers++ == 0) {
+        axp_rail(AXP_RAIL_SD, true);
+        axp_rail(AXP_RAIL_NFC, true);
+        spi_peers_hold_cs(BOARD_SD_CS);
+        spi_peers_hold_cs(BOARD_NFC_CS);
+    }
+    xSemaphoreGive(s_mux);
+}
+
+void spi_peers_put(void)
+{
+    lock();
+    if (s_peers > 0 && --s_peers == 0) {
+        const gpio_num_t cs[] = { BOARD_SD_CS, BOARD_NFC_CS };
+        for (int i = 0; i < 2; i++) {
+            gpio_reset_pin(cs[i]);
+            gpio_set_pull_mode(cs[i], GPIO_FLOATING);
+            gpio_set_direction(cs[i], GPIO_MODE_DISABLE);
+            gpio_sleep_sel_en(cs[i]);
+        }
+        axp_rail(AXP_RAIL_SD, false);
+        axp_rail(AXP_RAIL_NFC, false);
     }
     xSemaphoreGive(s_mux);
 }

@@ -8,6 +8,7 @@
  *   - hôte NimBLE (cœur 0) : GAP/GATT/ANCS, ne fait que poster des événements.
  *   - esp_timer : motif du vibreur uniquement.
  */
+#include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -31,6 +32,8 @@
 #include "meshcore/mc_port.h"
 #include "ota.h"
 #include "crashlog.h"
+#include "sdcard.h"
+#include "sdlog.h"
 #include "boot_app.h"
 #include "app.h"
 #include "ancs.h"
@@ -204,7 +207,7 @@ static void handle_event(const app_event_t *ev)
         wclock_set_tz_offset_min(off);
         wclock_set_utc((time_t)(ev->t - (int64_t)off * 60));
         ui_on_time_changed();
-        ESP_LOGI(TAG, "heure synchronisée (décalage %+ld min)", (long)off);
+        ESP_LOGI(TAG, "heure synchronisée, fuseau UTC%c%ld:%02ld", off < 0 ? '-' : '+', labs((long)off) / 60, labs((long)off) % 60);
         break;
     }
     default:
@@ -307,6 +310,7 @@ static void app_task_diag(void *arg)
 
 void app_main(void)
 {
+    sdlog_init();                       /* journal copié pour la carte SD, dès le démarrage */
     boot_app_init();
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -332,6 +336,8 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_bus_init());
     ESP_ERROR_CHECK(power_init());
     if (wclock_init() != ESP_OK) ESP_LOGE(TAG, "RTC indisponible");
+    sd_init();                          /* carte SD : détection, montage à chaud */
+    sdlog_attach();
 #endif
     crashlog_init();
     ancs_module_init();

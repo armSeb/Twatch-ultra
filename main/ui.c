@@ -12,6 +12,7 @@
 #include "ble.h"
 #include "meshcore/mc_port.h"
 #include "sx1262.h"
+#include "sdcard.h"
 #include "wifi_sta.h"
 #include "ancs.h"
 #include "media.h"
@@ -40,7 +41,7 @@
 #define ANIM_MS UI_ANIM_MS
 
 typedef enum {
-    SCR_WATCH, SCR_LIST, SCR_DETAIL, SCR_CALL, SCR_MENU, SCR_POWER, SCR_PAIR, SCR_ABOUT, SCR_MEDIA, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI, SCR_SET_MESH, SCR_OTA,
+    SCR_WATCH, SCR_LIST, SCR_DETAIL, SCR_CALL, SCR_MENU, SCR_POWER, SCR_PAIR, SCR_ABOUT, SCR_MEDIA, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI, SCR_SET_MESH, SCR_SET_SD, SCR_OTA,
     SCR_LAUNCHER, SCR_QUICK, SCR_APP, SCR_COUNT
 } scr_id_t;
 
@@ -84,7 +85,9 @@ static const uint8_t GDUR_VALUES[] = { 3, 4, 6 };
 static lv_obj_t *m_slider, *m_sw_vib, *m_sw_bt, *m_bm_tmo, *m_bm_face, *m_bm_lang, *m_toast;
 static void menu_lang_cb(lv_event_t *ev);
 static lv_timer_t *w_clock_t;
-static lv_obj_t *m_sum[9], *m_bt_info, *m_confirm;
+static lv_obj_t *m_sum[10], *m_bt_info, *m_confirm;
+static lv_obj_t *m_sd_info, *m_sd_btn, *m_sd_share;
+static lv_timer_t *m_sd_timer;
 static lv_obj_t *o_info, *o_bar, *o_status, *o_btn, *o_pw, *o_prev, *o_prev_modal, *o_title;
 static int o_app = -1;           /* ≥ 0 : session « réglages » de cette app (WebRX), sinon mise à jour */
 static void ota_ui_idle(void);
@@ -278,7 +281,7 @@ enum { G_NONE = 0, G_MENU, G_MEDIA, G_LAUNCHER, G_QUICK, G_APP };
 static int group_of(scr_id_t id)
 {
     switch (id) {
-    case SCR_MENU: case SCR_SET_DISP: case SCR_SET_ALERT: case SCR_SET_MOTION: case SCR_SET_BT: case SCR_SET_WIFI: case SCR_SET_MESH: case SCR_OTA:
+    case SCR_MENU: case SCR_SET_DISP: case SCR_SET_ALERT: case SCR_SET_MOTION: case SCR_SET_BT: case SCR_SET_WIFI: case SCR_SET_MESH: case SCR_SET_SD: case SCR_OTA:
         return G_MENU;
     case SCR_MEDIA:    return G_MEDIA;
     case SCR_LAUNCHER: return G_LAUNCHER;
@@ -315,6 +318,8 @@ static void quick_refresh(void);
 
 static scr_id_t s_next = SCR_WATCH;                /* écran en cours d'ouverture (show) */
 
+static void menu_sd_refresh(void);
+
 static void show(scr_id_t id, lv_screen_load_anim_t anim)
 {
     ensure_screen(id);
@@ -331,6 +336,8 @@ static void show(scr_id_t id, lv_screen_load_anim_t anim)
     if (id == SCR_ABOUT) about_refresh();
     if (id == SCR_MENU) menu_refresh_summaries();
     if (id == SCR_SET_BT) { menu_bt_refresh(); lv_obj_add_flag(m_confirm, LV_OBJ_FLAG_HIDDEN); }
+    if (id == SCR_SET_SD) { sd_refresh_info(); menu_sd_refresh(); lv_timer_resume(m_sd_timer); }
+    else if (m_sd_timer) lv_timer_pause(m_sd_timer);
     if (id == SCR_WATCH) { watch_update_time(true); watch_refresh_status(); }
     s_cur = id;
     crashlog_mark(anim == LV_SCR_LOAD_ANIM_NONE ? 'S' : 'A', s_cur, id);
@@ -886,6 +893,81 @@ static void menu_mesh_cb(lv_event_t *ev)
     }
 }
 
+/* carte SD : état, éjection / montage (faits par la tâche « sd ») */
+static void fmt_size(char *b, size_t n, uint64_t bytes)
+{
+    bool fr = i18n_get() == LANG_FR;
+    if (bytes >= (10ULL << 30)) snprintf(b, n, "%llu %s", (unsigned long long)(bytes >> 30), fr ? "Go" : "GB");
+    else if (bytes >= (1ULL << 30)) snprintf(b, n, fr ? "%.1f Go" : "%.1f GB", bytes / 1073741824.0);
+    else snprintf(b, n, "%llu %s", (unsigned long long)(bytes >> 20), fr ? "Mo" : "MB");
+    if (fr) {
+        for (char *p = b; *p; p++) if (*p == '.') *p = ',';
+    }
+}
+
+static void menu_sd_refresh(void)
+{
+    if (!m_sd_info) return;
+    sd_info_t si;
+    sd_get_info(&si);
+    char b[128], fr[16], tot[16];
+    const char *btn = NULL;
+    switch (si.state) {
+    case SD_MOUNTED:
+        fmt_size(fr, sizeof fr, si.free);
+        fmt_size(tot, sizeof tot, si.total);
+        snprintf(b, sizeof b, _("Carte montée\n%s libres sur %s"), fr, tot);
+        btn = _("Éjecter la carte");
+        break;
+    case SD_EJECTED:
+        snprintf(b, sizeof b, "%s", _("Carte éjectée : elle peut être retirée."));
+        btn = _("Remonter la carte");
+        break;
+    case SD_FAILED:
+        snprintf(b, sizeof b, "%s", _("Carte illisible : elle doit être formatée en FAT32."));
+        btn = _("Réessayer");
+        break;
+    case SD_SHARED:
+        fmt_size(tot, sizeof tot, si.total);
+        snprintf(b, sizeof b, sd_share_host_seen() ? _("Carte de %s ouverte sur le PC. La montre n'y écrit plus en attendant.")
+                                                   : _("Carte de %s prête pour le PC : en attente de sa reconnaissance…"), tot);
+        btn = _("Arrêter le partage");
+        break;
+    default:
+        snprintf(b, sizeof b, "%s", _("Pas de carte. Elle est détectée dès son insertion."));
+        break;
+    }
+    lv_label_set_text(m_sd_info, b);
+    if (sd_can_share()) lv_obj_remove_flag(m_sd_share, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(m_sd_share, LV_OBJ_FLAG_HIDDEN);
+    if (btn) {
+        lv_label_set_text(lv_obj_get_child(m_sd_btn, 0), btn);
+        lv_obj_remove_flag(m_sd_btn, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(m_sd_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void menu_sd_timer_cb(lv_timer_t *t) { menu_sd_refresh(); }
+
+static void menu_sd_cb(lv_event_t *ev)
+{
+    sd_info_t si;
+    sd_get_info(&si);
+    if (si.state == SD_MOUNTED) {
+        if (sd_eject() == ESP_OK) toast(_("Éjection…"));
+    } else if (si.state == SD_SHARED) {
+        if (sd_share(false) == ESP_OK) toast(_("Fin du partage…"));
+    } else if (sd_mount() == ESP_OK) {
+        toast(_("Montage…"));
+    }
+}
+
+static void menu_sd_share_cb(lv_event_t *ev)
+{
+    if (sd_share(true) == ESP_OK) toast(_("Partage avec le PC…"));
+}
+
 static void menu_ant_cb(lv_event_t *ev)
 {
     bool ext = lv_obj_has_state(m_sw_ant, LV_STATE_CHECKED);
@@ -1216,6 +1298,18 @@ static void menu_refresh_summaries(void)
     if (!st->meshcore) snprintf(b, sizeof(b), "%s", _("Coupé"));
     else snprintf(b, sizeof(b), "%s · %s", _("Actif"), st->lora_ext_ant ? _("antenne externe") : _("antenne intégrée"));
     lv_label_set_text(m_sum[8], b);
+
+    sd_info_t si;
+    sd_get_info(&si);
+    if (si.state == SD_MOUNTED) {
+        char fr[16];
+        fmt_size(fr, sizeof fr, si.free);
+        snprintf(b, sizeof(b), _("Montée · %s libres"), fr);
+    } else {
+        snprintf(b, sizeof(b), "%s", si.state == SD_EJECTED ? _("Éjectée") : si.state == SD_FAILED ? _("Illisible") :
+                                     si.state == SD_SHARED ? _("Partagée avec le PC") : _("Pas de carte"));
+    }
+    lv_label_set_text(m_sum[9], b);
 }
 
 static void build_toast(void)
@@ -1384,6 +1478,7 @@ static void build_menu(void)
     mk_entry(col, LV_SYMBOL_BLUETOOTH, _("Bluetooth"), SCR_SET_BT, &m_sum[2]);
     mk_entry(col, LV_SYMBOL_WIFI, _("Wi-Fi"), SCR_SET_WIFI, &m_sum[7]);
     mk_entry(col, SYM_COMMENTS, _("MeshCore"), SCR_SET_MESH, &m_sum[8]);
+    mk_entry(col, LV_SYMBOL_SD_CARD, _("Carte SD"), SCR_SET_SD, &m_sum[9]);
     mk_entry(col, LV_SYMBOL_CHARGE, _("Énergie"), SCR_POWER, &m_sum[3]);
     mk_entry(col, LV_SYMBOL_LIST, _("À propos"), SCR_ABOUT, &m_sum[4]);
     mk_entry(col, LV_SYMBOL_REFRESH, _("Mise à jour"), SCR_OTA, &m_sum[5]);
@@ -1465,6 +1560,29 @@ static void build_menu(void)
                              _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
     lv_label_set_long_mode(mn2, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(mn2, lv_pct(100));
+
+    /* ---- carte SD ---- */
+    col = mk_page(SCR_SET_SD, _("Carte SD"));
+    m_sd_info = mk_label(col, &font_text, C_FG, "");
+    lv_label_set_long_mode(m_sd_info, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(m_sd_info, lv_pct(100));
+    m_sd_btn = mk_button(col, "", C_CARD, menu_sd_cb, NULL);
+    lv_obj_set_size(m_sd_btn, lv_pct(100), S(44));
+    m_sd_share = mk_button(col, _("Partager avec le PC"), C_CARD, menu_sd_share_cb, NULL);
+    lv_obj_set_size(m_sd_share, lv_pct(100), S(44));
+    lv_obj_add_flag(m_sd_share, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *sn = mk_label(col, &font_small, C_DIM,
+                            _("Messages MeshCore archivés dans /meshcore, journaux dans /logs. Éjecter avant de retirer la carte : "
+                              "l'arracher peut abîmer le dernier fichier écrit."));
+    lv_label_set_long_mode(sn, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(sn, lv_pct(100));
+    sn = mk_label(col, &font_small, C_DIM,
+                  _("Partage : montre branchée au PC, la carte y apparaît comme une clé USB (la console USB est coupée "
+                    "pendant ce temps). L'éjecter sur le PC rend la carte à la montre."));
+    lv_label_set_long_mode(sn, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(sn, lv_pct(100));
+    m_sd_timer = lv_timer_create(menu_sd_timer_cb, 1000, NULL);
+    lv_timer_pause(m_sd_timer);
 
     /* ---- bluetooth ---- */
     col = mk_page(SCR_SET_BT, _("Bluetooth"));
@@ -1932,6 +2050,7 @@ static void reboot_confirm_cb(lv_event_t *ev)
      * sinon le bootloader reviendrait à l'ancienne version */
     esp_ota_mark_app_valid_cancel_rollback();
     mc_stop();                             /* sauve la file de l'app et l'historique MeshCore */
+    sd_flush_wait(2000);                   /* journal et archive sur la carte */
     esp_restart();
 }
 
@@ -2667,7 +2786,8 @@ static void release_menu(void)
 {
     if (!s_scr[SCR_MENU] || is_menu_group(s_cur)) return;
     static const scr_id_t grp[] = { SCR_MENU, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI,
-                                    SCR_SET_MESH, SCR_OTA };
+                                    SCR_SET_MESH, SCR_SET_SD, SCR_OTA };
+    if (m_sd_timer) { lv_timer_delete(m_sd_timer); m_sd_timer = NULL; }
     for (size_t i = 0; i < sizeof(grp) / sizeof(grp[0]); i++) {
         if (s_scr[grp[i]]) { scr_delete(s_scr[grp[i]]); s_scr[grp[i]] = NULL; }
     }
@@ -2675,7 +2795,7 @@ static void release_menu(void)
     m_slider = m_sw_vib = m_sw_bt = m_sw_tap = m_sw_nwake = m_bm_tmo = m_bm_face = m_bm_lang = NULL;
     m_sw_steps = m_sw_wrist = m_sw_mesh = m_sw_ant = NULL;
     m_bm_wsens = m_sw_glance = m_bm_gpct = m_bm_gdur = m_bm_wpwr = NULL;
-    m_bt_info = m_confirm = NULL;
+    m_bt_info = m_confirm = m_sd_info = m_sd_btn = m_sd_share = NULL;
     o_info = o_bar = o_status = o_btn = o_pw = o_prev = o_prev_modal = NULL;
     memset(m_sum, 0, sizeof(m_sum));
 }

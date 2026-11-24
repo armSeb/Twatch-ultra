@@ -14,4 +14,7 @@ gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main -o test_p
 E=../components/meshcore/upstream/lib/ed25519
 gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize=shift -g -I$E -I../components/meshcore/shim \
     -o test_meshcore test_meshcore.c $E/fe.c $E/ge.c $E/sc.c $E/sha512.c $E/sign.c $E/verify.c $E/keypair.c && ./test_meshcore
-rm -f test_host test_puca test_meshcore
+# historique MeshCore : coupe UTF-8, tri des conversations, trames de l'app
+gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main/meshcore -Istubs -o test_mc_text test_mc_text.c \
+    ../main/meshcore/mc_text.c && ./test_mc_text
+rm -f test_host test_puca test_meshcore test_mc_text
