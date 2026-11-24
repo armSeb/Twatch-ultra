@@ -117,6 +117,25 @@ static void IRAM_ATTR axp_isr(void *arg)
 /* moyenne est estimée d'après la baisse du % de sa jauge (1 % =        */
 /* 11 mAh), donc seulement après quelques heures.                       */
 /* ------------------------------------------------------------------ */
+/* Temps passé en light sleep (rappel de sortie du sommeil, tâche idle,
+ * interruptions masquées : un simple cumul). Avec le temps écran éteint,
+ * il dit si la montre dort vraiment quand elle ne fait rien. */
+static volatile int64_t  s_sleep_us;
+static volatile uint32_t s_sleep_n;
+static int64_t  s_sleep_us0;
+static uint32_t s_sleep_n0;
+
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+static esp_err_t IRAM_ATTR sleep_exit_cb(int64_t slept_us, void *arg)
+{
+    if (slept_us > 0) {
+        s_sleep_us += slept_us;
+        s_sleep_n++;
+    }
+    return ESP_OK;
+}
+#endif
+
 static int64_t s_period_start_us;
 static int     s_pct_start = -1;
 static bool    s_seg_on;
@@ -127,6 +146,8 @@ static void period_restart(void)
     s_period_start_us = s_seg_us = esp_timer_get_time();
     s_on_us = s_off_us = 0;
     s_pct_start = s_percent;
+    s_sleep_us0 = s_sleep_us;
+    s_sleep_n0 = s_sleep_n;
 }
 
 void power_screen_segment(bool on)
@@ -305,6 +326,12 @@ static void idle_gpio_setup(void)
         gpio_set_pull_mode(pins[i], GPIO_FLOATING);
         gpio_set_direction(pins[i], GPIO_MODE_DISABLE);
     }
+    /* Le micro PDM est sur le 3,3 V permanent (schéma) : son entrée
+     * d'horloge flottante ferait fuir son étage d'entrée. Tirée au niveau
+     * bas, aussi pendant le light sleep. */
+    gpio_set_pull_mode(BOARD_MIC_CLK, GPIO_PULLDOWN_ONLY);
+    gpio_sleep_set_direction(BOARD_MIC_CLK, GPIO_MODE_INPUT);
+    gpio_sleep_set_pull_mode(BOARD_MIC_CLK, GPIO_PULLDOWN_ONLY);
 }
 
 /* ------------------------------------------------------------------ */
@@ -367,6 +394,10 @@ esp_err_t power_init(void)
     ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "active", &s_lock_cpu));
     ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "nosleep", &s_lock_nosleep));
     power_set_cpu_max(0);
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+    esp_pm_sleep_cbs_register_config_t cbs = { .exit_cb = sleep_exit_cb };
+    if (esp_pm_light_sleep_register_cbs(&cbs) != ESP_OK) ESP_LOGW(TAG, "mesure du light sleep indisponible");
+#endif
 #else
     ESP_LOGW(TAG, "PM désactivé (build de diagnostic)");
 #endif
@@ -408,4 +439,19 @@ void power_get_telemetry(power_telemetry_t *t)
     if (!t->vbus && drop >= 2 && t->since_s >= 3600)
         t->avg_ma = drop * (BATTERY_CAPACITY_MAH / 100.0f) / (t->since_s / 3600.0f);
     t->screen_pct = screen_pct_now();
+
+    /* le sommeil n'a lieu qu'écran éteint : rapporté au temps écran éteint */
+    int64_t now = esp_timer_get_time();
+    int64_t off = s_off_us + (s_seg_on ? 0 : now - s_seg_us);
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+    if (off >= 60LL * 1000000) {
+        int64_t slept = s_sleep_us - s_sleep_us0;
+        t->sleep_known = true;
+        t->sleep_pct = (float)(100.0 * slept / (double)off);
+        if (t->sleep_pct > 100.0f) t->sleep_pct = 100.0f;
+        t->wakes_per_min = (float)((s_sleep_n - s_sleep_n0) * 60e6 / (double)off);
+    }
+#else
+    (void)off;
+#endif
 }

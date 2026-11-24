@@ -96,7 +96,7 @@ static void nav_open(scr_id_t id, lv_screen_load_anim_t anim);
 static void menu_refresh_summaries(void);
 static lv_timer_t *m_toast_t;
 /* énergie */
-static lv_obj_t *p_lbl[7];
+static lv_obj_t *p_lbl[8];
 static lv_timer_t *p_timer;
 static lv_timer_t *mu_timer;
 static void media_refresh(bool full);
@@ -1810,6 +1810,19 @@ static void power_refresh(void)
     snprintf(s, sizeof(s), _("Écran %.0f %% du temps · PMU %.0f °C"), t.screen_pct, t.temp_c);
     lv_label_set_text(p_lbl[5], s);
 
+    /* écran éteint : part du temps en light sleep, réveils, interruptions LoRa */
+    if (t.sleep_known) {
+        int n = snprintf(s, sizeof(s), _("Veille %.0f %% · %.1f réveils/min"), t.sleep_pct, t.wakes_per_min);
+        if (sx_running() && n > 0 && n < (int)sizeof(s)) {
+            sx_stats_t x;
+            sx_get_stats(&x);
+            snprintf(s + n, sizeof(s) - n, " · LoRa %lu", (unsigned long)x.irq);
+        }
+    } else {
+        snprintf(s, sizeof(s), _("Veille : mesure en cours…"));
+    }
+    lv_label_set_text(p_lbl[6], s);
+
     /* décharge précédente */
     power_hist_t h;
     if (power_last_discharge(&h)) {
@@ -1819,7 +1832,7 @@ static void power_refresh(void)
     } else {
         snprintf(s, sizeof(s), _("Pas encore de décharge enregistrée"));
     }
-    lv_label_set_text(p_lbl[6], s);
+    lv_label_set_text(p_lbl[7], s);
 }
 
 static void power_timer_cb(lv_timer_t *t) { power_refresh(); }
@@ -1829,14 +1842,14 @@ static void build_power(void)
     lv_obj_t *s = s_scr[SCR_POWER] = mk_screen();
     lv_obj_t *h = mk_label(s, &font_title, C_FG, with_sym(LV_SYMBOL_CHARGE, _("Énergie")));
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, S(12), S(10));
-    for (int i = 0; i < 7; i++) {
-        p_lbl[i] = mk_label(s, i == 6 ? &font_small : &font_text, i == 3 ? C_ACC : (i == 6 ? C_DIM : C_FG), "");
+    for (int i = 0; i < 8; i++) {
+        p_lbl[i] = mk_label(s, i == 7 ? &font_small : &font_text, i == 3 ? C_ACC : (i == 7 ? C_DIM : C_FG), "");
         lv_label_set_long_mode(p_lbl[i], LV_LABEL_LONG_DOT);
         lv_obj_set_size(p_lbl[i], UI_W - S(24), lv_font_get_line_height(&font_text));
         lv_obj_set_pos(p_lbl[i], S(12), S(42) + i * S(27));
     }
-    lv_label_set_long_mode(p_lbl[6], LV_LABEL_LONG_WRAP);        /* 2 lignes en petit */
-    lv_obj_set_height(p_lbl[6], 2 * lv_font_get_line_height(&font_small));
+    lv_label_set_long_mode(p_lbl[7], LV_LABEL_LONG_WRAP);        /* 2 lignes en petit */
+    lv_obj_set_height(p_lbl[7], 2 * lv_font_get_line_height(&font_small));
     p_timer = lv_timer_create(power_timer_cb, 1000, NULL);
     lv_timer_pause(p_timer);
 }
