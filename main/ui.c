@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "lvgl.h"
+#include "face_bake.h"
 #include "src/display/lv_display_private.h"   /* act_scr / prev_scr / scr_to_load */
 #include "fonts/fonts.h"
 #include "face_classic.h"
@@ -114,7 +115,7 @@ static void nav_open(scr_id_t id, lv_screen_load_anim_t anim);
 static void menu_refresh_summaries(void);
 static lv_timer_t *m_toast_t;
 /* énergie */
-static lv_obj_t *p_lbl[8];
+static lv_obj_t *p_lbl[9];
 static lv_timer_t *p_timer;
 static lv_timer_t *mu_timer;
 static void media_refresh(bool full);
@@ -2275,9 +2276,78 @@ static void power_refresh(void)
         snprintf(s, sizeof(s), _("Pas encore de décharge enregistrée"));
     }
     lv_label_set_text(p_lbl[7], s);
+
+    /* fluidité de la dernière animation (rendu LVGL + envoi à la dalle) */
+    display_perf_t dp;
+    display_get_perf(&dp);
+    if (dp.fps) snprintf(s, sizeof(s), _("Animation %u img/s · %.1f ms (max %.1f)"), dp.fps,
+                         dp.avg_us / 1000.0f, dp.max_us / 1000.0f);
+    else snprintf(s, sizeof(s), "%s", _("Animation : pas encore mesurée"));
+    lv_label_set_text(p_lbl[8], s);
 }
 
 static void power_timer_cb(lv_timer_t *t) { power_refresh(); }
+
+/* Banc de mesure du cadran (toucher la ligne « Animation ») : temps de
+ * rendu LVGL d'une image pleine du cadran, sans envoi à la dalle, avec
+ * certaines familles d'objets masquées pour voir ce qui coûte. */
+typedef struct { lv_obj_t *o[96]; int n; } bench_hid_t;
+
+static void bench_hide(lv_obj_t *o, int what, bench_hid_t *h)
+{
+    uint32_t n = lv_obj_get_child_count(o);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *c = lv_obj_get_child(o, (int32_t)i);
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN)) continue;
+        bool hit = what == 3 ||
+                   ((what & 1) && lv_obj_check_type(c, &lv_line_class)) ||
+                   ((what & 2) && (lv_obj_check_type(c, &lv_image_class) || face_bake_is_view(c)));
+        if (hit && h->n < (int)(sizeof h->o / sizeof h->o[0])) {
+            lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+            h->o[h->n++] = c;
+        } else {
+            bench_hide(c, what, h);
+        }
+    }
+}
+
+static uint32_t bench_one(lv_obj_t *scr, int what)
+{
+    bench_hid_t h = { .n = 0 };
+    if (what) bench_hide(scr, what, &h);
+    uint32_t best = UINT32_MAX;
+    for (int k = 0; k < 6; k++) {
+        lv_obj_invalidate(scr);
+        int64_t t0 = esp_timer_get_time();
+        lv_refr_now(NULL);
+        uint32_t us = (uint32_t)(esp_timer_get_time() - t0);
+        if (k && us < best) best = us;              /* 1er passage : caches froids */
+    }
+    for (int i = 0; i < h.n; i++) lv_obj_remove_flag(h.o[i], LV_OBJ_FLAG_HIDDEN);
+    return best;
+}
+
+static void bench_cb(lv_event_t *e)
+{
+    lv_obj_t *back = lv_screen_active();
+    lv_obj_t *scr = s_scr[SCR_WATCH];
+    if (!scr) return;
+    display_bench_mode(true);
+    lv_screen_load(scr);
+    uint32_t r[4];
+    for (int w = 0; w < 4; w++) r[w] = bench_one(scr, w);   /* tout, −lignes, −images (dont cadran figé), vide */
+    lv_screen_load(back);
+    display_bench_mode(false);
+    lv_obj_invalidate(back);
+    int dp = face_bake_detail_pct();
+    ESP_LOGI("bench", "cadran : tout %lu, sans lignes %lu, sans images %lu, vide %lu µs, carreaux détaillés %d %%",
+             (unsigned long)r[0], (unsigned long)r[1], (unsigned long)r[2], (unsigned long)r[3], dp);
+    char s[96];
+    snprintf(s, sizeof s, "T%.1f L%.1f I%.1f V%.1f ms D%d%%", r[0] / 1000.0f, r[1] / 1000.0f, r[2] / 1000.0f,
+             r[3] / 1000.0f, dp);
+    lv_label_set_text(p_lbl[8], s);
+    lv_timer_pause(p_timer);           /* garder le résultat affiché */
+}
 
 static void build_power(void)
 {
@@ -2292,6 +2362,14 @@ static void build_power(void)
     }
     lv_label_set_long_mode(p_lbl[7], LV_LABEL_LONG_WRAP);        /* 2 lignes en petit */
     lv_obj_set_height(p_lbl[7], 2 * lv_font_get_line_height(&font_small));
+    p_lbl[8] = mk_label(s, &font_small, C_DIM, "");
+    lv_obj_set_width(p_lbl[8], UI_W - S(60));
+    lv_obj_set_style_text_align(p_lbl[8], LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(p_lbl[8], LV_LABEL_LONG_DOT);
+    lv_obj_align_to(p_lbl[8], p_lbl[7], LV_ALIGN_OUT_BOTTOM_MID, 0, S(2));
+    lv_obj_add_flag(p_lbl[8], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(p_lbl[8], S(10));
+    lv_obj_add_event_cb(p_lbl[8], bench_cb, LV_EVENT_CLICKED, NULL);
     p_timer = lv_timer_create(power_timer_cb, 1000, NULL);
     lv_timer_pause(p_timer);
 }

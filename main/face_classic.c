@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include "fonts/fonts.h"
 #include "ui_geom.h"
+#include "face_bake.h"
 
 /* ---------- palette « montre ancienne » ---------- */
 #define C_DIAL_TOP   lv_color_hex(0xF2EADA)
@@ -147,15 +148,19 @@ lv_obj_t *face_classic_create(lv_obj_t *parent)
     lv_obj_center(s_root);
     bubble(s_root);
 
+    /* Tout ce qui ne bouge pas à chaque seconde est construit hors écran et
+     * affiché en image (face_bake.c) ; seule la trotteuse reste vivante. */
+    lv_obj_t *base = face_bake_create(s_root);
+
     /* boîtier + cadran ivoire légèrement patiné */
-    lv_obj_t *dial = disc(s_root, CX, CY, DIAL_D, C_DIAL_TOP, 3, C_BEZEL);
+    lv_obj_t *dial = disc(base, CX, CY, DIAL_D, C_DIAL_TOP, 3, C_BEZEL);
     lv_obj_set_style_bg_grad_color(dial, C_DIAL_BOT, 0);
     lv_obj_set_style_bg_grad_dir(dial, LV_GRAD_DIR_VER, 0);
 
     /* chemin de fer des minutes + index appliqués */
-    scale(s_root, CX, CY, 222, 270, 360, 61, 5, 14, 3, 5, C_INDEX, C_PRINT, 1);
-    ring(s_root, CX, CY, 212, 1, C_PRINT);
-    lv_obj_t *twelve = lv_obj_create(s_root);            /* index double à 12 h */
+    scale(base, CX, CY, 222, 270, 360, 61, 5, 14, 3, 5, C_INDEX, C_PRINT, 1);
+    ring(base, CX, CY, 212, 1, C_PRINT);
+    lv_obj_t *twelve = lv_obj_create(base);              /* index double à 12 h */
     lv_obj_remove_style_all(twelve);
     lv_obj_set_size(twelve, S(9), S(16));
     lv_obj_set_pos(twelve, S(CX - 4), S(CY - 111));
@@ -167,22 +172,25 @@ lv_obj_t *face_classic_create(lv_obj_t *parent)
     bubble(twelve);
 
     /* 12 h : réserve de marche (batterie), arc de 120° */
-    scale(s_root, PR_X, PR_Y, 62, 210, 120, 11, 5, 6, 2, 3, C_INDEX, C_PRINT, 1);
-    s_pr_label = text(s_root, &font_small, C_PRINT, _("RÉSERVE"));
-    lv_obj_align(s_pr_label, LV_ALIGN_TOP_MID, 0, S(PR_Y + 6));
-    lv_obj_t *pr0 = text(s_root, &font_small, C_PRINT, "0");
+    scale(base, PR_X, PR_Y, 62, 210, 120, 11, 5, 6, 2, 3, C_INDEX, C_PRINT, 1);
+    lv_obj_t *pr0 = text(base, &font_small, C_PRINT, "0");
     lv_obj_set_pos(pr0, S(PR_X - 30), S(PR_Y - 10));
-    lv_obj_t *pr1 = text(s_root, &font_small, C_PRINT, "100");
+    lv_obj_t *pr1 = text(base, &font_small, C_PRINT, "100");
     lv_obj_set_pos(pr1, S(PR_X + 22), S(PR_Y - 10));
 
     /* 6 h : petite seconde dans un compteur légèrement creusé */
-    lv_obj_t *ssd = disc(s_root, SS_X, SS_Y, SS_D, C_SUBDIAL, 1, C_PRINT);
-    lv_obj_t *sss = scale(ssd, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_INDEX, C_PRINT, 0);
-    (void)sss;
+    lv_obj_t *ssb = disc(base, SS_X, SS_Y, SS_D, C_SUBDIAL, 1, C_PRINT);
+    scale(ssb, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_INDEX, C_PRINT, 0);
+
+    s_pr_label = text(base, &font_small, C_PRINT, _("RÉSERVE"));
+    lv_obj_align(s_pr_label, LV_ALIGN_TOP_MID, 0, S(PR_Y + 6));
+    /* calque transparent du compteur, à l'écran : la trotteuse et son axe */
+    lv_obj_t *ssd = disc(s_root, SS_X, SS_Y, SS_D, C_SUBDIAL, 0, C_PRINT);
+    lv_obj_set_style_bg_opa(ssd, LV_OPA_TRANSP, 0);
     s_sec = hand(ssd, SS_D, 2, C_INDEX, s_pt_sec);
 
     /* 3 h : guichet jour + date */
-    lv_obj_t *win = lv_obj_create(s_root);
+    lv_obj_t *win = lv_obj_create(base);
     lv_obj_remove_style_all(win);
     lv_obj_set_size(win, S(56), S(20));
     lv_obj_set_pos(win, S(DT_X - 28), S(DT_Y - 10));
@@ -196,23 +204,23 @@ lv_obj_t *face_classic_create(lv_obj_t *parent)
     lv_obj_center(s_date);
 
     /* 9 h : état Bluetooth + pastille de notifications */
-    lv_obj_t *st = disc(s_root, ST_X, ST_Y, 38, C_SUBDIAL, 1, C_PRINT);
+    lv_obj_t *st = disc(base, ST_X, ST_Y, 38, C_SUBDIAL, 1, C_PRINT);
     s_ble = text(st, &font_text, C_DIM, LV_SYMBOL_BLUETOOTH);
     lv_obj_center(s_ble);
-    s_badge = disc(s_root, ST_X + 14, ST_Y - 15, 17, C_BADGE, 0, C_BADGE);
+    s_badge = disc(base, ST_X + 14, ST_Y - 15, 17, C_BADGE, 0, C_BADGE);
     s_badge_txt = text(s_badge, &font_small, C_LUME, "");
     lv_obj_center(s_badge_txt);
     lv_obj_add_flag(s_badge, LV_OBJ_FLAG_HIDDEN);
 
     /* aiguilles (créées en dernier : au-dessus de tout) */
-    s_pr_hand = hand(s_root, 240, 2, C_BLUED, s_pt_pr);
-    disc(s_root, PR_X, PR_Y, 6, C_BLUED, 0, C_BLUED);
-    s_hour = hand(s_root, 240, 7, C_BLUED, s_pt_hour);
-    s_hour_lume = hand(s_root, 240, 2, C_LUME, s_pt_hour_l);
-    s_min = hand(s_root, 240, 5, C_BLUED, s_pt_min);
-    s_min_lume = hand(s_root, 240, 1, C_LUME, s_pt_min_l);
-    disc(s_root, CX, CY, 13, C_BLUED, 0, C_BLUED);
-    disc(s_root, CX, CY, 4, C_LUME, 0, C_LUME);
+    s_pr_hand = hand(base, 240, 2, C_BLUED, s_pt_pr);
+    disc(base, PR_X, PR_Y, 6, C_BLUED, 0, C_BLUED);
+    s_hour = hand(base, 240, 7, C_BLUED, s_pt_hour);
+    s_hour_lume = hand(base, 240, 2, C_LUME, s_pt_hour_l);
+    s_min = hand(base, 240, 5, C_BLUED, s_pt_min);
+    s_min_lume = hand(base, 240, 1, C_LUME, s_pt_min_l);
+    disc(base, CX, CY, 13, C_BLUED, 0, C_BLUED);
+    disc(base, CX, CY, 4, C_LUME, 0, C_LUME);
     disc(ssd, SS_D / 2, SS_D / 2, 5, C_INDEX, 0, C_INDEX);
 
     s_last_min = s_last_sec = s_last_pct = -1;
@@ -233,6 +241,7 @@ void face_classic_set_time(const struct tm *tm, bool force)
         snprintf(b, sizeof(b), "%s %d", _(JOURS[tm->tm_wday % 7]), tm->tm_mday);
         lv_label_set_text(s_date, b);
         s_last_min = tm->tm_min;
+        face_bake_dirty(s_root);
     }
     if (force || tm->tm_sec != s_last_sec) {
         place(s_sec, s_pt_sec, SS_D / 2, SS_D / 2, tm->tm_sec * 6.0f, -6, 22);
@@ -242,20 +251,25 @@ void face_classic_set_time(const struct tm *tm, bool force)
 
 void face_classic_set_status(int pct, bool charging, bool ble_ok, bool ble_on, int notifs)
 {
+    static int l_chg = -1, l_ble = -1, l_notif = -1;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
-    if (pct != s_last_pct) {
-        place(s_pr_hand, s_pt_pr, PR_X, PR_Y, -60.0f + pct * 1.2f, -4, 24);
-        s_last_pct = pct;
-    }
+    if (notifs > 9) notifs = 9;
+    if (notifs < 0) notifs = 0;
+    int ble = ble_ok ? 2 : (ble_on ? 1 : 0);
+    if (pct == s_last_pct && (int)charging == l_chg && ble == l_ble && notifs == l_notif) return;
+    s_last_pct = pct; l_chg = charging; l_ble = ble; l_notif = notifs;
+
+    place(s_pr_hand, s_pt_pr, PR_X, PR_Y, -60.0f + pct * 1.2f, -4, 24);
     lv_label_set_text(s_pr_label, charging ? _("CHARGE") : _("RÉSERVE"));
     lv_obj_set_style_text_color(s_pr_label, (pct <= 15 && !charging) ? C_BADGE : C_PRINT, 0);
 
-    lv_obj_set_style_text_color(s_ble, ble_ok ? C_BLUED : (ble_on ? C_DIM : lv_color_hex(0xCFC4AA)), 0);
+    lv_obj_set_style_text_color(s_ble, ble == 2 ? C_BLUED : (ble ? C_DIM : lv_color_hex(0xCFC4AA)), 0);
     if (notifs > 0) {
-        lv_label_set_text_fmt(s_badge_txt, "%d", notifs > 9 ? 9 : notifs);
+        lv_label_set_text_fmt(s_badge_txt, "%d", notifs);
         lv_obj_remove_flag(s_badge, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s_badge, LV_OBJ_FLAG_HIDDEN);
     }
+    face_bake_dirty(s_root);
 }

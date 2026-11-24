@@ -169,6 +169,9 @@ static void plot_s(int x, int y, void *ctx)
 
 void g_text(gsurf_t *s, const char *t, int x, int y, int sc, uint16_t col, bool shadow)
 {
+    /* hors de la surface (bande d'écran) : rien à tracer. Les accents vont
+     * jusqu'à 2 blocs au-dessus, la cédille et l'ombre jusqu'à 10 en dessous. */
+    if (y + 10 * sc < s->oy || y - 2 * sc >= s->oy + s->h) return;
     pctx_t k = { s, 0 };
     if (shadow) g_text_walk(t, x + (sc + 1) / 2, y + (sc + 1) / 2, sc, plot_s, &k);
     k.col = col;

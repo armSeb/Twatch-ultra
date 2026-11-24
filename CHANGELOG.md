@@ -2,6 +2,106 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.38 — 2026-11-24
+
+- Release of 0.2.37 together with the MeshCore hop-count fix of 0.2.27 (merged in parallel).
+
+## 0.2.37 — 2026-11-24 (test)
+
+- Flash and PSRAM clocks raised from 80 to 120 MHz. Both chips are rated for 133 MHz in quad
+  mode (Winbond W25Q128JV flash, AP Memory APS6404L PSRAM); on the ESP32-S3 a 120 MHz quad
+  PSRAM requires the flash at 120 MHz too. The W25Q128JV needs no high-performance mode or
+  dummy-cycle change, so the bootloader is unchanged and OTA works (the app tunes the bus
+  itself at start-up). ESP-IDF logs a warning at boot because it does not list this chip.
+  Expected: faster PSRAM reads everywhere (analog faces, flight simulator).
+
+## 0.2.36 — 2026-11-24
+
+- Analog faces: Seb measured 0.2.35 at 26.2 ms (Pub) and 21.2 ms (Retro) per frame, down from
+  41.7 and 35.2. The baked image is now written straight into the render strip (solid tiles
+  filled, detailed rows copied) instead of going through hundreds of LVGL image and rectangle
+  draw tasks per frame. LVGL's own path is kept for screen fades (inherited opacity).
+- The once-a-minute re-render of a face also waits while a finger is on the screen, so a
+  swipe that has not yet become an animation is no longer interrupted by a ~50 ms render.
+- Benchmark (*Énergie* screen): columns are now T (all), L (without lines: seconds hand),
+  I (without images, including the baked face), V (empty screen), plus D, the share of
+  detailed tiles in the baked image.
+
+## 0.2.35 — 2026-11-24
+
+- Analog watch faces (Retro and Pub): the 0.2.34 benchmark showed about 35–42 ms per frame
+  while sliding, 18 ms of it reading the decor image from PSRAM and 12–19 ms drawing the
+  thick round-capped hands. Everything that changes at most once a minute (hour, minute and
+  battery hands, date and status windows, labels, badges) is now part of the baked image,
+  re-rendered on change (once a minute, never during an animation). Only the small seconds
+  hand is still drawn live; it now sits above the main hands.
+- The baked image is split into 16×16 tiles: uniform tiles (the Pub green, the Retro ivory,
+  the black corners) are filled directly without reading PSRAM; only detailed tiles are read.
+- The benchmark's "I" column no longer hides the baked face (it is not an image object).
+
+## 0.2.34 — 2026-11-24
+
+- 0.2.32 and 0.2.33 did not boot: baking the watch-face decor ran a full render from the
+  `main` task at start-up, whose 3.5 KB stack overflowed. The image is now rendered from an
+  LVGL timer, in the `app` task (8 KB, the one that draws the screen); until then the decor
+  is drawn as objects.
+
+## 0.2.33 — 2026-11-24
+
+- *Énergie* screen: touching the "Animation" line runs a watch-face benchmark. It renders the
+  current face six times without sending anything to the panel and shows the best render
+  time for: everything (T), without line objects such as hands (L), without images such as
+  the baked decor (I), without both (LI) and an empty screen (V). Also logged as `bench`.
+
+## 0.2.32 — 2026-11-24
+
+- Analog watch faces (Retro and Pub): sliding to or from the face was still choppy (about
+  48 ms per frame, against well under 20 ms on the Digital face). Their fixed decor (dial and
+  gradient, rims, minute tracks with 61 ticks, sub-dial scales, harp, shamrock, printed
+  labels) is now drawn once into an RGB565 image in PSRAM (≈ 400 KB) when the face is
+  created; only the live parts (hands, date and status windows, fuel/reserve label, badges)
+  are still drawn every frame. Needs `CONFIG_LV_USE_SNAPSHOT`.
+
+## 0.2.31 — 2026-11-24
+
+- "Pub" watch face: slides over it (pulling the menus) dropped to 2–3 frames since 0.2.28.
+  LVGL now draws the screen in 16-line strips and calls the face's decor callback for each
+  strip; the ~250 lines, discs and arcs of the decor were all queued as draw tasks for every
+  strip (about 8000 per frame, each allocated in PSRAM). Only the primitives that touch the
+  strip are submitted now, and the 60 index positions are computed once.
+
+## 0.2.30 — 2026-11-24
+
+- No more tearing on heavy screens (e.g. pulling menus over the watch face). A full-screen
+  frame that takes longer to draw than the panel's 16.7 ms scan now starts just before the
+  next TE, early enough that the scan never catches up with the write (tear-free up to about
+  32 ms per frame, i.e. 30 fps). Light frames still start on the TE (60 fps).
+- Flight game: the landscape image sits in PSRAM (the largest free internal RAM block is
+  46 KB, the image is 69 KB). Columns are now drawn into a small internal tile per core
+  (6 KB each, only during the game) and copied row by row, instead of touching a different
+  PSRAM cache line for every pixel.
+
+## 0.2.29 — 2026-11-24
+
+- *Énergie* screen: the animation frame rate is now measured between consecutive frames of
+  the animation (0.2.28 divided by a whole second that included still time, so it read ~9).
+- Flight game: HUD text is skipped on the screen strips it does not touch (each frame is
+  sent in 32 strips and every text used to be walked for each one), so a frame goes out faster.
+  The pause screen also shows the CPU clock, where the landscape image lives (internal RAM
+  or PSRAM) and the largest free internal RAM block, to find what slows the rendering.
+
+## 0.2.28 — 2026-11-24
+
+- Smoother LVGL animations (screen slides, scrolling, MeshCore tabs). LVGL now draws straight
+  into the two small DMA strips in internal RAM while the previous strip is being sent to the
+  panel, instead of drawing a full 400 KB image in PSRAM and reading it back. PSRAM is much
+  slower than internal RAM for pixel work, which held animations to roughly 15–20 frames per
+  second. Same internal RAM budget (2 × 13 KB strips, was 2 × 10 KB), 400 KB of PSRAM freed.
+  Full-screen frames still start on the panel's TE signal.
+- *Énergie* screen: new line with the frame rate and refresh time of the last animation
+  (also logged on the console), to compare builds.
+- Flight game pause screen: average render and send times per frame, next to the frame rate.
+
 ## 0.2.27 — 2026-11-24
 
 - MeshCore app: messages relayed by repeaters using 2- or 3-byte path hashes showed a wrong

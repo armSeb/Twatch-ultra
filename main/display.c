@@ -22,6 +22,7 @@
 #include "esp_lcd_panel_io.h"
 #include "lvgl.h"
 #include "src/indev/lv_indev_private.h"   /* seuils de geste */
+#include "src/display/lv_display_private.h" /* zones invalidées (TE) */
 #include "ui_geom.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -48,13 +49,15 @@ static int64_t s_slpin_us;     /* dernier SLPIN : la dalle exige 120 ms avant SL
  * à zéro. */
 #define TURBO_IDLE_MS 1500
 
-/* LVGL rend dans une image pleine en PSRAM (400 Ko) ; l'envoi passe par
- * deux petites bandes DMA internes : la bande k+1 se recopie (avec l'inversion
- * d'octets du RGB565) pendant que la bande k part à l'écran. Une image
- * complète part ainsi d'un trait en ≈ 11 ms, calée sur le TE, plus vite que
- * le balayage de la dalle (16,7 ms) : plus de déchirure, quelle que soit la
- * durée du rendu. 2 × 410 × 12 × 2 = 19,7 Ko de RAM interne (32 Ko avant). */
-#define STRIP_LINES 12
+/* LVGL dessine directement dans deux bandes DMA en RAM interne (mode
+ * partiel, double tampon) : pendant que la bande k part à l'écran par DMA,
+ * LVGL dessine la bande k+1. Avant (≤ 0.2.27), LVGL dessinait dans une
+ * image pleine en PSRAM puis la relisait pour l'envoyer : la PSRAM, bien plus
+ * lente que la RAM interne, limitait les animations à ~15-20 images/s.
+ * Une image complète part toujours d'un trait, calée sur le TE (balayage de
+ * la dalle 16,7 ms, envoi ≈ 11 ms). 2 × 410 × 16 × 2 = 26 Ko de RAM interne,
+ * plus d'image de 400 Ko en PSRAM. */
+#define STRIP_LINES 16
 
 /* ------------------------------------------------------------------ */
 /* CO5300                                                               */
@@ -179,47 +182,143 @@ static uint32_t tick_cb(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
-static uint16_t *s_strip[2];   /* bandes DMA internes, partagées avec display_direct */
-static int s_strip_k;          /* prochaine bande libre (l'autre peut être en vol) */
+static uint16_t *s_strip[2];   /* bandes DMA internes : tampons LVGL et display_direct */
+static bool s_te_frame;        /* rendu en cours = grande image : départ sur le TE */
 
-/* copie n pixels en inversant les octets (la dalle attend du big-endian) */
-static void copy_swap(uint16_t *dst, const uint16_t *src, size_t n)
+/* Anti-déchirure. La dalle relit sa mémoire de haut en bas en 16,7 ms à
+ * partir du TE. Une grande image part bande par bande au rythme du rendu :
+ * si elle met W ≤ ~15 ms, on part sur le TE et on reste devant le balayage.
+ * Plus lente (écran chargé), le balayage nous rattraperait : on part alors
+ * avant le TE suivant, d'une avance W − 16,7 ms, en réécrivant le haut que
+ * le balayage en cours a déjà lu ; le balayage suivant ne nous rattrape
+ * qu'après la dernière ligne. Sans déchirure jusqu'à W ≈ 32 ms (30 img/s). */
+#define TE_FRAME_US   16667
+#define TE_DIRECT_US  15000      /* W en dessous : départ sur le TE */
+#define TE_MARGIN_US  1200
+static int64_t s_send_t0;      /* départ de la première bande (0 : pas une grande image) */
+static uint32_t s_w_est_us;    /* durée d'envoi estimée d'une grande image */
+static esp_timer_handle_t s_lead_tmr;
+static SemaphoreHandle_t s_lead_sem;
+
+static void lead_tmr_cb(void *arg) { xSemaphoreGive(s_lead_sem); }
+
+/* départ d'une grande image : TE, puis éventuel décalage */
+static void frame_start(void)
 {
-    if ((((uintptr_t)dst | (uintptr_t)src) & 3) == 0) {
-        const uint32_t *s32 = (const uint32_t *)src;
-        uint32_t *d32 = (uint32_t *)dst;
-        for (size_t i = 0; i < n / 2; i++) {
-            uint32_t v = s32[i];
-            d32[i] = ((v & 0x00FF00FFu) << 8) | ((v >> 8) & 0x00FF00FFu);
+    wait_te();
+    uint32_t w = s_w_est_us;
+    if (w > TE_DIRECT_US && s_lead_tmr) {
+        int64_t d = 2 * TE_FRAME_US - (int64_t)w - TE_MARGIN_US;
+        if (d > 500) {
+            xSemaphoreTake(s_lead_sem, 0);
+            esp_timer_start_once(s_lead_tmr, (uint64_t)d);
+            xSemaphoreTake(s_lead_sem, pdMS_TO_TICKS(40));
         }
-        if (n & 1) dst[n - 1] = (uint16_t)((src[n - 1] << 8) | (src[n - 1] >> 8));
-    } else {
-        for (size_t i = 0; i < n; i++) dst[i] = (uint16_t)((src[i] << 8) | (src[i] >> 8));
+    }
+    s_send_t0 = esp_timer_get_time();
+}
+
+/* fin d'une grande image : mise à jour de l'estimation (montée immédiate,
+ * descente de moitié à chaque image : une image lourde isolée ne doit pas
+ * ralentir toute l'animation qui suit) */
+static void frame_end(void)
+{
+    uint32_t w = (uint32_t)(esp_timer_get_time() - s_send_t0) + 400;   /* + dernière bande en vol */
+    s_send_t0 = 0;
+    s_w_est_us = w > s_w_est_us ? w : (s_w_est_us + w) / 2;
+}
+
+/* Mesure du rendu (écran Énergie, journal) : images par seconde et durée
+ * d'un rafraîchissement (dessin + envoi), sur la dernière seconde animée. */
+static int64_t s_refr_t0, s_perf_t0;
+static uint32_t s_perf_n, s_perf_sum_us, s_perf_max_us;
+static display_perf_t s_perf;
+
+/* attend la fin du DMA en vol : les deux bandes sont libres au retour */
+static void lcd_drain(void)
+{
+    esp_lcd_panel_io_tx_param(s_io, -1, NULL, 0);
+}
+
+/* Rafraîchissement d'une grande zone (animation, changement d'écran) :
+ * l'envoi démarre sur le TE pour que la dalle balaie derrière nous. */
+static void render_start_cb(lv_event_t *e)
+{
+    lv_display_t *d = lv_event_get_target(e);
+    s_te_frame = false;
+    for (uint32_t i = 0; i < d->inv_p; i++) {
+        const lv_area_t *a = &d->inv_areas[i];
+        if (!d->inv_area_joined[i] && lv_area_get_width(a) >= BOARD_LCD_W &&
+            lv_area_get_height(a) >= 2 * STRIP_LINES) {
+            s_te_frame = true;
+            break;
+        }
     }
 }
 
-/* esp_lcd attend la fin de la bande précédente avant d'envoyer la fenêtre
- * suivante : la bande remplie ici n'est jamais en vol */
-static void send_strip(int x1, int y, int x2, int n)
+/* Débit pendant une animation : intervalle entre deux rafraîchissements
+ * qui se suivent (< 100 ms), pas le nombre d'images sur une seconde où
+ * l'écran a pu rester immobile une partie du temps. */
+static int64_t s_refr_prev;
+static uint32_t s_perf_gap_us, s_perf_gap_n;
+
+static void refr_start_cb(lv_event_t *e) { s_refr_t0 = esp_timer_get_time(); }
+
+static void refr_ready_cb(lv_event_t *e)
 {
-    lcd_pixels(x1, y, x2, y + n - 1, s_strip[s_strip_k]);
-    s_strip_k ^= 1;
+    int64_t now = esp_timer_get_time();
+    if (now - s_perf_t0 >= 1000000) {
+        /* une seconde écoulée : on garde la mesure si l'écran s'animait */
+        if (s_perf_n >= 5 && s_perf_gap_n >= 4) {
+            s_perf.fps = (uint16_t)((1000000ULL * s_perf_gap_n + s_perf_gap_us / 2) / s_perf_gap_us);
+            s_perf.avg_us = s_perf_sum_us / s_perf_n;
+            s_perf.max_us = s_perf_max_us;
+            ESP_LOGI(TAG, "%u img/s, rafraîchissement moy. %lu µs, max %lu µs", s_perf.fps,
+                     (unsigned long)s_perf.avg_us, (unsigned long)s_perf.max_us);
+        }
+        s_perf_t0 = now;
+        s_perf_n = s_perf_sum_us = s_perf_max_us = s_perf_gap_us = s_perf_gap_n = 0;
+    }
+    s_refr_t0 = 0;            /* rien dessiné : ce passage ne compte pas */
 }
+
+static bool s_bench;           /* banc de mesure : rendu seul, rien n'est envoyé */
+void display_bench_mode(bool on) { if (on) lcd_drain(); s_bench = on; }
 
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
 {
-    /* grand rafraîchissement : départ sur le TE, la dalle balaie derrière
-     * nous. Les petites mises à jour (heure, compteurs) n'attendent pas. */
+    if (s_bench) { s_te_frame = false; lv_display_flush_ready(d); return; }
     int w = lv_area_get_width(a), h = lv_area_get_height(a);
-    if (w >= BOARD_LCD_W && h >= 2 * STRIP_LINES) wait_te();
-    const uint16_t *src = (const uint16_t *)px;
-    for (int y = 0; y < h; y += STRIP_LINES) {
-        int n = h - y < STRIP_LINES ? h - y : STRIP_LINES;
-        copy_swap(s_strip[s_strip_k], src + (size_t)y * w, (size_t)n * w);
-        send_strip(a->x1, a->y1 + y, a->x2, n);
+    /* RGB565 → big-endian attendu par la dalle, sur place (RAM interne) */
+    lv_draw_sw_rgb565_swap(px, (uint32_t)w * h);
+    /* première bande d'une grande image : départ sur le TE. Les petites
+     * mises à jour (heure, compteurs) n'attendent pas. */
+    if (s_te_frame) {
+        s_te_frame = false;
+        lcd_drain();
+        frame_start();
+    }
+    /* lcd_window attend la fin de la bande précédente (l'autre tampon) ;
+     * celle-ci part en DMA pendant que LVGL dessine la suivante dans
+     * l'autre tampon : flush_ready tout de suite */
+    lcd_pixels(a->x1, a->y1, a->x2, a->y2, px);
+    if (lv_display_flush_is_last(d) && s_send_t0) frame_end();
+    if (lv_display_flush_is_last(d) && s_refr_t0) {
+        uint32_t us = (uint32_t)(esp_timer_get_time() - s_refr_t0);
+        s_perf_n++;
+        s_perf_sum_us += us;
+        if (us > s_perf_max_us) s_perf_max_us = us;
+        if (s_refr_prev && s_refr_t0 - s_refr_prev < 100000) {
+            s_perf_gap_us += (uint32_t)(s_refr_t0 - s_refr_prev);
+            s_perf_gap_n++;
+        }
+        s_refr_prev = s_refr_t0;
+        s_refr_t0 = 0;
     }
     lv_display_flush_ready(d);
 }
+
+void display_get_perf(display_perf_t *p) { *p = s_perf; }
 
 /* fenêtre du CO5300 : x1, y1 pairs, x2, y2 impairs */
 static void rounder_cb(lv_event_t *e)
@@ -237,16 +336,23 @@ static void rounder_cb(lv_event_t *e)
 bool display_direct(display_strip_fn fill, void *ctx)
 {
     if (!s_on || !s_strip[0]) return false;
+    /* la dernière bande LVGL peut être encore en vol */
+    lcd_drain();
     /* début d'image calé sur le TE : la dalle relit la GRAM derrière nous,
      * pas de déchirure horizontale */
     wait_te();
+    int k = 0;
     for (int y = 0; y < BOARD_LCD_H; y += STRIP_LINES) {
         int n = BOARD_LCD_H - y < STRIP_LINES ? BOARD_LCD_H - y : STRIP_LINES;
-        uint16_t *b = s_strip[s_strip_k];
+        uint16_t *b = s_strip[k];
         fill(b, y, n, ctx);
         lv_draw_sw_rgb565_swap(b, BOARD_LCD_W * n);
-        send_strip(0, y, BOARD_LCD_W - 1, n);
+        /* attend la fin de la bande précédente, puis envoie celle-ci */
+        lcd_pixels(0, y, BOARD_LCD_W - 1, y + n - 1, b);
+        k ^= 1;
     }
+    /* LVGL peut redessiner dans l'une ou l'autre bande dès le retour */
+    lcd_drain();
     return true;
 }
 
@@ -505,16 +611,18 @@ esp_err_t display_init(void)
     geom_test();
 #endif
 
+    size_t bsz = BOARD_LCD_W * STRIP_LINES * 2;
     for (int i = 0; i < 2; i++)
-        s_strip[i] = heap_caps_malloc(BOARD_LCD_W * STRIP_LINES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    size_t bsz = BOARD_LCD_W * BOARD_LCD_H * 2;
-    void *fb = heap_caps_aligned_alloc(64, bsz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    assert(s_strip[0] && s_strip[1] && fb);
+        s_strip[i] = heap_caps_aligned_alloc(4, bsz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    assert(s_strip[0] && s_strip[1]);
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
-    /* flush synchrone : un seul tampon suffit */
-    lv_display_set_buffers(s_disp, fb, NULL, bsz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    /* deux tampons : LVGL dessine dans l'un pendant que l'autre part en DMA */
+    lv_display_set_buffers(s_disp, s_strip[0], s_strip[1], bsz, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_disp, flush_cb);
     lv_display_add_event_cb(s_disp, rounder_cb, LV_EVENT_INVALIDATE_AREA, NULL);
+    lv_display_add_event_cb(s_disp, render_start_cb, LV_EVENT_RENDER_START, NULL);
+    lv_display_add_event_cb(s_disp, refr_start_cb, LV_EVENT_REFR_START, NULL);
+    lv_display_add_event_cb(s_disp, refr_ready_cb, LV_EVENT_REFR_READY, NULL);
 
     /* TE (sortie de la dalle, front montant) */
     s_te_sem = xSemaphoreCreateBinary();
@@ -526,6 +634,9 @@ esp_err_t display_init(void)
     gpio_config(&te);
     gpio_isr_handler_add(BOARD_LCD_TE, te_isr, NULL);   /* service installé par power_init */
     gpio_intr_disable(BOARD_LCD_TE);
+    s_lead_sem = xSemaphoreCreateBinary();
+    const esp_timer_create_args_t lt = { .callback = lead_tmr_cb, .name = "lcd_lead" };
+    if (!s_lead_sem || esp_timer_create(&lt, &s_lead_tmr) != ESP_OK) s_lead_tmr = NULL;
 
     /* tactile */
     touch_reset();

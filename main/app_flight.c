@@ -25,6 +25,11 @@
 #include "power.h"
 #include "nvs.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#ifdef ESP_PLATFORM
+#include "esp_private/esp_clk.h"
+#include "esp_memory_utils.h"
+#endif
 #include "esp_random.h"
 #include "demo_gfx.h"
 #include "demo_synth.h"
@@ -57,6 +62,9 @@ static gsurf_t C;                    /* simulateur seulement : canevas de la tai
 static uint8_t *occ;                 /* occultation par le relief (voxel.c) */
 static uint32_t s_fps_t0;
 static int s_fps_n, s_fps;
+static uint32_t s_rend_us, s_pres_us;    /* moyennes sur la dernière seconde : calcul, envoi */
+static uint32_t s_rend_acc, s_pres_acc;
+static int s_rend_ms, s_pres_ms;
 static lv_obj_t *v_cv;
 static lv_timer_t *v_tmr;
 static bool s_tilt, s_sound = true, s_vox;
@@ -477,6 +485,15 @@ static void hud_draw(gsurf_t *d)
             hud_c(d, _("QUITTER"), 158, 2, g_rgb(255, 220, 210));
             snprintf(b, sizeof b, _("%d IMAGES/S"), s_fps);
             hud_c(d, b, 196, 1, g_rgb(150, 150, 160));
+            snprintf(b, sizeof b, _("CALCUL %d MS · ENVOI %d MS"), s_rend_ms, s_pres_ms);
+            hud_c(d, b, 210, 1, g_rgb(150, 150, 160));
+#ifdef ESP_PLATFORM
+            /* diagnostic : fréquence du CPU, image du relief en RAM interne ou PSRAM */
+            snprintf(b, sizeof b, "CPU %d MHZ · %s · INT %u KO", esp_clk_cpu_freq() / 1000000,
+                     esp_ptr_internal(S.px) ? "INT" : "PSRAM",
+                     (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+            hud_c(d, b, 222, 1, g_rgb(150, 150, 160));
+#endif
         }
         break;
     }
@@ -533,7 +550,12 @@ static void frame(void)
     if (st == ST_PAUSE) return;                      /* image figée, rien à calculer */
     uint32_t ms = demo_synth_ms();
     s_fps_n++;
-    if (ms - s_fps_t0 >= 1000) { s_fps = s_fps_n * 1000 / (int)(ms - s_fps_t0 ? ms - s_fps_t0 : 1); s_fps_n = 0; s_fps_t0 = ms; }
+    if (ms - s_fps_t0 >= 1000) {
+        s_fps = s_fps_n * 1000 / (int)(ms - s_fps_t0 ? ms - s_fps_t0 : 1);
+        if (s_fps_n > 1) { s_rend_ms = (int)(s_rend_acc / (s_fps_n - 1) / 1000); s_pres_ms = (int)(s_pres_acc / (s_fps_n - 1) / 1000); }
+        s_fps_n = 0; s_fps_t0 = ms; s_rend_acc = s_pres_acc = 0;
+    }
+    s_rend_acc += s_rend_us; s_pres_acc += s_pres_us;
     float dt = (ms - s_last_ms) / 1000.0f;
     if (dt < 0) dt = 0;
     if (dt > 0.2f) dt = 0.2f;                       /* temps réel, même à faible débit */
@@ -567,6 +589,7 @@ static void frame(void)
     else if (st == ST_OVER) { cam.a += 0.12f * dt; cam.h += (vox_ground(cam.x, cam.y) + 50 - cam.h) * 0.02f; cam.roll *= 0.95f; cam.pitch *= 0.95f; }
 
     bool rings = st == ST_COUNT || st == ST_PLAY;
+    int64_t t0 = esp_timer_get_time();
     draw_world(t, rings);
     if (st == ST_PLAY) { arrow_update(&ring[0]); if (boost_t > 0) speed_lines(t); }
     sparks_draw(dt);
@@ -575,7 +598,10 @@ static void frame(void)
         for (int i = 0; i < W * H; i++) S.px[i] = g_blend(S.px[i], g_rgb(200, 30, 10), (int)(clampf(0.5f - ts * 0.25f, 0, 0.5f) * 256));
     }
     if (st == ST_OVER) g_fade(&S, 120);
+    int64_t t1 = esp_timer_get_time();
     present();
+    s_rend_us = (uint32_t)(t1 - t0);
+    s_pres_us = (uint32_t)(esp_timer_get_time() - t1);
 }
 
 static void tick_cb(lv_timer_t *t) { frame(); }

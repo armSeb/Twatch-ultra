@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "fonts/fonts.h"
 #include "ui_geom.h"
+#include "face_bake.h"
 
 /* ---------- palette « pub irlandais » ---------- */
 #define C_GREEN      lv_color_hex(0x123E28)   /* vert bouteille */
@@ -152,9 +153,25 @@ static lv_obj_t *text(lv_obj_t *p, const lv_font_t *f, lv_color_t c, const char 
  * les primitives le placent à l'écran (origine de l'objet + ×UI_K). */
 static float s_ox, s_oy;
 
+/* LVGL dessine l'écran par bandes de 16 lignes et rappelle track_draw_cb
+ * pour chacune : sans tri, les ~250 primitives du décor créaient chacune
+ * une tâche de dessin à chaque bande (≈ 8000 par image), d'où des glissements
+ * à 2-3 images. On ne soumet que ce qui touche la bande (repère 240×240). */
+static lv_area_t s_clip;
+
+static bool visible(float x1, float y1, float x2, float y2, float pad)
+{
+    float ax1 = s_ox + x1 * UI_K - pad, ax2 = s_ox + x2 * UI_K + pad;
+    float ay1 = s_oy + y1 * UI_K - pad, ay2 = s_oy + y2 * UI_K + pad;
+    if (ax1 > ax2) { float t = ax1; ax1 = ax2; ax2 = t; }
+    if (ay1 > ay2) { float t = ay1; ay1 = ay2; ay2 = t; }
+    return ax2 >= s_clip.x1 && ax1 <= s_clip.x2 && ay2 >= s_clip.y1 && ay1 <= s_clip.y2;
+}
+
 static void draw_line(lv_layer_t *layer, float x1, float y1, float x2, float y2, int w, lv_color_t c,
                       lv_opa_t opa, bool round)
 {
+    if (!visible(x1, y1, x2, y2, w * UI_K + 2)) return;
     lv_draw_line_dsc_t d;
     lv_draw_line_dsc_init(&d);
     d.p1.x = (lv_value_precise_t)(s_ox + x1 * UI_K); d.p1.y = (lv_value_precise_t)(s_oy + y1 * UI_K);
@@ -210,6 +227,7 @@ static void draw_disc(lv_layer_t *layer, float cx, float cy, int r, lv_color_t c
 static void draw_harp(lv_layer_t *layer, int ox, int oy)
 {
     float x0 = ox + HP_X - 21, y0 = oy + HP_Y - 29;          /* boîte 42 × 58 */
+    if (!visible(x0 - 6, y0 - 8, x0 + 46, y0 + 64, 4)) return;
     /* caisse : du pied (bas) jusque sous l'extrémité de la console (haut droite) */
     const fpt_t sb0 = { 14, 55 }, sb1 = { 22, 40 }, sb2 = { 31, 22 }, sb3 = { 35, 6 };
     /* colonne : du pied, galbe vers la gauche, jusqu'à la volute */
@@ -244,6 +262,7 @@ static void draw_harp(lv_layer_t *layer, int ox, int oy)
 
 static void draw_disc(lv_layer_t *layer, float cx, float cy, int r, lv_color_t c)
 {
+    if (!visible(cx - r, cy - r, cx + r, cy + r, 2)) return;
     lv_draw_rect_dsc_t d;
     lv_draw_rect_dsc_init(&d);
     d.radius = LV_RADIUS_CIRCLE;
@@ -259,6 +278,7 @@ static void draw_disc(lv_layer_t *layer, float cx, float cy, int r, lv_color_t c
 static void draw_shamrock(lv_layer_t *layer, float cx, float cy)
 {
     static const float ang[3] = { -90.0f, 30.0f, 150.0f };     /* haut, bas-droite, bas-gauche */
+    if (!visible(cx - 22, cy - 22, cx + 22, cy + 26, 4)) return;
     for (int i = 0; i < 3; i++) {
         float a = ang[i] * (float)M_PI / 180.0f;
         float ux = cosf(a), uy = sinf(a);           /* direction de la feuille */
@@ -283,11 +303,18 @@ static void track_draw_cb(lv_event_t *e)
     s_ox = co.x1 + (lv_area_get_width(&co) - S(240)) / 2;     /* repère du dessin : carré centré */
     s_oy = co.y1 + (lv_area_get_height(&co) - S(240)) / 2;
     const int ox = 0, oy = 0;          /* repère du dessin */
+    s_clip = layer->_clip_area;
 
+    /* positions des index sur la piste : calculées une fois (powf) */
+    static struct { float x, y, ux, uy; } tk[60];
+    static bool tk_ok;
+    if (!tk_ok) {
+        for (int m = 0; m < 60; m++) track_pt(m * 6.0f, &tk[m].x, &tk[m].y, &tk[m].ux, &tk[m].uy);
+        tk_ok = true;
+    }
     for (int m = 0; m < 60; m++) {
-        float x, y, ux, uy;
-        track_pt(m * 6.0f, &x, &y, &ux, &uy);
-        x += ox; y += oy;
+        float x = tk[m].x + ox, y = tk[m].y + oy, ux = tk[m].ux, uy = tk[m].uy;
+        if (!visible(x - IDX_LEN - 8, y - IDX_LEN - 8, x + IDX_LEN + 8, y + IDX_LEN + 8, 0)) continue;
         if (m % 5) {
             draw_line(layer, x, y, x - 6 * ux, y - 6 * uy, 1, C_CREAM, LV_OPA_70, false);
             continue;
@@ -314,7 +341,7 @@ static void track_draw_cb(lv_event_t *e)
     a.color = C_RED;
     a.start_angle = 210;            /* LVGL : 0° = 3 h, sens horaire ; E = −60° depuis 12 h */
     a.end_angle = 228;              /* 15 % de 120° = 18° */
-    lv_draw_arc(layer, &a);
+    if (visible(FU_X - FU_D / 2, FU_Y - FU_D / 2, FU_X + FU_D / 2, FU_Y + FU_D / 2, 4)) lv_draw_arc(layer, &a);
 
     draw_harp(layer, ox, oy);
     draw_shamrock(layer, ox + SH_X, oy + SH_Y);
@@ -329,15 +356,22 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
     lv_obj_remove_style_all(s_root);
     lv_obj_set_size(s_root, BOARD_LCD_W, BOARD_LCD_H);
     lv_obj_set_pos(s_root, -UI_PAD_X, -UI_PAD_Y);       /* hors de la marge de l'écran */
-    lv_obj_set_style_radius(s_root, BOARD_LCD_VIS_R, 0);
+    bubble(s_root);
+
+    /* Tout ce qui ne bouge pas chaque seconde (fond, cerclages, piste,
+     * graduations, guichets, aiguilles heures/minutes/jauge) est construit
+     * hors écran et affiché en image (face_bake.c), refaite à chaque minute ;
+     * seule la trotteuse reste un objet vivant. */
+    lv_obj_t *base = face_bake_create(s_root);
+    lv_obj_set_style_radius(base, BOARD_LCD_VIS_R, 0);
     /* fond uni : un dégradé en RGB565 (sans tramage dans LVGL 9) fait des
      * bandes de teinte, les trois canaux ne changeant pas aux mêmes lignes */
-    lv_obj_set_style_bg_color(s_root, C_GREEN, 0);
-    lv_obj_set_style_bg_opa(s_root, LV_OPA_COVER, 0);
-    bubble(s_root);
+    lv_obj_set_style_bg_color(base, C_GREEN, 0);
+    lv_obj_set_style_bg_opa(base, LV_OPA_COVER, 0);
+    bubble(base);
     static const struct { int inset, w; lv_opa_t opa; } RIM[2] = { { 9, 4, LV_OPA_COVER }, { 19, 1, LV_OPA_40 } };
     for (int i = 0; i < 2; i++) {
-        lv_obj_t *r = lv_obj_create(s_root);
+        lv_obj_t *r = lv_obj_create(base);
         lv_obj_remove_style_all(r);
         lv_obj_set_size(r, BOARD_LCD_W - 2 * (BOARD_LCD_VIS_X + RIM[i].inset),
                         BOARD_LCD_H - BOARD_LCD_VIS_T - BOARD_LCD_VIS_B - 2 * RIM[i].inset);
@@ -349,33 +383,41 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
         bubble(r);
     }
 
-    lv_obj_t *track = lv_obj_create(s_root);
+    lv_obj_t *track = lv_obj_create(base);
     lv_obj_remove_style_all(track);
     lv_obj_set_size(track, BOARD_LCD_W, BOARD_LCD_H);
     bubble(track);
     lv_obj_add_event_cb(track, track_draw_cb, LV_EVENT_DRAW_MAIN, NULL);
 
-    /* complications et aiguilles : carré du dessin, centré */
-    lv_obj_t *dial = box(s_root, 0, 0, 240, 240, 0);
-    lv_obj_center(dial);
+    /* complications fixes : carré du dessin, centré */
+    lv_obj_t *dial_b = box(base, 0, 0, 240, 240, 0);
+    lv_obj_center(dial_b);
 
     /* 12 h : jauge FUEL */
-    scale(dial, FU_X, FU_Y, FU_D, 210, 120, 9, 4, 7, 2, 4, C_BRASS, C_CREAM);
-    s_fuel_lbl = text(dial, &font_small, C_CREAM, "FUEL");
-    lv_obj_set_style_text_letter_space(s_fuel_lbl, S(1), 0);
-    lv_obj_align(s_fuel_lbl, LV_ALIGN_TOP_MID, 0, S(FU_Y + 6));
-    lv_obj_t *le = text(dial, &font_text, C_RED, "E");
+    scale(dial_b, FU_X, FU_Y, FU_D, 210, 120, 9, 4, 7, 2, 4, C_BRASS, C_CREAM);
+    lv_obj_t *le = text(dial_b, &font_text, C_RED, "E");
     lv_obj_set_pos(le, S(FU_X - 35), S(FU_Y - 14));
-    lv_obj_t *lf = text(dial, &font_text, C_CREAM, "F");
+    lv_obj_t *lf = text(dial_b, &font_text, C_CREAM, "F");
     lv_obj_set_pos(lf, S(FU_X + 27), S(FU_Y - 14));
 
-    lv_obj_t *brand = text(dial, &font_small, C_BRASS, "SLÁINTE");
+    lv_obj_t *brand = text(dial_b, &font_small, C_BRASS, "SLÁINTE");
     lv_obj_set_style_text_letter_space(brand, S(2), 0);
     lv_obj_align(brand, LV_ALIGN_TOP_MID, 0, S(FU_Y + 34));
 
     /* 6 h : petite seconde */
-    lv_obj_t *ssd = disc(dial, SS_X, SS_Y, SS_D, C_SUB, 1, C_BRASS);
-    scale(ssd, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_BRASS, C_CREAM);
+    lv_obj_t *ssb = disc(dial_b, SS_X, SS_Y, SS_D, C_SUB, 1, C_BRASS);
+    scale(ssb, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_BRASS, C_CREAM);
+
+    /* complications et aiguilles figées : même carré */
+    lv_obj_t *dial = box(base, 0, 0, 240, 240, 0);
+    lv_obj_center(dial);
+    /* partie vivante, au-dessus de l'image : la trotteuse et son axe */
+    lv_obj_t *live = box(s_root, 0, 0, 240, 240, 0);
+    lv_obj_center(live);
+    s_fuel_lbl = text(dial, &font_small, C_CREAM, "FUEL");
+    lv_obj_set_style_text_letter_space(s_fuel_lbl, S(1), 0);
+    lv_obj_align(s_fuel_lbl, LV_ALIGN_TOP_MID, 0, S(FU_Y + 6));
+    lv_obj_t *ssd = box(live, SS_X - SS_D / 2, SS_Y - SS_D / 2, SS_D, SS_D, 0);   /* calque du compteur */
     s_sec = hand(ssd, SS_D, 2, C_RED, s_pt_sec);
 
     /* 3 h : guichet jour + date */
@@ -430,6 +472,7 @@ void face_pub_set_time(const struct tm *tm, bool force)
         snprintf(b, sizeof(b), "%s %d", DAYS[tm->tm_wday % 7], tm->tm_mday);
         lv_label_set_text(s_date, b);
         s_last_min = tm->tm_min;
+        face_bake_dirty(s_root);
     }
     if (force || tm->tm_sec != s_last_sec) {
         place(s_sec, s_pt_sec, SS_D / 2, SS_D / 2, tm->tm_sec * 6.0f, -6, 23);
@@ -439,8 +482,13 @@ void face_pub_set_time(const struct tm *tm, bool force)
 
 void face_pub_set_status(int pct, bool charging, int link, int notifs)
 {
+    static int l_chg = -1, l_notif = -1;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
+    if (notifs < 0) notifs = 0;
+    if (notifs > 9) notifs = 9;
+    if (pct == s_last_pct && (int)charging == l_chg && link == s_last_link && notifs == l_notif) return;
+    l_chg = charging; l_notif = notifs;
     if (pct != s_last_pct) {
         place(s_fuel_hand, s_pt_fuel, FU_X, FU_Y, -60.0f + pct * 1.2f, -5, 27);
         s_last_pct = pct;
@@ -463,9 +511,10 @@ void face_pub_set_status(int pct, bool charging, int link, int notifs)
         s_last_link = link;
     }
     if (notifs > 0) {
-        lv_label_set_text_fmt(s_badge_txt, "%d", notifs > 9 ? 9 : notifs);
+        lv_label_set_text_fmt(s_badge_txt, "%d", notifs);
         lv_obj_remove_flag(s_badge, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s_badge, LV_OBJ_FLAG_HIDDEN);
     }
+    face_bake_dirty(s_root);
 }
