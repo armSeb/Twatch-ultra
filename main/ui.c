@@ -13,7 +13,10 @@
 #include "meshcore/mc_port.h"
 #include "sx1262.h"
 #include "sdcard.h"
-#include "wifi_sta.h"
+#include "wifi_mgr.h"
+#include "netsvc.h"
+#include "websrv.h"
+#include "webrx_cfg.h"
 #include "ancs.h"
 #include "media.h"
 #include "ota.h"
@@ -41,7 +44,7 @@
 #define ANIM_MS UI_ANIM_MS
 
 typedef enum {
-    SCR_WATCH, SCR_LIST, SCR_DETAIL, SCR_CALL, SCR_MENU, SCR_POWER, SCR_PAIR, SCR_ABOUT, SCR_MEDIA, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI, SCR_SET_MESH, SCR_SET_SD, SCR_OTA,
+    SCR_WATCH, SCR_LIST, SCR_DETAIL, SCR_CALL, SCR_MENU, SCR_POWER, SCR_PAIR, SCR_ABOUT, SCR_MEDIA, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI, SCR_SET_MESH, SCR_SET_SD, SCR_SET_WEB, SCR_OTA,
     SCR_LAUNCHER, SCR_QUICK, SCR_APP, SCR_COUNT
 } scr_id_t;
 
@@ -85,11 +88,23 @@ static const uint8_t GDUR_VALUES[] = { 3, 4, 6 };
 static lv_obj_t *m_slider, *m_sw_vib, *m_sw_bt, *m_bm_tmo, *m_bm_face, *m_bm_lang, *m_toast;
 static void menu_lang_cb(lv_event_t *ev);
 static lv_timer_t *w_clock_t;
-static lv_obj_t *m_sum[10], *m_bt_info, *m_confirm;
+static lv_obj_t *m_sum[11], *m_bt_info, *m_confirm;
+/* Wi-Fi, serveur TCP MeshCore, serveur web */
+static lv_obj_t *m_sw_wifi, *m_wifi_info, *m_wifi_nets, *m_wifi_retry, *m_sw_wlow, *m_sw_wnob;
+static lv_obj_t *m_sw_mtcp, *m_mtcp_info;
+static lv_obj_t *m_sw_web, *m_sw_websd, *m_web_info, *m_web_pw, *m_web_modal;
+static lv_timer_t *m_wifi_timer;
+static void menu_wifi_refresh(void);
+static void menu_wifi_nets(void);
+static void menu_mesh_refresh(void);
+static void menu_web_refresh(void);
 static lv_obj_t *m_sd_info, *m_sd_btn, *m_sd_share;
 static lv_timer_t *m_sd_timer;
 static lv_obj_t *o_info, *o_bar, *o_status, *o_btn, *o_pw, *o_prev, *o_prev_modal, *o_title;
-static int o_app = -1;           /* ≥ 0 : session « réglages » de cette app (WebRX), sinon mise à jour */
+#define O_APP_NONE (-1)
+#define O_APP_WIFI (-2)          /* réseaux Wi-Fi, ouverts depuis les réglages Wi-Fi */
+static int o_app = O_APP_NONE;   /* ≥ 0 : session « réglages » de cette app (WebRX), sinon mise à jour */
+static lv_timer_t *o_reboot_t;
 static void ota_ui_idle(void);
 static void build_ota(void);
 static void back_cb(lv_event_t *ev);
@@ -271,6 +286,8 @@ static void about_refresh(void);
 
 static void build_menu(void);
 static void build_media(void);
+static lv_obj_t *mk_modal(lv_obj_t *parent, const char *q, const char *sub, const char *ok_txt,
+                          lv_color_t ok_col, lv_event_cb_t cb);
 static void menu_sync_from_settings(void);
 
 /* Écrans construits à la demande et libérés écran éteint (ui_release_idle)
@@ -281,7 +298,7 @@ enum { G_NONE = 0, G_MENU, G_MEDIA, G_LAUNCHER, G_QUICK, G_APP };
 static int group_of(scr_id_t id)
 {
     switch (id) {
-    case SCR_MENU: case SCR_SET_DISP: case SCR_SET_ALERT: case SCR_SET_MOTION: case SCR_SET_BT: case SCR_SET_WIFI: case SCR_SET_MESH: case SCR_SET_SD: case SCR_OTA:
+    case SCR_MENU: case SCR_SET_DISP: case SCR_SET_ALERT: case SCR_SET_MOTION: case SCR_SET_BT: case SCR_SET_WIFI: case SCR_SET_MESH: case SCR_SET_SD: case SCR_SET_WEB: case SCR_OTA:
         return G_MENU;
     case SCR_MEDIA:    return G_MEDIA;
     case SCR_LAUNCHER: return G_LAUNCHER;
@@ -338,6 +355,11 @@ static void show(scr_id_t id, lv_screen_load_anim_t anim)
     if (id == SCR_SET_BT) { menu_bt_refresh(); lv_obj_add_flag(m_confirm, LV_OBJ_FLAG_HIDDEN); }
     if (id == SCR_SET_SD) { sd_refresh_info(); menu_sd_refresh(); lv_timer_resume(m_sd_timer); }
     else if (m_sd_timer) lv_timer_pause(m_sd_timer);
+    if (id == SCR_SET_WIFI) { menu_wifi_nets(); menu_wifi_refresh(); wifi_refresh(); lv_timer_resume(m_wifi_timer); }
+    else if (m_wifi_timer) lv_timer_pause(m_wifi_timer);
+    if (id == SCR_SET_MESH) menu_mesh_refresh();
+    if (id == SCR_OTA && s_cur != SCR_OTA && !ota_active() && !ota_web_receiving() && !o_reboot_t) ota_ui_idle();
+    if (id == SCR_SET_WEB) menu_web_refresh();
     if (id == SCR_WATCH) { watch_update_time(true); watch_refresh_status(); }
     s_cur = id;
     crashlog_mark(anim == LV_SCR_LOAD_ANIM_NONE ? 'S' : 'A', s_cur, id);
@@ -845,7 +867,7 @@ static void menu_wpwr_cb(lv_event_t *ev)
     if (i > 3) return;
     settings_get()->wifi_pwr = (uint8_t)i;
     settings_save();
-    wsta_apply_power();                     /* tout de suite si un flux tourne */
+    wifi_apply_power();                     /* tout de suite si le Wi-Fi tourne */
 }
 
 static void menu_glance_cb(lv_event_t *ev)
@@ -891,6 +913,8 @@ static void menu_mesh_cb(lv_event_t *ev)
         mc_stop();
         toast(_("MeshCore coupé"));
     }
+    netsvc_update();                        /* serveur TCP MeshCore */
+    menu_mesh_refresh();
 }
 
 /* carte SD : état, éjection / montage (faits par la tâche « sd ») */
@@ -975,6 +999,215 @@ static void menu_ant_cb(lv_event_t *ev)
     settings_save();
     sx_set_antenna(ext);
     toast(ext ? _("Antenne LoRa externe") : _("Antenne LoRa intégrée"));
+}
+
+
+/* ---- Wi-Fi, serveur TCP MeshCore, serveur web ---- */
+/* état du Wi-Fi en une ou deux lignes */
+static void wifi_status_text(char *b, size_t n)
+{
+    wifi_status_t ws;
+    wifi_get_status(&ws);
+    switch (ws.state) {
+    case WIFI_OFF:
+        snprintf(b, n, "%s", ws.no_mem ? _("Mémoire insuffisante à côté du Bluetooth") : _("Coupé"));
+        break;
+    case WIFI_IDLE:
+        snprintf(b, n, "%s", _("Radio seule (analyseur Wi-Fi)"));
+        break;
+    case WIFI_CONNECTING:
+        snprintf(b, n, "%s%s%s", ws.msg ? _(ws.msg) : _("Connexion…"), ws.detail[0] ? "\n" : "", ws.detail);
+        break;
+    case WIFI_CONNECTED:
+        if (ws.rssi) snprintf(b, n, _("Connecté à %s\n%s · %d dBm"), ws.ssid, ws.ip, ws.rssi);
+        else snprintf(b, n, _("Connecté à %s\n%s"), ws.ssid, ws.ip);
+        break;
+    case WIFI_FAILED: {
+        int64_t left = ws.retry_at_us ? (ws.retry_at_us - esp_timer_get_time()) / 1000000 : -1;
+        int k = snprintf(b, n, "%s%s%s", ws.msg ? _(ws.msg) : _("Échec"), ws.detail[0] ? " · " : "", ws.detail);
+        if (left >= 0 && k > 0 && (size_t)k < n) snprintf(b + k, n - k, _("\nNouvel essai dans %d s"), (int)left + 1);
+        break;
+    }
+    }
+}
+
+static void menu_wifi_refresh(void)
+{
+    if (!m_wifi_info) return;
+    char b[160];
+    wifi_status_text(b, sizeof b);
+    wifi_status_t ws;
+    wifi_get_status(&ws);
+    if (!wifi_user_on() && (ws.holders & WIFI_HOLD_CONNECT)) {
+        size_t k = strlen(b);
+        snprintf(b + k, sizeof b - k, "%s", _("\nAllumé par une app, le temps de son usage"));
+    }
+    lv_label_set_text(m_wifi_info, b);
+    lv_obj_set_style_text_color(m_wifi_info, ws.state == WIFI_CONNECTED ? C_OK : ws.state == WIFI_FAILED ? C_WARN : C_DIM, 0);
+    lv_obj_set_state(m_sw_wifi, LV_STATE_CHECKED, wifi_user_on());
+    if (ws.state == WIFI_FAILED) lv_obj_remove_flag(m_wifi_retry, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(m_wifi_retry, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void menu_wifi_timer_cb(lv_timer_t *t)
+{
+    static uint8_t n;
+    if (++n % 5 == 0) wifi_refresh();                   /* signal relu toutes les 5 s */
+    menu_wifi_refresh();
+}
+
+static void menu_wifi_cb(lv_event_t *ev)
+{
+    bool on = lv_obj_has_state(m_sw_wifi, LV_STATE_CHECKED);
+    if (!wifi_user_set(on)) toast(_("Wi-Fi indisponible : mémoire insuffisante"));
+    else toast(on ? _("Wi-Fi activé") : _("Wi-Fi coupé"));
+    menu_wifi_refresh();
+}
+
+static void menu_wifi_retry_cb(lv_event_t *ev) { wifi_retry(); toast(_("Nouvel essai…")); }
+
+static void menu_wlow_cb(lv_event_t *ev)
+{
+    settings_get()->wifi_lowbatt = lv_obj_has_state(m_sw_wlow, LV_STATE_CHECKED);
+    settings_save();
+}
+
+static void menu_wnob_cb(lv_event_t *ev)
+{
+    settings_get()->wifi_noble = lv_obj_has_state(m_sw_wnob, LV_STATE_CHECKED);
+    settings_save();
+    wifi_ble_policy();
+}
+
+static void menu_wifi_pick_cb(lv_event_t *ev)
+{
+    uint8_t k = (uint8_t)(uintptr_t)lv_event_get_user_data(ev);
+    wifi_set_pick(k);
+    lv_async_call((lv_async_cb_t)menu_wifi_nets, NULL);  /* pas de destruction du bouton en cours */
+    toast(k ? _("Réseau choisi") : _("Réseau automatique"));
+}
+
+/* liste « Automatique » + réseaux enregistrés (lue en NVS, tâche app) */
+static void menu_wifi_nets(void)
+{
+    if (!m_wifi_nets) return;
+    lv_obj_clean(m_wifi_nets);
+    wrx_cfg_t *c = heap_caps_calloc(1, sizeof *c, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!c) return;
+    wrx_cfg_load(c);
+    uint8_t pick = settings_get()->wifi_net;
+    int n = 0;
+    for (int k = 0; k <= WRX_NETS; k++) {
+        if (k && !c->ssid[k - 1][0]) continue;
+        char t[64];
+        snprintf(t, sizeof t, "%s  %s", pick == k ? LV_SYMBOL_OK : "    ", k ? c->ssid[k - 1] : _("Automatique"));
+        lv_obj_t *b = mk_button(m_wifi_nets, t, pick == k ? C_ACC : C_CARD, menu_wifi_pick_cb, (void *)(uintptr_t)k);
+        lv_obj_set_size(b, lv_pct(100), S(38));
+        lv_obj_t *l = lv_obj_get_child(b, 0);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(l, lv_pct(100));
+        lv_obj_align(l, LV_ALIGN_LEFT_MID, S(4), 0);
+        if (k) n++;
+    }
+    if (!n) {
+        lv_obj_t *l = mk_label(m_wifi_nets, &font_small, C_DIM, _("Aucun réseau enregistré"));
+        lv_obj_set_style_pad_top(l, S(4), 0);
+    }
+    memset(c, 0, sizeof *c);                            /* mots de passe */
+    free(c);
+}
+
+/* réseaux enregistrés : page web du point d'accès de la montre */
+static void menu_wifi_cfg_cb(lv_event_t *ev)
+{
+    if (ota_active()) return;
+    o_app = O_APP_WIFI;
+    ota_set_page(OTA_PAGE_WEBRX);
+    nav_open(SCR_OTA, LV_SCR_LOAD_ANIM_MOVE_LEFT);
+    ota_ui_idle();
+}
+
+/* un service a besoin du Wi-Fi : on l'allume s'il ne l'est pas */
+static void wifi_for_service(void)
+{
+    if (wifi_user_on()) return;
+    if (wifi_user_set(true)) toast(_("Wi-Fi activé"));
+    else toast(_("Wi-Fi indisponible : mémoire insuffisante"));
+}
+
+static void menu_mesh_refresh(void)
+{
+    if (!m_mtcp_info) return;
+    const settings_t *st = settings_get();
+    char b[160], ip[16], cl[16];
+    lv_obj_set_state(m_sw_mtcp, LV_STATE_CHECKED, st->mesh_tcp);
+    if (!st->mesh_tcp) snprintf(b, sizeof b, "%s", _("Pour l'app MeshCore (connexion TCP/IP) ou meshterm, sur le même réseau."));
+    else if (!st->meshcore) snprintf(b, sizeof b, "%s", _("MeshCore est coupé."));
+    else if (!mc_tcp_running() || !wifi_ip(ip)) snprintf(b, sizeof b, "%s", _("En attente du Wi-Fi…"));
+    else if (mc_tcp_client(cl)) snprintf(b, sizeof b, _("%s port %d\nApp connectée : %s"), ip, MC_TCP_PORT, cl);
+    else snprintf(b, sizeof b, _("%s port %d\nAucune app connectée"), ip, MC_TCP_PORT);
+    lv_label_set_text(m_mtcp_info, b);
+}
+
+static void menu_mtcp_cb(lv_event_t *ev)
+{
+    settings_t *st = settings_get();
+    st->mesh_tcp = lv_obj_has_state(m_sw_mtcp, LV_STATE_CHECKED);
+    settings_save();
+    if (st->mesh_tcp) wifi_for_service();
+    netsvc_update();
+    menu_mesh_refresh();
+}
+
+static void menu_web_refresh(void)
+{
+    if (!m_web_info) return;
+    const settings_t *st = settings_get();
+    char b[160], ip[16];
+    lv_obj_set_state(m_sw_web, LV_STATE_CHECKED, st->web_on);
+    lv_obj_set_state(m_sw_websd, LV_STATE_CHECKED, st->web_sd);
+    if (!st->web_on) {
+        snprintf(b, sizeof b, "%s", _("Coupé"));
+        lv_obj_add_flag(m_web_pw, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        if (websrv_running() && wifi_ip(ip)) snprintf(b, sizeof b, _("Ouvrir http://%s/\nMot de passe :"), ip);
+        else snprintf(b, sizeof b, "%s\n%s", _("En attente du Wi-Fi…"), _("Mot de passe :"));
+        lv_label_set_text(m_web_pw, websrv_password());
+        lv_obj_remove_flag(m_web_pw, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_label_set_text(m_web_info, b);
+}
+
+static void menu_web_cb(lv_event_t *ev)
+{
+    settings_t *st = settings_get();
+    st->web_on = lv_obj_has_state(m_sw_web, LV_STATE_CHECKED);
+    settings_save();
+    if (st->web_on) wifi_for_service();
+    netsvc_update();
+    menu_web_refresh();
+}
+
+static void menu_websd_cb(lv_event_t *ev)
+{
+    settings_get()->web_sd = lv_obj_has_state(m_sw_websd, LV_STATE_CHECKED);
+    settings_save();
+}
+
+static void web_pw_confirm_cb(lv_event_t *ev)
+{
+    bool ok = (uintptr_t)lv_event_get_user_data(ev) != 0;
+    lv_obj_add_flag(m_web_modal, LV_OBJ_FLAG_HIDDEN);
+    if (!ok) return;
+    websrv_new_password();
+    toast(_("Nouveau mot de passe"));
+    menu_web_refresh();
+}
+
+static void web_pw_cb(lv_event_t *ev)
+{
+    lv_obj_remove_flag(m_web_modal, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(m_web_modal);
 }
 
 /* Faces dans l'ordre du sélecteur → valeur settings.watchface */
@@ -1071,6 +1304,11 @@ static void menu_nav_cb(lv_event_t *ev)
         lv_label_set_text(pa_hint, _("iPhone : Réglages > Bluetooth\n> T-Watch, puis « Jumeler »"));
         ble_pairing_mode();
     }
+    if (id == SCR_OTA && !ota_active() && o_app != O_APP_NONE) {
+        o_app = O_APP_NONE;                          /* depuis le menu : mise à jour */
+        ota_set_page(OTA_PAGE_UPDATE);
+        ota_ui_idle();
+    }
     nav_open(id, LV_SCR_LOAD_ANIM_MOVE_LEFT);
 }
 
@@ -1085,8 +1323,12 @@ static void back_cb(lv_event_t *ev)
 {
     if (s_cur == SCR_APP && s_app_cur && s_app_cur->on_back && s_app_cur->on_back()) return;
     if (s_cur == SCR_OTA && ota_active()) {
-        toast(o_app >= 0 ? _("Annuler d'abord les réglages") : _("Annuler d'abord la mise à jour"));
+        toast(o_app != O_APP_NONE ? _("Annuler d'abord les réglages") : _("Annuler d'abord la mise à jour"));
         return;
+    }
+    if (s_cur == SCR_OTA && o_app == O_APP_WIFI) {   /* réseaux non lancés : retour aux réglages Wi-Fi */
+        o_app = O_APP_NONE;
+        ota_set_page(OTA_PAGE_UPDATE);
     }
     if (s_cur == SCR_OTA && o_app >= 0) {            /* réglages non lancés : retour à l'app */
         int a = o_app;
@@ -1292,12 +1534,22 @@ static void menu_refresh_summaries(void)
     else snprintf(b, sizeof(b), "%s", _("Capteur en veille"));
     lv_label_set_text(m_sum[6], b);
 
-    static const uint8_t WDBM[4] = { 8, 13, 17, 20 };
-    snprintf(b, sizeof(b), _("Puissance %u dBm"), WDBM[st->wifi_pwr <= 3 ? st->wifi_pwr : 3]);
+    wifi_status_t ws;
+    wifi_get_status(&ws);
+    if (ws.state == WIFI_CONNECTED) snprintf(b, sizeof(b), _("Connecté · %s"), ws.ssid);
+    else if (ws.state == WIFI_CONNECTING) snprintf(b, sizeof(b), "%s", _("Connexion…"));
+    else if (ws.state == WIFI_FAILED) snprintf(b, sizeof(b), "%s", _("Pas de réseau"));
+    else snprintf(b, sizeof(b), "%s", _("Coupé"));
     lv_label_set_text(m_sum[7], b);
     if (!st->meshcore) snprintf(b, sizeof(b), "%s", _("Coupé"));
-    else snprintf(b, sizeof(b), "%s · %s", _("Actif"), st->lora_ext_ant ? _("antenne externe") : _("antenne intégrée"));
+    else snprintf(b, sizeof(b), "%s · %s%s", _("Actif"), st->lora_ext_ant ? _("antenne externe") : _("antenne intégrée"),
+                  st->mesh_tcp ? " · TCP" : "");
     lv_label_set_text(m_sum[8], b);
+    char ip[16];
+    if (!st->web_on) snprintf(b, sizeof(b), "%s", _("Coupé"));
+    else if (websrv_running() && wifi_ip(ip)) snprintf(b, sizeof(b), "http://%s/", ip);
+    else snprintf(b, sizeof(b), "%s", _("En attente du Wi-Fi…"));
+    lv_label_set_text(m_sum[10], b);
 
     sd_info_t si;
     sd_get_info(&si);
@@ -1479,6 +1731,7 @@ static void build_menu(void)
     mk_entry(col, LV_SYMBOL_WIFI, _("Wi-Fi"), SCR_SET_WIFI, &m_sum[7]);
     mk_entry(col, SYM_COMMENTS, _("MeshCore"), SCR_SET_MESH, &m_sum[8]);
     mk_entry(col, LV_SYMBOL_SD_CARD, _("Carte SD"), SCR_SET_SD, &m_sum[9]);
+    mk_entry(col, SYM_TV, _("Serveur web"), SCR_SET_WEB, &m_sum[10]);
     mk_entry(col, LV_SYMBOL_CHARGE, _("Énergie"), SCR_POWER, &m_sum[3]);
     mk_entry(col, LV_SYMBOL_LIST, _("À propos"), SCR_ABOUT, &m_sum[4]);
     mk_entry(col, LV_SYMBOL_REFRESH, _("Mise à jour"), SCR_OTA, &m_sum[5]);
@@ -1543,6 +1796,28 @@ static void build_menu(void)
 
     /* ---- Wi-Fi ---- */
     col = mk_page(SCR_SET_WIFI, _("Wi-Fi"));
+    m_sw_wifi = mk_switch_row(col, _("Wi-Fi"), _("Aussi au centre de contrôle"), menu_wifi_cb);
+    m_wifi_info = mk_label(col, &font_small, C_DIM, "");
+    lv_label_set_long_mode(m_wifi_info, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(m_wifi_info, lv_pct(100));
+    m_wifi_retry = mk_button(col, with_sym(LV_SYMBOL_REFRESH, _("Réessayer")), C_CARD, menu_wifi_retry_cb, NULL);
+    lv_obj_set_size(m_wifi_retry, lv_pct(100), S(40));
+    lv_obj_add_flag(m_wifi_retry, LV_OBJ_FLAG_HIDDEN);
+    mk_section(col, _("RÉSEAU"));
+    m_wifi_nets = mk_container(col);
+    lv_obj_set_size(m_wifi_nets, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(m_wifi_nets, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(m_wifi_nets, S(4), 0);
+    lv_obj_remove_flag(m_wifi_nets, LV_OBJ_FLAG_SCROLLABLE);
+    bubble(m_wifi_nets);
+    lv_obj_t *wc = mk_button(col, with_sym(LV_SYMBOL_EDIT, _("Modifier les réseaux")), C_CARD, menu_wifi_cfg_cb, NULL);
+    lv_obj_set_size(wc, lv_pct(100), S(40));
+    lv_obj_t *wh = mk_label(col, &font_small, C_DIM,
+                            _("Jusqu'à 5 réseaux, essayés dans l'ordre. Ils se modifient aussi depuis le serveur web."));
+    lv_label_set_long_mode(wh, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(wh, lv_pct(100));
+    m_sw_wlow = mk_switch_row(col, _("Coupure sous 30 %"), _("Sur batterie"), menu_wlow_cb);
+    m_sw_wnob = mk_switch_row(col, _("Couper le Bluetooth"), _("Tant que le Wi-Fi est allumé"), menu_wnob_cb);
     mk_section(col, _("PUISSANCE D'ÉMISSION (dBm)"));
     static const char *wpwr_map[4 + 1];
     wpwr_map[0] = "8"; wpwr_map[1] = "13"; wpwr_map[2] = "17"; wpwr_map[3] = "20"; wpwr_map[4] = "";
@@ -1551,6 +1826,8 @@ static void build_menu(void)
                             _("Moins de puissance : moins de batterie, portée plus courte. Pris en compte tout de suite."));
     lv_label_set_long_mode(wn, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(wn, lv_pct(100));
+    m_wifi_timer = lv_timer_create(menu_wifi_timer_cb, 1000, NULL);
+    lv_timer_pause(m_wifi_timer);
 
     /* ---- MeshCore ---- */
     col = mk_page(SCR_SET_MESH, _("MeshCore"));
@@ -1560,6 +1837,34 @@ static void build_menu(void)
                              _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
     lv_label_set_long_mode(mn2, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(mn2, lv_pct(100));
+    m_sw_mtcp = mk_switch_row(col, _("Serveur TCP"), _("App ou meshterm par le Wi-Fi"), menu_mtcp_cb);
+    m_mtcp_info = mk_label(col, &font_small, C_DIM, "");
+    lv_label_set_long_mode(m_mtcp_info, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(m_mtcp_info, lv_pct(100));
+    lv_obj_t *mw = mk_label(col, &font_small, C_WARN,
+                            _("Sans mot de passe (comme le protocole MeshCore) : à n'activer que sur un réseau de confiance."));
+    lv_label_set_long_mode(mw, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(mw, lv_pct(100));
+
+    /* ---- serveur web ---- */
+    col = mk_page(SCR_SET_WEB, _("Serveur web"));
+    m_sw_web = mk_switch_row(col, _("Serveur web"), _("Réglages et mise à jour"), menu_web_cb);
+    m_web_info = mk_label(col, &font_text, C_FG, "");
+    lv_label_set_long_mode(m_web_info, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(m_web_info, lv_pct(100));
+    m_web_pw = mk_label(col, &font_title, C_ACC, "");
+    lv_obj_add_flag(m_web_pw, LV_OBJ_FLAG_HIDDEN);
+    m_sw_websd = mk_switch_row(col, _("Fichiers de la carte SD"), _("Lire et écrire par le web"), menu_websd_cb);
+    lv_obj_t *wpb = mk_button(col, with_sym(SYM_LOCK, _("Nouveau mot de passe")), C_CARD, web_pw_cb, NULL);
+    lv_obj_set_size(wpb, lv_pct(100), S(40));
+    lv_obj_t *ww = mk_label(col, &font_small, C_DIM,
+                            _("Réseau local seulement, sans chiffrement : le couper sur un Wi-Fi public. /meshcore reste en "
+                              "lecture seule."));
+    lv_label_set_long_mode(ww, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(ww, lv_pct(100));
+    m_web_modal = mk_modal(s_scr[SCR_SET_WEB], _("Changer le mot de passe ?"),
+                           _("Les navigateurs connectés devront se reconnecter."), _("Changer"), C_WARN,
+                           web_pw_confirm_cb);
 
     /* ---- carte SD ---- */
     col = mk_page(SCR_SET_SD, _("Carte SD"));
@@ -1632,13 +1937,13 @@ static void build_menu(void)
 /* ------------------------------------------------------------------ */
 /* Mise à jour par Wi-Fi                                                */
 /* ------------------------------------------------------------------ */
-static lv_timer_t *o_reboot_t;
 
 static void ota_reboot_cb(lv_timer_t *t) { ota_reboot_now(); }
 
 static void ota_title(void)
 {
-    if (o_title) lv_label_set_text(o_title, o_app < 0 ? _("Mise à jour") : _("Wi-Fi et radios"));
+    if (o_title) lv_label_set_text(o_title, o_app == O_APP_NONE ? _("Mise à jour") :
+                                  o_app == O_APP_WIFI ? _("Réseaux Wi-Fi") : _("Wi-Fi et radios"));
 }
 
 static void ota_ui_running(void)
@@ -1668,14 +1973,21 @@ static void ota_ui_running(void)
 
 static void ota_ui_idle(void)
 {
-    char b[220];
+    if (!o_info) return;
+    char b[320];
     ota_title();
-    if (o_app >= 0) snprintf(b, sizeof(b), "%s", _("La montre crée un réseau Wi-Fi pour saisir les réglages ; "
+    if (o_app != O_APP_NONE) snprintf(b, sizeof(b), "%s", _("La montre crée un réseau Wi-Fi pour saisir les réglages ; "
                                                  "le Bluetooth est coupé pendant ce temps."));
     else snprintf(b, sizeof(b), _("Version installée : %s\n\nLa montre crée un réseau Wi-Fi ; le Bluetooth est coupé "
              "le temps de la mise à jour.%s"), esp_app_get_description()->version,
              ota_rolled_back() ? _("\n\nLa dernière mise à jour avait échoué : ancien firmware restauré.") : "");
+    char ip[16];
+    if (o_app == O_APP_NONE && websrv_running() && wifi_ip(ip)) {
+        size_t n = strlen(b);
+        snprintf(b + n, sizeof(b) - n, _("\n\nSans couper le Bluetooth : serveur web, http://%s/"), ip);
+    }
     lv_label_set_text(o_info, b);
+    lv_obj_remove_flag(o_btn, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_text_color(o_info, C_FG, 0);
     lv_obj_scroll_to_y(lv_obj_get_parent(o_info), 0, LV_ANIM_OFF);
     if (o_pw) lv_obj_add_flag(o_pw, LV_OBJ_FLAG_HIDDEN);
@@ -1683,7 +1995,7 @@ static void ota_ui_idle(void)
     lv_obj_add_flag(o_bar, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(lv_obj_get_child(o_btn, 0), with_sym(LV_SYMBOL_REFRESH, _("Démarrer")));
     lv_obj_set_style_bg_color(o_btn, C_ACC, 0);
-    const char *pv = o_app >= 0 ? NULL : ota_other_version();
+    const char *pv = o_app != O_APP_NONE ? NULL : ota_other_version();
     if (o_prev && pv) {
         char t[64];
         snprintf(t, sizeof(t), _("Revenir à la %s"), pv);
@@ -1774,6 +2086,12 @@ void ui_on_ota(int code)
 {
     if (s_cur != SCR_OTA) show(SCR_OTA, LV_SCR_LOAD_ANIM_NONE);
     if (!o_status) return;
+    if (!ota_active() && code != OTA_EV_SAVED && code != OTA_EV_CLIENT) {
+        /* image envoyée par le serveur web (point d'accès coupé) */
+        lv_label_set_text(o_info, _("Mise à jour envoyée par le serveur web. MeshCore et le Bluetooth continuent."));
+        lv_obj_add_flag(o_btn, LV_OBJ_FLAG_HIDDEN);
+        if (o_prev) lv_obj_add_flag(o_prev, LV_OBJ_FLAG_HIDDEN);
+    }
     char b[96];
     if (code >= 0 && code <= OTA_EV_PROGRESS_MAX) {
         lv_obj_remove_flag(o_bar, LV_OBJ_FLAG_HIDDEN);
@@ -1866,6 +2184,12 @@ static void menu_sync_from_settings(void)
             lv_buttonmatrix_set_button_ctrl(m_bm_gdur, i, LV_BUTTONMATRIX_CTRL_CHECKED); break;
         }
     lv_obj_set_state(m_sw_bt, LV_STATE_CHECKED, st->ble_enabled);
+    lv_obj_set_state(m_sw_wlow, LV_STATE_CHECKED, st->wifi_lowbatt);
+    lv_obj_set_state(m_sw_wnob, LV_STATE_CHECKED, st->wifi_noble);
+    lv_obj_set_state(m_sw_wifi, LV_STATE_CHECKED, wifi_user_on());
+    lv_obj_set_state(m_sw_mtcp, LV_STATE_CHECKED, st->mesh_tcp);
+    lv_obj_set_state(m_sw_web, LV_STATE_CHECKED, st->web_on);
+    lv_obj_set_state(m_sw_websd, LV_STATE_CHECKED, st->web_sd);
     for (int i = 0; i < 3; i++) {
         if (FACE_ORDER[i] == st->watchface) lv_buttonmatrix_set_button_ctrl(m_bm_face, i, LV_BUTTONMATRIX_CTRL_CHECKED);
     }
@@ -2357,8 +2681,8 @@ static void release_launcher(void)
 /* ailleurs (apps comprises). Ouvert depuis une app, il passe par-dessus */
 /* sans la quitter (on_hide « pas pour de bon ») et se referme sur elle. */
 /* ------------------------------------------------------------------ */
-enum { Q_BT, Q_DND, Q_SILENT, Q_LAMP, Q_MEDIA, Q_SET, Q_N };
-static lv_obj_t *q_tile[Q_N];
+enum { Q_BT, Q_WIFI, Q_DND, Q_SILENT, Q_LAMP, Q_MEDIA, Q_N };
+static lv_obj_t *q_tile[Q_N], *q_wifi_lbl;
 static lv_obj_t *q_vol, *q_vol_lbl;
 
 #define VOL_STEP 10
@@ -2385,9 +2709,17 @@ static void quick_refresh(void)
     const char *lk = bi.state == BLE_ST_READY ? _("iPhone connecté") :
                      (bi.state == BLE_ST_CONNECTED || bi.state == BLE_ST_SECURED) ? _("Connexion…") :
                      bi.state == BLE_ST_OFF ? _("Bluetooth coupé") : _("iPhone absent");
-    lv_label_set_text_fmt(q_info, "%s%d%%  ·  %s", power_charging() ? LV_SYMBOL_CHARGE " " : "",
+    lv_label_set_text_fmt(q_info, "%s%d%% · %s", power_charging() ? LV_SYMBOL_CHARGE " " : "",
                           power_percent(), lk);
     q_set_tile(Q_BT, ble_running());
+    q_set_tile(Q_WIFI, wifi_user_on());
+    if (q_wifi_lbl) {
+        wifi_status_t ws;
+        wifi_get_status(&ws);
+        lv_label_set_text(q_wifi_lbl, ws.state == WIFI_CONNECTED ? ws.ssid :
+                                      ws.state == WIFI_CONNECTING ? _("Connexion…") :
+                                      ws.state == WIFI_FAILED ? _("Pas de réseau") : "Wi-Fi");
+    }
     q_set_tile(Q_DND, st->dnd);
     q_set_tile(Q_SILENT, st->silent);
     lv_bar_set_value(q_bri, st->brightness, LV_ANIM_OFF);
@@ -2452,12 +2784,30 @@ static void quick_tile_cb(lv_event_t *ev)
         quick_detach();
         nav_open(SCR_MEDIA, LV_SCR_LOAD_ANIM_MOVE_LEFT);
         return;
-    case Q_SET:
-        quick_detach();
-        nav_open(SCR_MENU, LV_SCR_LOAD_ANIM_MOVE_LEFT);
-        return;
+    case Q_WIFI:
+        return;                              /* quick_wifi_cb (appui court / long) */
     }
     quick_refresh();
+}
+
+/* Wi-Fi : appui court = marche / arrêt, appui long = réglages Wi-Fi */
+static void quick_wifi_cb(lv_event_t *ev)
+{
+    if (lv_event_get_code(ev) == LV_EVENT_LONG_PRESSED) {
+        quick_detach();
+        nav_open(SCR_SET_WIFI, LV_SCR_LOAD_ANIM_MOVE_LEFT);
+        return;
+    }
+    bool on = !wifi_user_on();
+    if (!wifi_user_set(on)) toast(_("Wi-Fi indisponible : mémoire insuffisante"));
+    else toast(on ? _("Wi-Fi activé") : _("Wi-Fi coupé"));
+    quick_refresh();
+}
+
+static void quick_set_cb(lv_event_t *ev)
+{
+    quick_detach();
+    nav_open(SCR_MENU, LV_SCR_LOAD_ANIM_MOVE_LEFT);
 }
 
 static void quick_bri_cb(lv_event_t *ev)
@@ -2537,14 +2887,26 @@ static void build_quick(void)
 {
     lv_obj_t *s = s_scr[SCR_QUICK] = mk_screen();
     q_info = mk_label(s, &font_text, C_DIM, "");
-    lv_obj_align(q_info, LV_ALIGN_TOP_MID, 0, S(2));
+    lv_label_set_long_mode(q_info, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(q_info, S(186), lv_font_get_line_height(&font_text));
+    lv_obj_set_pos(q_info, S(12), S(2));
+    /* réglages : petit bouton à droite de la ligne d'état */
+    lv_obj_t *g = mk_button(s, LV_SYMBOL_SETTINGS, C_CARD, quick_set_cb, NULL);
+    lv_obj_set_size(g, S(30), S(20));
+    lv_obj_set_pos(g, S(198), 0);
+    lv_obj_set_ext_click_area(g, S(8));
 
     q_mk_tile(s, Q_BT, LV_SYMBOL_BLUETOOTH, _("Bluetooth"), S(12), S(24));
-    q_mk_tile(s, Q_DND, SYM_MOON, _("Ne pas déranger"), S(86), S(24));
-    q_mk_tile(s, Q_SILENT, SYM_SILENT, _("Silencieux"), S(160), S(24));
-    q_mk_tile(s, Q_LAMP, SYM_BULB, _("Lampe"), S(12), S(94));
-    q_mk_tile(s, Q_MEDIA, LV_SYMBOL_AUDIO, _("Lecture"), S(86), S(94));
-    q_mk_tile(s, Q_SET, LV_SYMBOL_SETTINGS, _("Réglages"), S(160), S(94));
+    lv_obj_t *wt = q_mk_tile(s, Q_WIFI, SYM_WIFI, "Wi-Fi", S(86), S(24));
+    q_wifi_lbl = lv_obj_get_child(wt, 1);
+    lv_label_set_long_mode(q_wifi_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_height(q_wifi_lbl, S(28));
+    lv_obj_add_event_cb(wt, quick_wifi_cb, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(wt, quick_wifi_cb, LV_EVENT_LONG_PRESSED, NULL);
+    q_mk_tile(s, Q_DND, SYM_MOON, _("Ne pas déranger"), S(160), S(24));
+    q_mk_tile(s, Q_SILENT, SYM_SILENT, _("Silencieux"), S(12), S(94));
+    q_mk_tile(s, Q_LAMP, SYM_BULB, _("Lampe"), S(86), S(94));
+    q_mk_tile(s, Q_MEDIA, LV_SYMBOL_AUDIO, _("Lecture"), S(160), S(94));
 
     lv_obj_t *t;
     q_bri = q_mk_level(s, S(164), quick_bri_cb, 49, 10, 255, &t);
@@ -2557,7 +2919,7 @@ static void release_quick(void)
     if (!s_scr[SCR_QUICK] || s_cur == SCR_QUICK) return;
     scr_delete(s_scr[SCR_QUICK]);
     s_scr[SCR_QUICK] = NULL;
-    q_info = q_bri = q_vol = q_vol_lbl = NULL;
+    q_info = q_bri = q_vol = q_vol_lbl = q_wifi_lbl = NULL;
     memset(q_tile, 0, sizeof(q_tile));
 }
 
@@ -2786,8 +3148,9 @@ static void release_menu(void)
 {
     if (!s_scr[SCR_MENU] || is_menu_group(s_cur)) return;
     static const scr_id_t grp[] = { SCR_MENU, SCR_SET_DISP, SCR_SET_ALERT, SCR_SET_MOTION, SCR_SET_BT, SCR_SET_WIFI,
-                                    SCR_SET_MESH, SCR_SET_SD, SCR_OTA };
+                                    SCR_SET_MESH, SCR_SET_SD, SCR_SET_WEB, SCR_OTA };
     if (m_sd_timer) { lv_timer_delete(m_sd_timer); m_sd_timer = NULL; }
+    if (m_wifi_timer) { lv_timer_delete(m_wifi_timer); m_wifi_timer = NULL; }
     for (size_t i = 0; i < sizeof(grp) / sizeof(grp[0]); i++) {
         if (s_scr[grp[i]]) { scr_delete(s_scr[grp[i]]); s_scr[grp[i]] = NULL; }
     }
@@ -2796,7 +3159,10 @@ static void release_menu(void)
     m_sw_steps = m_sw_wrist = m_sw_mesh = m_sw_ant = NULL;
     m_bm_wsens = m_sw_glance = m_bm_gpct = m_bm_gdur = m_bm_wpwr = NULL;
     m_bt_info = m_confirm = m_sd_info = m_sd_btn = m_sd_share = NULL;
-    o_info = o_bar = o_status = o_btn = o_pw = o_prev = o_prev_modal = NULL;
+    m_sw_wifi = m_wifi_info = m_wifi_nets = m_wifi_retry = m_sw_wlow = m_sw_wnob = NULL;
+    m_sw_mtcp = m_mtcp_info = NULL;
+    m_sw_web = m_sw_websd = m_web_info = m_web_pw = m_web_modal = NULL;
+    o_info = o_bar = o_status = o_btn = o_pw = o_prev = o_prev_modal = o_title = NULL;
     memset(m_sum, 0, sizeof(m_sum));
 }
 
@@ -2870,17 +3236,21 @@ bool ui_is_home(void) { return s_cur == SCR_WATCH; }
 uint32_t ui_timeout_ms(void)
 {
     uint32_t base = settings_get()->screen_timeout_s * 1000u;
+    /* dans une app ou les réglages : 1 min sans toucher (Seb), le délai
+     * court du réglage ne vaut que pour le cadran et les notifications */
+    const uint32_t use = base > 60000 ? base : 60000;
     if (ota_active()) return 10u * 60 * 1000;   /* écran allumé pendant la mise à jour */
+    if (is_menu_group(s_cur)) return s_cur == SCR_SET_BT || s_cur == SCR_PAIR ? 90000 : use;
     switch (s_cur) {
     case SCR_APP:
         if (s_app_cur && s_app_cur->keep_screen_on && s_app_cur->keep_screen_on()) return UINT32_MAX;
-        if (s_app_cur && s_app_cur->screen_timeout_ms) return s_app_cur->screen_timeout_ms;
-        return base;
+        if (s_app_cur && s_app_cur->screen_timeout_ms > use) return s_app_cur->screen_timeout_ms;
+        return use;
+    case SCR_MEDIA:  return use;
     case SCR_LAUNCHER:
     case SCR_QUICK:  return base > 10000 ? base : 10000;
     case SCR_DETAIL: return base > 15000 ? base : 15000;
     case SCR_CALL:   return 45000;
-    case SCR_MENU:   return base > 20000 ? base : 20000;
     case SCR_POWER:  return 120000;
     case SCR_PAIR:   return 90000;
     case SCR_ABOUT:  return 30000;
@@ -3029,4 +3399,60 @@ void ui_pairing_done(int status)
     }
     lv_timer_reset(pa_timer);
     lv_timer_resume(pa_timer);
+}
+
+/* ------------------------------------------------------------------ */
+/* Wi-Fi, services réseau, réglages reçus du serveur web               */
+/* ------------------------------------------------------------------ */
+void ui_on_wifi(bool reload)
+{
+    quick_refresh();
+    if (reload) menu_wifi_nets();
+    menu_wifi_refresh();
+    menu_mesh_refresh();
+    menu_web_refresh();
+    if (s_cur == SCR_MENU && m_sum[0]) menu_refresh_summaries();
+}
+
+/* Réglages modifiés par le serveur web : mêmes effets que les écrans de
+ * réglages de la montre. Tâche app. */
+void ui_apply_settings(const settings_t *n)
+{
+    settings_t *st = settings_get();
+    const settings_t o = *st;
+    *st = *n;
+    st->wifi_net = o.wifi_net;                          /* via wifi_set_pick, plus bas */
+    st->wifi_on = o.wifi_on;                            /* jamais par le web (on s'y connecte) */
+    st->web_on = o.web_on;
+    if (n->brightness != o.brightness) display_set_brightness(n->brightness);
+    if (n->tap_wake != o.tap_wake) display_tap_enable(n->tap_wake);
+    if (n->step_count != o.step_count || n->wrist_wake != o.wrist_wake || n->wrist_sens != o.wrist_sens) motion_apply();
+    if (n->volume != o.volume || n->silent != o.silent) sound_set_master(n->volume, n->silent);
+    if (n->ble_enabled != o.ble_enabled) { if (n->ble_enabled) ble_start(); else ble_stop(); }
+    if (n->lora_ext_ant != o.lora_ext_ant) sx_set_antenna(n->lora_ext_ant);
+    if (n->meshcore != o.meshcore) {
+        if (!n->meshcore) mc_stop();
+        else if (mc_start() != ESP_OK) st->meshcore = false;
+    }
+    settings_save();
+    if (n->wifi_pwr != o.wifi_pwr) wifi_apply_power();
+    if (n->wifi_noble != o.wifi_noble) wifi_ble_policy();
+    if (n->wifi_net != o.wifi_net) { wifi_set_pick(n->wifi_net); menu_wifi_nets(); }
+    /* seul le serveur TCP peut changer ici : le serveur web reste (cette
+     * requête attend sa réponse) */
+    if (n->meshcore != o.meshcore || n->mesh_tcp != o.mesh_tcp) netsvc_update();
+    if (n->watchface != o.watchface) apply_face();
+    watch_update_time(true);
+    watch_refresh_status();
+    quick_refresh();
+    if (s_scr[SCR_MENU]) {
+        menu_sync_from_settings();
+        menu_mesh_refresh();
+        menu_web_refresh();
+        if (s_cur == SCR_MENU) menu_refresh_summaries();
+    }
+    if (n->lang != o.lang) {
+        i18n_set(n->lang);
+        lv_async_call(relang_async, NULL);
+    }
 }

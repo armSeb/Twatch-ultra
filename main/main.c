@@ -39,6 +39,11 @@
 #include "ancs.h"
 #include "notif_store.h"
 #include "motion.h"
+#include "wifi_mgr.h"
+#include "netsvc.h"
+#include "ui_kit.h"
+#include "i18n.h"
+#include "freertos/semphr.h"
 
 #ifndef TW_DIAG_BARE
 #define TW_DIAG_BARE 0
@@ -63,6 +68,59 @@ bool app_post(const app_event_t *ev)
         return false;
     }
     return true;
+}
+
+/* ---- exécution d'une fonction sur la tâche app (serveur web…) ---- */
+typedef struct app_call_s {
+    void (*fn)(void *);
+    void *arg;
+    SemaphoreHandle_t done;
+    int state;                          /* 0 en attente, 1 en cours, 2 fini, 3 abandonné */
+} app_call_t;
+static portMUX_TYPE s_call_mux = portMUX_INITIALIZER_UNLOCKED;
+
+bool app_call(void (*fn)(void *), void *arg, int timeout_ms)
+{
+    app_call_t *c = heap_caps_calloc(1, sizeof *c, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!c) return false;
+    c->fn = fn;
+    c->arg = arg;
+    c->done = xSemaphoreCreateBinary();
+    if (!c->done) { free(c); return false; }
+    app_event_t ev = { .type = EV_CALL, .a = 0, .t = (int64_t)(intptr_t)c };
+    if (!app_post(&ev)) { vSemaphoreDelete(c->done); free(c); return false; }
+    if (xSemaphoreTake(c->done, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        /* pas encore commencé : abandonné (la tâche app le libérera) ;
+         * déjà en cours : on attend la fin, arg est encore utilisé */
+        bool abandon = false;
+        portENTER_CRITICAL(&s_call_mux);
+        if (c->state == 0) { c->state = 3; abandon = true; }
+        portEXIT_CRITICAL(&s_call_mux);
+        if (abandon) return false;
+        xSemaphoreTake(c->done, portMAX_DELAY);
+    }
+    vSemaphoreDelete(c->done);
+    free(c);
+    return true;
+}
+
+static void run_call(app_call_t *c)
+{
+    bool run;
+    portENTER_CRITICAL(&s_call_mux);
+    run = c->state == 0;
+    if (run) c->state = 1;
+    portEXIT_CRITICAL(&s_call_mux);
+    if (!run) {                         /* abandonné par l'appelant */
+        vSemaphoreDelete(c->done);
+        free(c);
+        return;
+    }
+    c->fn(c->arg);
+    portENTER_CRITICAL(&s_call_mux);
+    c->state = 2;
+    portEXIT_CRITICAL(&s_call_mux);
+    xSemaphoreGive(c->done);
 }
 
 bool app_post_from_isr(const app_event_t *ev, BaseType_t *hp)
@@ -166,6 +224,14 @@ static void handle_event(const app_event_t *ev)
     case EV_MEDIA:
         ui_on_media();
         break;
+    case EV_WIFI:
+        if (ev->a == WIFI_EV_RELOAD) wifi_load_cfg();
+        netsvc_update();                  /* serveur web, serveur TCP MeshCore */
+        ui_on_wifi(ev->a == WIFI_EV_RELOAD);
+        break;
+    case EV_CALL:
+        run_call((app_call_t *)(intptr_t)ev->t);
+        break;
     case EV_OTA:
         if (ev->a == OTA_EV_TIMEOUT) { ota_cancel(); break; }
         screen_wake();                    /* garder l'écran sur la progression */
@@ -193,6 +259,7 @@ static void handle_event(const app_event_t *ev)
         ui_on_notif_removed((uint32_t)ev->a);
         break;
     case EV_BLE_STATE:
+        wifi_ble_changed();               /* light sleep : voir wifi_mgr.c */
         ui_on_ble_state(ev->a);
         break;
     case EV_PASSKEY:
@@ -269,6 +336,7 @@ static void app_task(void *arg)
             last_batt = now;
             wclock_resync();
             power_update();
+            if (wifi_battery_check(power_percent(), power_vbus())) ui_toast(_("Batterie sous 30 % : Wi-Fi coupé"));
             motion_tick();                /* minuit, sauvegarde des pas */
             ble_set_battery((uint8_t)power_percent());
             ui_on_power();
@@ -355,6 +423,7 @@ void app_main(void)
     }
 #if !TW_DIAG_BARE
     if (settings_get()->meshcore && mc_start() != ESP_OK) ESP_LOGE(TAG, "MeshCore indisponible");
+    wifi_mgr_init();                    /* Wi-Fi global s'il était allumé (sauf batterie faible) */
 #endif
     int reopen = boot_app_get();        /* retour dans l'app après ses réglages */
     if (reopen >= 0 && reopen < g_app_count) app_open(g_apps[reopen]);

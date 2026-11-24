@@ -17,7 +17,8 @@
 #include "esp_image_format.h"
 #include "esp_app_desc.h"
 #include "esp_wifi.h"
-#include "wifi_sta.h"
+#include "wifi_mgr.h"
+#include "freertos/semphr.h"
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -43,6 +44,7 @@ static bool s_active;
 static bool s_ble_stopped;     /* Bluetooth arrêté par nous : l'abandon redémarre */
 static char s_pass[9];
 static char s_new_ver[32];
+static volatile bool s_installed;   /* image activée : redémarrage imminent */
 static httpd_handle_t s_httpd;
 static volatile int64_t s_last_activity_us;
 static esp_timer_handle_t s_idle_timer;
@@ -150,7 +152,7 @@ static const char PAGE_TAIL[] =
     "net:'transfert interrompu, réessayer',not_esp32:'ce fichier n’est pas un firmware ESP32',"
     "not_twatch:'ce n’est pas un firmware T-Watch Ultra',flash_prep:'impossible de préparer la flash',"
     "flash_write:'erreur d’écriture flash',corrupt:'image corrompue',rejected:'image refusée',"
-    "activate:'impossible d’activer la nouvelle image'},"
+    "activate:'impossible d’activer la nouvelle image',battery:'batterie trop faible (30 % mini) : brancher l’USB',busy:'une mise à jour est déjà en cours'},"
     "en:{w:'WebRX settings →',t:'T-Watch Ultra · update',v:'Installed version:',"
     "h:'Choose the <b>twatch-ultra-app.bin</b> file. The current firmware stays in place until the end: an interruption breaks nothing.',"
     "b:'Send',nf:'Choose the file first.',s:'Sending…',ok:'Done: the watch is restarting ',"
@@ -159,7 +161,7 @@ static const char PAGE_TAIL[] =
     "net:'transfer interrupted, try again',not_esp32:'this file is not an ESP32 firmware',"
     "not_twatch:'this is not a T-Watch Ultra firmware',flash_prep:'could not prepare the flash',"
     "flash_write:'flash write error',corrupt:'corrupted image',rejected:'image rejected',"
-    "activate:'could not activate the new image'}};"
+    "activate:'could not activate the new image',battery:'battery too low (30 % min): plug in USB',busy:'an update is already running'}};"
     "var L=(navigator.language||'en').slice(0,2)=='fr'?'fr':'en';"
     "function $(i){return document.getElementById(i);}"
     "function tr(k){return T[L][k]||k;}"
@@ -169,7 +171,7 @@ static const char PAGE_TAIL[] =
     "function go(){var f=$('f').files[0],m=$('m'),p=$('p'),b=$('b');"
     "if(!f){m.textContent=tr('nf');return;}"
     "b.disabled=true;p.hidden=false;m.className='';m.textContent=tr('s');"
-    "var x=new XMLHttpRequest();x.open('POST','/update');"
+    "var x=new XMLHttpRequest();x.open('POST','/update');x.setRequestHeader('X-TW','1');"
     "x.upload.onprogress=function(e){if(e.lengthComputable)p.value=e.loaded*100/e.total;};"
     "x.onload=function(){if(x.status==200){p.value=100;m.className='ok';"
     "m.textContent=tr('ok')+'('+x.responseText+').';}"
@@ -255,94 +257,230 @@ static void dns_task(void *arg)
     task_psram_exit();
 }
 
-/* transfert en cours (tâche httpd dans update_post) / activation de l'image */
-static volatile bool s_receiving, s_finishing;
+/* ------------------------------------------------------------------ */
+/* Écritures en flash depuis une tâche dont la pile peut être en PSRAM  */
+/* ------------------------------------------------------------------ */
+/* Le cache est coupé pendant une écriture en flash : une pile en PSRAM
+ * devient alors illisible (voir task_psram.h). Le serveur web de la montre
+ * a sa pile en PSRAM : ses écritures (image OTA, réglages en NVS) passent
+ * par une petite tâche à pile interne, créée à la demande et terminée après
+ * 15 s sans travail. */
+typedef esp_err_t (*fl_fn_t)(void *arg);
+static SemaphoreHandle_t s_fl_mx, s_fl_go, s_fl_done;
+static TaskHandle_t s_fl_task;
+static fl_fn_t s_fl_fn;
+static void *s_fl_arg;
+static esp_err_t s_fl_ret;
+static portMUX_TYPE s_fl_init_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void fl_task(void *a)
+{
+    for (;;) {
+        if (xSemaphoreTake(s_fl_go, pdMS_TO_TICKS(15000)) == pdTRUE) {
+            s_fl_ret = s_fl_fn(s_fl_arg);
+            xSemaphoreGive(s_fl_done);
+            continue;
+        }
+        /* inactive : on s'arrête, sauf si un appel est en train d'arriver */
+        if (xSemaphoreTake(s_fl_mx, 0) != pdTRUE) continue;
+        s_fl_task = NULL;
+        xSemaphoreGive(s_fl_mx);
+        vTaskDelete(NULL);
+    }
+}
+
+static esp_err_t fl_call(fl_fn_t fn, void *arg)
+{
+    if (!s_fl_mx) {
+        SemaphoreHandle_t mx = xSemaphoreCreateMutex(), go = xSemaphoreCreateBinary(), dn = xSemaphoreCreateBinary();
+        if (!mx || !go || !dn) {
+            if (mx) vSemaphoreDelete(mx);
+            if (go) vSemaphoreDelete(go);
+            if (dn) vSemaphoreDelete(dn);
+            return ESP_ERR_NO_MEM;
+        }
+        bool mine = false;
+        portENTER_CRITICAL(&s_fl_init_mux);
+        if (!s_fl_mx) { s_fl_go = go; s_fl_done = dn; s_fl_mx = mx; mine = true; }
+        portEXIT_CRITICAL(&s_fl_init_mux);
+        if (!mine) { vSemaphoreDelete(mx); vSemaphoreDelete(go); vSemaphoreDelete(dn); }
+    }
+    xSemaphoreTake(s_fl_mx, portMAX_DELAY);
+    if (!s_fl_task && xTaskCreatePinnedToCore(fl_task, "flashw", 4096, NULL, 5, &s_fl_task, tskNO_AFFINITY) != pdPASS) {
+        s_fl_task = NULL;
+        xSemaphoreGive(s_fl_mx);
+        return ESP_ERR_NO_MEM;
+    }
+    s_fl_fn = fn;
+    s_fl_arg = arg;
+    xSemaphoreGive(s_fl_go);
+    xSemaphoreTake(s_fl_done, portMAX_DELAY);
+    esp_err_t r = s_fl_ret;
+    xSemaphoreGive(s_fl_mx);
+    return r;
+}
+
+typedef struct {
+    const esp_partition_t *dst;
+    size_t size;
+    esp_ota_handle_t h;
+    const void *buf;
+    size_t len;
+} fl_ota_t;
+
+static esp_err_t fl_ota_begin(void *a) { fl_ota_t *o = a; return esp_ota_begin(o->dst, o->size, &o->h); }
+static esp_err_t fl_ota_write(void *a) { fl_ota_t *o = a; return esp_ota_write(o->h, o->buf, o->len); }
+static esp_err_t fl_ota_end(void *a) { fl_ota_t *o = a; return esp_ota_end(o->h); }
+static esp_err_t fl_ota_abort(void *a) { fl_ota_t *o = a; return esp_ota_abort(o->h); }
+static esp_err_t fl_ota_boot(void *a) { fl_ota_t *o = a; return esp_ota_set_boot_partition(o->dst); }
+static esp_err_t fl_ota_slot(void *a) { fl_ota_t *o = a; o->dst = esp_ota_get_next_update_partition(NULL); return ESP_OK; }
+/* lectures NVS des pages réseaux (tâche httpd du serveur web : pile en PSRAM) */
+static esp_err_t fl_wrx_load(void *a) { wrx_cfg_load(a); return ESP_OK; }
+static esp_err_t fl_rad_load(void *a) { rad_cfg_load(a); return ESP_OK; }
+
+/* ------------------------------------------------------------------ */
+/* Réception d'une image (point d'accès ou serveur web)                 */
+/* ------------------------------------------------------------------ */
+/* transfert en cours / activation de l'image */
+static volatile bool s_receiving, s_finishing, s_web_rx, s_rx_abort;
+static portMUX_TYPE s_rx_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void post_ev(int32_t code)
 {
     app_post_simple(EV_OTA, code);
 }
 
-static esp_err_t fail(httpd_req_t *r, esp_ota_handle_t h, int32_t code, const char *msg)
+static esp_err_t reply_err(httpd_req_t *r, const char *status, const char *msg)
 {
-    if (h) esp_ota_abort(h);
-    s_receiving = false;
-    ESP_LOGW(TAG, "échec : %s", msg);
-    post_ev(code);
-    httpd_resp_set_status(r, "400 Bad Request");
+    httpd_resp_set_status(r, status);
     httpd_resp_set_type(r, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(r, "Connection", "close");
     return httpd_resp_sendstr(r, msg);
 }
 
-/* Réception en flux : 4 Ko à la fois, écrits dans l'emplacement libre */
-static esp_err_t update_post(httpd_req_t *r)
+static esp_err_t fail(httpd_req_t *r, fl_ota_t *o, int32_t code, const char *msg)
+{
+    if (o && o->h) { fl_call(fl_ota_abort, o); o->h = 0; }
+    ESP_LOGW(TAG, "échec : %s", msg);
+    post_ev(code);
+    s_web_rx = false;
+    s_receiving = false;
+    return reply_err(r, "400 Bad Request", msg);
+}
+
+bool ota_web_receiving(void) { return s_web_rx; }
+
+void ota_http_abort(void) { s_rx_abort = true; }
+
+/* Réception en flux : 4 Ko à la fois, écrits dans l'emplacement libre.
+ * Vérifications : en-tête ESP32 et nom de projet dès le premier bloc, taille
+ * bornée par l'emplacement, puis somme et SHA-256 de l'image complète
+ * (esp_ota_end) avant de l'activer. L'image courante n'est jamais touchée. */
+esp_err_t ota_http_update(httpd_req_t *r, bool web)
 {
     EXT_RAM_BSS_ATTR static char buf[4096];   /* PSRAM : esp_ota_write recopie par blocs */
-    const esp_partition_t *dst = esp_ota_get_next_update_partition(NULL);
+    static fl_ota_t o;
     s_last_activity_us = esp_timer_get_time();
-    if (!dst) return fail(r, 0, OTA_EV_ERR_WRITE, "no_slot");
-    if (r->content_len <= 0 || r->content_len > dst->size) {
-        return fail(r, 0, OTA_EV_ERR_SIZE, "bad_size");
+    bool busy;
+    portENTER_CRITICAL(&s_rx_mux);
+    busy = s_receiving || s_finishing;
+    if (!busy) { s_receiving = true; s_web_rx = web; s_rx_abort = false; }
+    portEXIT_CRITICAL(&s_rx_mux);
+    if (busy) return reply_err(r, "409 Conflict", "busy");
+    memset(&o, 0, sizeof o);
+    if (fl_call(fl_ota_slot, &o) != ESP_OK) o.dst = NULL;
+    if (web && !power_vbus() && power_percent() < MIN_BATT_PCT) {
+        s_receiving = s_web_rx = false;
+        return reply_err(r, "400 Bad Request", "battery");
     }
-    ESP_LOGI(TAG, "réception de %u octets vers %s", (unsigned)r->content_len, dst->label);
+    if (!o.dst) return fail(r, NULL, OTA_EV_ERR_WRITE, "no_slot");
+    if (r->content_len <= sizeof(esp_image_header_t) || r->content_len > o.dst->size) {
+        return fail(r, NULL, OTA_EV_ERR_SIZE, "bad_size");
+    }
+    ESP_LOGI(TAG, "réception de %u octets vers %s (%s)", (unsigned)r->content_len, o.dst->label,
+             web ? "serveur web" : "point d'accès");
 
-    esp_ota_handle_t h = 0;
     size_t left = r->content_len, done = 0;
-    s_receiving = true;                    /* remis à false par fail() ou en fin */
     int last_pct = -1, timeouts = 0;
     bool checked = false;
     while (left > 0) {
+        if (s_rx_abort) return fail(r, &o, OTA_EV_ERR_NET, "net");
         int n = httpd_req_recv(r, buf, left < sizeof(buf) ? left : sizeof(buf));
-        if (n == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < 5) continue;
-        if (n <= 0) return fail(r, h, OTA_EV_ERR_NET, "net");
+        if (n == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < 5 && !s_rx_abort) continue;
+        if (n <= 0) return fail(r, &o, OTA_EV_ERR_NET, "net");
         timeouts = 0;
         s_last_activity_us = esp_timer_get_time();
         if (!checked) {
             /* en-tête ESP32 + descripteur d'application : bien un firmware T-Watch Ultra ? */
             const size_t off = sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t);
-            if ((size_t)n < off + sizeof(esp_app_desc_t) || (uint8_t)buf[0] != ESP_IMAGE_HEADER_MAGIC) {
-                return fail(r, 0, OTA_EV_ERR_IMAGE, "not_esp32");
+            const esp_image_header_t *ih = (const esp_image_header_t *)buf;
+            if ((size_t)n < off + sizeof(esp_app_desc_t) || ih->magic != ESP_IMAGE_HEADER_MAGIC ||
+                ih->chip_id != ESP_CHIP_ID_ESP32S3) {
+                return fail(r, NULL, OTA_EV_ERR_IMAGE, "not_esp32");
             }
             const esp_app_desc_t *d = (const esp_app_desc_t *)(buf + off);
             if (d->magic_word != ESP_APP_DESC_MAGIC_WORD ||
                 strncmp(d->project_name, esp_app_get_description()->project_name, sizeof(d->project_name))) {
-                return fail(r, 0, OTA_EV_ERR_IMAGE, "not_twatch");
+                return fail(r, NULL, OTA_EV_ERR_IMAGE, "not_twatch");
             }
-            strlcpy(s_new_ver, d->version, sizeof(s_new_ver));
+            memcpy(s_new_ver, d->version, sizeof(s_new_ver) - 1);
+            s_new_ver[sizeof(s_new_ver) - 1] = 0;
             /* effacement de toute la taille de l'image d'un coup, avant de
              * recevoir la suite : sinon chaque secteur s'efface en cours de
              * route (~45 ms, cache coupé), le Wi-Fi perd des paquets et TCP
              * ralentit puis repart. Le téléphone patiente quelques secondes. */
             int64_t t0 = esp_timer_get_time();
-            if (esp_ota_begin(dst, r->content_len, &h) != ESP_OK) {
-                return fail(r, 0, OTA_EV_ERR_WRITE, "flash_prep");
+            o.size = r->content_len;
+            if (fl_call(fl_ota_begin, &o) != ESP_OK) {
+                o.h = 0;
+                return fail(r, NULL, OTA_EV_ERR_WRITE, "flash_prep");
             }
             ESP_LOGI(TAG, "emplacement effacé en %d ms", (int)((esp_timer_get_time() - t0) / 1000));
             s_last_activity_us = esp_timer_get_time();
             checked = true;
         }
-        if (esp_ota_write(h, buf, n) != ESP_OK) return fail(r, h, OTA_EV_ERR_WRITE, "flash_write");
+        o.buf = buf;
+        o.len = (size_t)n;
+        if (fl_call(fl_ota_write, &o) != ESP_OK) return fail(r, &o, OTA_EV_ERR_WRITE, "flash_write");
         left -= n;
         done += n;
         int pct = (int)(done * 100 / r->content_len);
         if (pct != last_pct) { last_pct = pct; post_ev(pct); }
     }
+    portENTER_CRITICAL(&s_rx_mux);
     s_finishing = true;                    /* plus d'annulation : otadata va être écrit */
     s_receiving = false;
-    esp_err_t e = esp_ota_end(h);          /* vérifie l'image complète (SHA-256) */
+    portEXIT_CRITICAL(&s_rx_mux);
+    esp_err_t e = fl_call(fl_ota_end, &o);  /* vérifie l'image complète (SHA-256) ; libère le handle */
+    o.h = 0;
     if (e != ESP_OK) {
         s_finishing = false;
-        return fail(r, 0, OTA_EV_ERR_IMAGE, e == ESP_ERR_OTA_VALIDATE_FAILED ? "corrupt" : "rejected");
+        return fail(r, NULL, OTA_EV_ERR_IMAGE, e == ESP_ERR_OTA_VALIDATE_FAILED ? "corrupt" : "rejected");
     }
-    if (esp_ota_set_boot_partition(dst) != ESP_OK) {
+    if (fl_call(fl_ota_boot, &o) != ESP_OK) {
         s_finishing = false;
-        return fail(r, 0, OTA_EV_ERR_WRITE, "activate");
+        return fail(r, NULL, OTA_EV_ERR_WRITE, "activate");
     }
-    ESP_LOGI(TAG, "image %s installée sur %s", s_new_ver, dst->label);
+    ESP_LOGI(TAG, "image %s installée sur %s", s_new_ver, o.dst->label);
     httpd_resp_set_type(r, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(r, "Connection", "close");
     httpd_resp_sendstr(r, s_new_ver);
+    s_installed = true;
     post_ev(OTA_EV_DONE);
     return ESP_OK;
+}
+
+/* point d'accès : en-tête X-TW exigé (pas de formulaire d'un autre site) */
+static bool has_tw_header(httpd_req_t *r)
+{
+    char v[4];
+    return httpd_req_get_hdr_value_str(r, "X-TW", v, sizeof v) == ESP_OK && !strcmp(v, "1");
+}
+
+static esp_err_t update_post(httpd_req_t *r)
+{
+    if (!has_tw_header(r)) return reply_err(r, "403 Forbidden", "csrf");
+    return ota_http_update(r, false);
 }
 
 /* ------------------------------------------------------------------ */
@@ -375,13 +513,13 @@ static const char WRX_TAIL[] =
     "var T={fr:{t:'Wi-Fi, WebRX et radios',h:'Réseaux Wi-Fi que la montre peut utiliser (dans l’ordre de préférence), "
     "serveurs OpenWebRX (app WebRX) et webradios (app Radio).',r:'Webradios',rh:'Nom et adresse du flux : MP3 ou AAC, http ou https ; les listes .m3u et .pls sont acceptées.',ad:'+ Ajouter une radio',"
     "n:'Wi-Fi ',s:'Nom du réseau',p:'Mot de passe',k:'•••• enregistré (vide = inchangé)',"
-    "u:'Serveurs OpenWebRX',uh:'Nom et adresse ; le premier est écouté au départ, les autres se choisissent sur la montre.',nm:'Nom (facultatif)',srv:'indiquer au moins un serveur ou une radio',b:'Enregistrer',w:'Enregistrement…',ok:'Enregistré : la montre redémarre.',"
+    "u:'Serveurs OpenWebRX',uh:'Nom et adresse ; le premier est écouté au départ, les autres se choisissent sur la montre.',nm:'Nom (facultatif)',srv:'indiquer au moins un serveur ou une radio',b:'Enregistrer',w:'Enregistrement…',ok:'Enregistré : la montre redémarre.',okw:'Enregistré.',"
     "ko:'Échec : ',lost:'Connexion perdue.',url:'l’adresse doit commencer par http:// ou https://',"
     "net:'indiquer au moins un réseau',size:'champ trop long',nvs:'écriture impossible',o:'Mise à jour du firmware →'},"
     "en:{t:'Wi-Fi, WebRX and radios',h:'Wi-Fi networks the watch may use (in order of preference), "
     "OpenWebRX servers (WebRX app) and web radios (Radio app).',r:'Web radios',rh:'Name and stream address: MP3 or AAC, http or https; .m3u and .pls playlists are accepted.',ad:'+ Add a radio',"
     "n:'Wi-Fi ',s:'Network name',p:'Password',k:'•••• saved (empty = unchanged)',"
-    "u:'OpenWebRX servers',uh:'Name and address; the first one is used at first, the others are picked on the watch.',nm:'Name (optional)',srv:'enter at least one server or radio',b:'Save',w:'Saving…',ok:'Saved: the watch restarts.',"
+    "u:'OpenWebRX servers',uh:'Name and address; the first one is used at first, the others are picked on the watch.',nm:'Name (optional)',srv:'enter at least one server or radio',b:'Save',w:'Saving…',ok:'Saved: the watch restarts.',okw:'Saved.',"
     "ko:'Failed: ',lost:'Connection lost.',url:'the address must start with http:// or https://',"
     "net:'enter at least one network',size:'field too long',nvs:'could not save',o:'Firmware update →'}};"
     "var L=(navigator.language||'en').slice(0,2)=='fr'?'fr':'en';"
@@ -392,15 +530,15 @@ static const char WRX_TAIL[] =
     "function more(){R++;rows();$('q'+(R-1)).focus();}"
     "function draw(){document.documentElement.lang=L;['t','b','u','uh','r','rh','o','ad'].forEach(function(k){$(k).textContent=tr(k);});"
     "$('h').innerHTML=tr('h');$('l').textContent=L=='fr'?'English':'Français';"
-    "for(var i=0;i<3;i++){$('n'+i).textContent=tr('n')+(i+1);var s=$('s'+i),p=$('p'+i);s.placeholder=tr('s');"
+    "for(var i=0;i<5;i++){$('n'+i).textContent=tr('n')+(i+1);var s=$('s'+i),p=$('p'+i);s.placeholder=tr('s');"
     "p.placeholder=p.dataset.k?tr('k'):tr('p');}for(var j=0;j<4;j++)$('m'+j).placeholder=tr('nm');for(j=0;j<12;j++)$('q'+j).placeholder=tr('nm');}"
     "function sw(){L=L=='fr'?'en':'fr';draw();}rows();"
     "function go(){var f=$('f'),m=$('m'),b=$('b'),q=[];"
     "for(var i=0;i<f.elements.length;i++){var e=f.elements[i];if(e.name)q.push(e.name+'='+encodeURIComponent(e.value));}"
     "b.disabled=true;m.className='';m.textContent=tr('w');"
-    "var x=new XMLHttpRequest();x.open('POST','/webrx');"
+    "var x=new XMLHttpRequest();x.open('POST','/webrx');x.setRequestHeader('X-TW','1');"
     "x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');"
-    "x.onload=function(){if(x.status==200){m.className='ok';m.textContent=tr('ok');}"
+    "x.onload=function(){if(x.status==200){m.className='ok';m.textContent=tr(x.responseText=='ok'?'ok':'okw');b.disabled=x.responseText=='ok';}"
     "else{m.className='ko';m.textContent=tr('ko')+tr(x.responseText);b.disabled=false;}};"
     "x.onerror=function(){m.className='ko';m.textContent=tr('lost');b.disabled=false;};"
     "x.send(q.join('&'));return false;}draw();</script></body></html>";
@@ -434,7 +572,7 @@ static esp_err_t webrx_get(httpd_req_t *r)
     if (!cp) cp = heap_caps_malloc(sizeof *cp, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!cp) return httpd_resp_send_500(r);
 #define c (*cp)
-    wrx_cfg_load(&c);
+    if (fl_call(fl_wrx_load, &c) != ESP_OK) return httpd_resp_send_500(r);
     const size_t cap = sizeof(WRX_HEAD) + sizeof(WRX_TAIL) + 20480;
     char *pg = heap_caps_malloc(cap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!pg) pg = malloc(cap);
@@ -459,7 +597,7 @@ static esp_err_t webrx_get(httpd_req_t *r)
     /* webradios */
     static rad_station_t *rs;
     if (!rs) rs = heap_caps_malloc(RAD_MAX * sizeof *rs, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (rs) rad_cfg_load(rs);
+    if (rs && fl_call(fl_rad_load, rs) != ESP_OK) memset(rs, 0, RAD_MAX * sizeof *rs);
     n += snprintf(pg + n, cap - n, "<h2 id=r></h2><p id=rh class=h></p>");
     for (int i = 0; i < RAD_MAX; i++) {
         esc(e, sizeof e, rs ? rs[i].name : "");
@@ -526,7 +664,47 @@ static esp_err_t webrx_bad(httpd_req_t *r, const char *code)
     return httpd_resp_sendstr(r, code);
 }
 
+typedef struct { const wrx_cfg_t *cfg; const rad_station_t *rs; } fl_wrx_t;
+
+static esp_err_t fl_wrx_save(void *a)
+{
+    const fl_wrx_t *w = a;
+    esp_err_t e = rad_cfg_save(w->rs);
+    if (e == ESP_OK) e = wrx_cfg_save(w->cfg);
+    return e;
+}
+
+static esp_err_t webrx_save(httpd_req_t *r, bool web);
+static esp_err_t webrx_save_locked(httpd_req_t *r, bool web);
 static esp_err_t webrx_post(httpd_req_t *r)
+{
+    if (!has_tw_header(r)) return webrx_bad(r, "csrf");
+    return webrx_save(r, false);
+}
+
+esp_err_t ota_webrx_page(httpd_req_t *r) { return webrx_get(r); }
+esp_err_t ota_webrx_save(httpd_req_t *r) { return webrx_save(r, true); }
+
+/* une seule sauvegarde à la fois (tampons statiques) */
+static esp_err_t webrx_save(httpd_req_t *r, bool web)
+{
+    static SemaphoreHandle_t mx;
+    static portMUX_TYPE mmx = portMUX_INITIALIZER_UNLOCKED;
+    if (!mx) {
+        SemaphoreHandle_t m = xSemaphoreCreateMutex();
+        portENTER_CRITICAL(&mmx);
+        if (!mx) { mx = m; m = NULL; }
+        portEXIT_CRITICAL(&mmx);
+        if (m) vSemaphoreDelete(m);
+        if (!mx) return webrx_bad(r, "nvs");
+    }
+    xSemaphoreTake(mx, portMAX_DELAY);
+    esp_err_t ret = webrx_save_locked(r, web);
+    xSemaphoreGive(mx);
+    return ret;
+}
+
+static esp_err_t webrx_save_locked(httpd_req_t *r, bool web)
 {
     s_last_activity_us = esp_timer_get_time();
     #define BODY_MAX 16384
@@ -547,7 +725,7 @@ static esp_err_t webrx_post(httpd_req_t *r)
     if (!op || !cp) return webrx_bad(r, "nvs");
 #define old (*op)
 #define c (*cp)
-    wrx_cfg_load(&old);
+    if (fl_call(fl_wrx_load, &old) != ESP_OK) return webrx_bad(r, "nvs");
     memset(&c, 0, sizeof c);
     bool ok = true, any = false;
     for (int i = 0; i < WRX_NETS; i++) {
@@ -606,8 +784,7 @@ static esp_err_t webrx_post(httpd_req_t *r)
         strlcpy(rs[nrad].name, name, sizeof rs[0].name);
         nrad++;
     }
-    if (!nsrv && !nrad) return webrx_bad(r, "srv");
-    if (rad_cfg_save(rs) != ESP_OK) return webrx_bad(r, "nvs");
+    if (!nsrv && !nrad && !web) return webrx_bad(r, "srv");
     /* réseaux tassés vers le haut (ordre de préférence conservé) */
     for (int i = 0, j = 0; i < WRX_NETS; i++) {
         if (!c.ssid[i][0]) continue;
@@ -618,12 +795,22 @@ static esp_err_t webrx_post(httpd_req_t *r)
         }
         j++;
     }
-    if (wrx_cfg_save(&c) != ESP_OK) return webrx_bad(r, "nvs");
-    ESP_LOGI(TAG, "réglages WebRX enregistrés");
+    fl_wrx_t w = { .cfg = &c, .rs = rs };
+    esp_err_t e = fl_call(fl_wrx_save, &w);
+    memset(&old, 0, sizeof old);                        /* mots de passe */
+    memset(&c, 0, sizeof c);
+    memset(body, 0, BODY_MAX);
+    if (e != ESP_OK) return webrx_bad(r, "nvs");
+    ESP_LOGI(TAG, "réseaux Wi-Fi, serveurs et radios enregistrés");
     httpd_resp_set_type(r, "text/plain; charset=utf-8");
     httpd_resp_set_hdr(r, "Connection", "close");
-    httpd_resp_sendstr(r, "ok");
-    post_ev(OTA_EV_SAVED);
+    if (web) {
+        httpd_resp_sendstr(r, "saved");
+        wifi_request_reload();                          /* réseaux relus, reconnexion si besoin */
+    } else {
+        httpd_resp_sendstr(r, "ok");
+        post_ev(OTA_EV_SAVED);
+    }
     return ESP_OK;
 #undef old
 #undef c
@@ -696,6 +883,7 @@ const char *ota_start(void)
     if (s_page == OTA_PAGE_UPDATE && !power_vbus() && power_percent() < MIN_BATT_PCT) return N_("Batterie trop faible (30 % mini) : brancher l'USB");
     if (!esp_ota_get_next_update_partition(NULL)) return N_("Table de partitions sans OTA : un flash USB est nécessaire");
 
+    wifi_mgr_shutdown();                         /* Wi-Fi global et services réseau : arrêtés */
     ble_stop();                                  /* libère la radio et la RAM du Bluetooth */
     s_ble_stopped = true;
     /* CPU (et donc bus APB) à pleine vitesse pendant toute la session : sinon
@@ -736,7 +924,7 @@ const char *ota_start(void)
     esp_wifi_set_mode(s_page == OTA_PAGE_WEBRX ? WIFI_MODE_APSTA : WIFI_MODE_AP);
     esp_wifi_set_config(WIFI_IF_AP, &ap);
     if (esp_wifi_start() != ESP_OK) return N_("Le point d'accès n'a pas démarré");
-    wsta_apply_power();
+    esp_wifi_set_max_tx_power(wifi_power_qdbm());
     if (s_page == OTA_PAGE_WEBRX) {
         scan_networks();
         esp_wifi_set_mode(WIFI_MODE_AP);       /* station inutile ensuite : sa RAM est rendue */
@@ -825,3 +1013,4 @@ bool ota_active(void) { return s_active; }
 const char *ota_ssid(void) { return OTA_SSID; }
 const char *ota_password(void) { return s_pass; }
 const char *ota_new_version(void) { return s_new_ver; }
+bool ota_installed(void) { return s_installed; }

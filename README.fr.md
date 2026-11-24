@@ -79,8 +79,13 @@ arrondis de la dalle)*
   MeshCore officielle de l'iPhone se connecte en Bluetooth comme compagnon et règle la radio ;
   la montre affiche les derniers messages, emoji compris, et un message lu sur la montre est
   quand même transmis à l'appli. Antenne intégrée ou externe — [guide](docs/fr/meshcore.md).
-- **Réglages** par section : affichage, alertes, mouvement, Bluetooth, **Wi-Fi** (puissance
-  d'émission, 8 à 20 dBm), **MeshCore** (activation, antenne), batterie, mise à jour.
+- **Réglages** par section : affichage, alertes, mouvement, Bluetooth, **Wi-Fi** (marche,
+  choix du réseau, puissance d'émission 8 à 20 dBm, coupure sous 30 %), **MeshCore**
+  (activation, antenne, serveur TCP), carte SD, **serveur web**, batterie, mise à jour.
+- **Wi-Fi global** (centre de contrôle et réglages, jusqu'à 5 réseaux), partagé avec les apps,
+  à côté du Bluetooth. **Serveur web** protégé par mot de passe : réglages, mise à jour sans
+  couper le Bluetooth, fichiers de la carte SD. **MeshCore en TCP** (port 5000) pour l'app ou
+  meshterm — [guide](docs/fr/wifi.md).
 - Tous les périphériques que le firmware n'utilise pas (GNSS, NFC, LoRa, carte SD, ampli du
   haut-parleur) ont leur rail d'alimentation coupé.
 
@@ -119,6 +124,8 @@ dans la liste ; les appels sonnent toujours. Une lune s'affiche sur le cadran.
 - **Le refermer** : glisser ↑ ou →, ou appui court sur le bouton. On retrouve l'app telle
   qu'on l'a laissée : la radio et WebRX continuent de jouer pendant qu'on règle le volume.
   Seule exception, une partie d'*Envol* en cours revient à l'écran titre.
+- **Wi-Fi** : appui court = marche / arrêt (la tuile affiche le réseau), appui long =
+  réglages Wi-Fi. Les **réglages** sont sous la roue dentée, en haut à droite.
 - **Lecture**, **Réglages** et **Lampe** quittent l'app d'où l'on vient (l'écoute radio
   s'arrête), comme le retour habituel.
 - **Volume général** (− / +, par pas de 10 %) : il s'applique à tous les sons de la montre,
@@ -176,6 +183,7 @@ Plus de détails : [compilation, flashage et tests](docs/fr/building.md).
 | Architecture, énergie | [docs/fr/architecture.md](docs/fr/architecture.md) | [docs/en/architecture.md](docs/en/architecture.md) |
 | Notes matérielles (broches, rails, écran) | [docs/fr/hardware.md](docs/fr/hardware.md) | [docs/en/hardware.md](docs/en/hardware.md) |
 | MeshCore (messages LoRa) | [docs/fr/meshcore.md](docs/fr/meshcore.md) | [docs/en/meshcore.md](docs/en/meshcore.md) |
+| Wi-Fi, serveur web, MeshCore en TCP | [docs/fr/wifi.md](docs/fr/wifi.md) | [docs/en/wifi.md](docs/en/wifi.md) |
 | WebRX (client OpenWebRX) | [docs/fr/webrx.md](docs/fr/webrx.md) | [docs/en/webrx.md](docs/en/webrx.md) |
 | Radio (webradios) | [docs/fr/radio.md](docs/fr/radio.md) | [docs/en/radio.md](docs/en/radio.md) |
 | Púca (animal virtuel) | [docs/fr/puca.md](docs/fr/puca.md) | [docs/en/puca.md](docs/en/puca.md) |

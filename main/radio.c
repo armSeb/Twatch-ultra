@@ -29,7 +29,7 @@
 #include "ble.h"
 #include "power.h"
 #include "sound.h"
-#include "wifi_sta.h"
+#include "wifi_mgr.h"
 #include "audio_fx.h"
 
 static const char *TAG = "radio";
@@ -54,9 +54,10 @@ static rad_info_t s_info;
 static rad_station_t *s_st;           /* stations (PSRAM) */
 static int s_nst;
 static rad_state_t s_state;
-static wrx_cfg_t *s_cfg;              /* réseaux Wi-Fi (PSRAM) */
 static volatile int s_switch = -1;
 static volatile bool s_screen = true;
+static uint32_t s_wgen;               /* connexion Wi-Fi utilisée */
+static int8_t s_txp;                  /* puissance d'émission imposée (0 : réglage) */
 
 /* tampon compressé */
 static uint8_t *s_ring;
@@ -516,7 +517,7 @@ static int stream(const char *start_url)
             }
         }
         if (s_quit || s_switch >= 0) { ret = ST_QUIT; goto out; }
-        if (wsta_lost()) { set_state(RAD_CONNECT, N_("Wi-Fi perdu"), ""); ret = ST_LOST; goto out; }
+        if (wifi_lost(s_wgen)) { set_state(RAD_CONNECT, N_("Wi-Fi perdu"), ""); ret = ST_LOST; goto out; }
         n = esp_http_client_read(c, (char *)buf, 2048);
         if (n == -ESP_ERR_HTTP_EAGAIN || n == 0) {
             if (n == 0 && esp_http_client_is_complete_data_received(c)) {
@@ -545,11 +546,13 @@ static int stream(const char *start_url)
         int64_t now = esp_timer_get_time();
         if (now - last_pw > 2000000) {
             last_pw = now;
-            int rssi = wsta_rssi();
+            int rssi = wifi_rssi();
             lock(); s_info.rssi = rssi; unlock();
-            static int8_t cur = 0;
+            /* jamais au-delà du réglage « puissance Wi-Fi » */
+            int8_t max = wifi_power_qdbm();
             int8_t want = (!s_screen && rssi > -65) ? 44 : 78;    /* 11 dBm / 19,5 dBm */
-            if (want != cur && esp_wifi_set_max_tx_power(want) == ESP_OK) cur = want;
+            if (want > max) want = max;
+            if (want != s_txp && esp_wifi_set_max_tx_power(want) == ESP_OK) s_txp = want;
         }
     }
 out:
@@ -584,13 +587,12 @@ static void apply_switch(void)
 static void net_task(void *arg)
 {
     int fails = 0;
-    power_set_cpu_max(160);
     /* modem sleep : 128 kbit/s tiennent largement dans les réveils ; le
      * tampon de plusieurs secondes absorbe la latence */
-    if (!wsta_start(WIFI_PS_MIN_MODEM)) set_state(RAD_FAIL, N_("Erreur Wi-Fi"), "");
-    else while (!s_quit) {
+    while (!s_quit) {
         apply_switch();
-        bool ok = wsta_up() || wsta_connect(s_cfg, &s_quit, wifi_status);
+        bool ok = !wifi_lost(s_wgen);
+        if (!ok && (ok = wifi_wait_up(&s_quit, wifi_status))) s_wgen = wifi_gen();
         if (s_quit) break;
         int r = ST_FAIL;
         if (ok) {
@@ -610,7 +612,6 @@ static void net_task(void *arg)
         lock(); s_info.retry_s = 0; unlock();
     }
     s_streaming = false;
-    wsta_stop();
     xEventGroupSetBits(s_evg, BIT_NETEND);
     task_psram_exit();
 }
@@ -624,16 +625,14 @@ static bool alloc(void)
     if (!s_evg) s_evg = xEventGroupCreate();
     if (!s_ring) s_ring = heap_caps_malloc(RING, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_st) s_st = ps_malloc(RAD_MAX * sizeof *s_st);
-    if (!s_cfg) s_cfg = ps_malloc(sizeof *s_cfg);
     if (!s_boost_lock) esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "radio", &s_boost_lock);
-    return s_mx && s_evg && s_ring && s_st && s_cfg;
+    return s_mx && s_evg && s_ring && s_st;
 }
 
 esp_err_t radio_start(void)
 {
     if (s_run) return ESP_OK;
     if (!alloc()) return ESP_ERR_NO_MEM;
-    wrx_cfg_load(s_cfg);
     s_nst = rad_cfg_load(s_st);
     rad_state_load(&s_state);
     if (s_state.station >= s_nst) s_state.station = 0;
@@ -652,13 +651,15 @@ esp_err_t radio_start(void)
     s_streaming = false;
     s_codec = C_NONE;
     xEventGroupClearBits(s_evg, 0xFF);
-    esp_err_t e = wsta_init("RAD");
+    esp_err_t e = wifi_acquire(WIFI_HOLD_RADIO, WIFI_ACQ_PAUSE_BLE);
     if (e != ESP_OK) return e;
+    s_wgen = 0;
+    s_txp = 0;
     s_run = true;
     set_state(RAD_WIFI, N_("Recherche du Wi-Fi…"), "");
     if (task_psram(net_task, "rad", 7168, NULL, 5, NULL, 0) != pdPASS) {
         s_run = false;
-        wsta_deinit();
+        wifi_release(WIFI_HOLD_RADIO);
         return ESP_ERR_NO_MEM;
     }
     /* décodeur : pile assez grande pour le HE-AAC (SBR) */
@@ -685,12 +686,12 @@ void radio_stop(void)
         unlock();
         rad_state_save(&s_state);
     }
-    wsta_deinit();
-    power_set_cpu_max(0);
+    if (s_txp) { s_txp = 0; wifi_apply_power(); }      /* puissance du réglage rendue */
+    wifi_release(WIFI_HOLD_RADIO);
 }
 
 bool radio_running(void) { return s_run; }
-bool radio_ble_paused(void) { return wsta_ble_paused(); }
+bool radio_ble_paused(void) { return wifi_ble_paused(); }
 void radio_retry(void) { if (s_run) xEventGroupSetBits(s_evg, BIT_RETRY); }
 void radio_screen(bool on) { s_screen = on; }
 

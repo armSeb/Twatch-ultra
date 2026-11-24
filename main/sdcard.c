@@ -44,6 +44,8 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static sd_info_t s_info;
 static sd_flush_cb_t s_flush[MAX_FLUSHERS];
 static int s_nflush;
+static sd_flush_cb_t s_closer[MAX_FLUSHERS];
+static int s_ncloser;
 static volatile uint32_t s_flushes;      /* vidages faits (sd_flush_wait) */
 
 static void set_state(sd_state_t st)
@@ -161,6 +163,7 @@ static void fat_unmount(sd_state_t next)
 {
     xSemaphoreTake(s_mx, portMAX_DELAY);
     set_state(next);                         /* plus personne n'entre (sd_lock) */
+    for (int i = 0; i < s_ncloser; i++) s_closer[i]();   /* fichiers gardés ouverts : fermés avant */
     esp_vfs_fat_sdcard_unmount(SD_ROOT, s_card);
     s_card = NULL;
     xSemaphoreGive(s_mx);
@@ -437,4 +440,9 @@ void sd_unlock(void) { xSemaphoreGive(s_mx); }
 void sd_add_flusher(sd_flush_cb_t cb)
 {
     if (s_nflush < MAX_FLUSHERS) s_flush[s_nflush++] = cb;
+}
+
+void sd_add_closer(sd_flush_cb_t cb)
+{
+    if (s_ncloser < MAX_FLUSHERS) s_closer[s_ncloser++] = cb;
 }

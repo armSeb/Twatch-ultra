@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "notif_store.h"
+#include "settings.h"
 
 void     ui_init(void);
 void     ui_go_home(void);                 /* cadran, sans animation si écran éteint */
@@ -31,3 +32,5 @@ void ui_show_passkey(uint32_t pk);
 void ui_pairing_done(int status);
 void ui_on_wake(void);                     /* juste avant l'allumage de l'écran */
 bool ui_on_app_event(int32_t a);           /* EV_APP ; true = allumer l'écran */
+void ui_on_wifi(bool reload);              /* EV_WIFI : état du Wi-Fi ; reload = réseaux relus */
+void ui_apply_settings(const settings_t *n); /* réglages reçus du serveur web (tâche app) */

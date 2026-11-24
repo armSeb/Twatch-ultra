@@ -1125,6 +1125,7 @@ void ancs_host_deinit(void)
     ble_npl_callout_deinit(&s_co_cmd);
     ble_npl_callout_deinit(&s_co_setup);
     ble_npl_callout_deinit(&s_co_cts);
+    ble_npl_event_deinit(&s_ev_action);   /* pool libéré par nimble_port_deinit() */
     ancs_on_disconnect();
 }
 

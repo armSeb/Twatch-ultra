@@ -1,6 +1,7 @@
 #include "settings.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "webrx_cfg.h"
 
 static const char *TAG = "settings";
 static settings_t s_set = {
@@ -18,6 +19,7 @@ static settings_t s_set = {
     .glance_s = 4,
     .wifi_pwr = 3,
     .volume = 100,            /* 100 % = niveaux d'avant le réglage */
+    .wifi_lowbatt = true,
 };
 
 void settings_load(void)
@@ -46,6 +48,13 @@ void settings_load(void)
     if (nvs_get_u8(h, "wpwr", &u8) == ESP_OK && u8 <= 3) s_set.wifi_pwr = u8;
     if (nvs_get_u8(h, "vol", &u8) == ESP_OK && u8 <= 100) s_set.volume = u8;
     if (nvs_get_u8(h, "mute", &u8) == ESP_OK) s_set.silent = u8;
+    if (nvs_get_u8(h, "wifi", &u8) == ESP_OK) s_set.wifi_on = u8;
+    if (nvs_get_u8(h, "wnet", &u8) == ESP_OK && u8 <= WRX_NETS) s_set.wifi_net = u8;
+    if (nvs_get_u8(h, "wlow", &u8) == ESP_OK) s_set.wifi_lowbatt = u8;
+    if (nvs_get_u8(h, "wnob", &u8) == ESP_OK) s_set.wifi_noble = u8;
+    if (nvs_get_u8(h, "mtcp", &u8) == ESP_OK) s_set.mesh_tcp = u8;
+    if (nvs_get_u8(h, "web", &u8) == ESP_OK) s_set.web_on = u8;
+    if (nvs_get_u8(h, "websd", &u8) == ESP_OK) s_set.web_sd = u8;
     nvs_close(h);
     ESP_LOGI(TAG, "lum=%u veille=%us vib=%d bt=%d tz=%+d min", s_set.brightness,
              s_set.screen_timeout_s, s_set.vibrate, s_set.ble_enabled, s_set.tz_offset_min);
@@ -76,6 +85,13 @@ void settings_save(void)
     nvs_set_u8(h, "wpwr", s_set.wifi_pwr);
     nvs_set_u8(h, "vol", s_set.volume);
     nvs_set_u8(h, "mute", s_set.silent);
+    nvs_set_u8(h, "wifi", s_set.wifi_on);
+    nvs_set_u8(h, "wnet", s_set.wifi_net);
+    nvs_set_u8(h, "wlow", s_set.wifi_lowbatt);
+    nvs_set_u8(h, "wnob", s_set.wifi_noble);
+    nvs_set_u8(h, "mtcp", s_set.mesh_tcp);
+    nvs_set_u8(h, "web", s_set.web_on);
+    nvs_set_u8(h, "websd", s_set.web_sd);
     nvs_commit(h);
     nvs_close(h);
 }

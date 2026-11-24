@@ -2,6 +2,66 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.26 — 2026-11-24
+
+- New *Settings › Wi-Fi › Turn Bluetooth off* (off by default, also on the web page): while
+  Wi-Fi is on, Bluetooth is paused so Wi-Fi gets the whole radio (with both on, the
+  ESP32-S3 shares its antenna and Wi-Fi misses beacons: pings of several seconds). Bluetooth
+  comes back by itself when Wi-Fi stops. Turning Bluetooth on by hand still wins.
+- Firmware update through the web server: Bluetooth is paused while the image arrives
+  (LoRa MeshCore keeps receiving), and comes back at once if the update fails.
+
+## 0.2.25 — 2026-11-24
+
+- Web page: upload progress (firmware and SD files) showed "%%" instead of "%".
+
+## 0.2.24 — 2026-11-24
+
+- Wi-Fi with Bluetooth still answered slowly after 0.2.22. While the Wi-Fi radio runs, the
+  Bluetooth controller's modem sleep is now off too (`ble_wifi_coex()`), so the coexistence
+  arbiter keeps its timing on the access point's beacons. It comes back when Wi-Fi stops.
+- Wi-Fi scans with Bluetooth on use the default active scan times, as the coexistence
+  requires (the driver warned about the custom ones).
+
+## 0.2.23 — 2026-11-24
+
+- Crash (LoadStoreError in LVGL) when Bluetooth was turned back on after being turned off,
+  for example from the control center after turning Wi-Fi off. NimBLE frees its event pool
+  when Bluetooth stops, but the watch's own events kept their old pointer, and the next start
+  wrote into memory that LVGL had taken back. The events are now released when Bluetooth
+  stops (`ble.c`, `ancs.c`), and nothing is posted to the stack while it is stopping.
+
+## 0.2.22 — 2026-11-24
+
+- Wi-Fi with Bluetooth on answered in bursts (pings of 1 to 17 s, "host unreachable"):
+  in light sleep with both radios the watch missed the access point's beacons. While the
+  Wi-Fi radio runs with Bluetooth on, light sleep is now off (the Wi-Fi modem still sleeps
+  between beacons and the CPU still scales down). Without Bluetooth, light sleep stays.
+- Screen timeout: in apps, settings pages and Now playing the screen stays on for 1 min
+  without a touch (or the longer setting), instead of the short watch-face delay (8 s).
+
+## 0.2.21 — 2026-11-24
+
+- Global Wi-Fi (`wifi_mgr.c`): one owner of the Wi-Fi driver. On/off from a new control-center
+  tile (long press opens the Wi-Fi settings; Settings moved to a gear, top right) and from
+  *Settings › Wi-Fi*, kept across restarts. Up to 5 saved networks (was 3), tried in order or a
+  chosen one; automatic retries (5 s … 5 min, radio off during long waits). WebRX, Radio and the
+  Wi-Fi analyzer reuse the connection when it is up, or hold Wi-Fi while they run.
+- Wi-Fi turns off when the battery drops below 30 % on battery (switchable, on by default).
+- Bluetooth coexistence: the global switch never stops Bluetooth; only WebRX, Radio and the
+  analyzer may still pause it when internal RAM is short, and it comes back when they quit.
+- Web server (off by default, *Settings › Web server*): status, settings, firmware update
+  without turning Bluetooth or MeshCore off, Wi-Fi/WebRX/radio lists, and SD card files
+  (optional: browse, download, upload ≤ 64 MB, new folder, delete; `/meshcore` read-only).
+  Challenge-response login with a random password shown on the watch, HttpOnly SameSite
+  session, lockout after failed attempts, CSRF header + Origin and Host checks, CSP. httpd
+  stack in PSRAM; flash writes go through an internal-stack worker.
+- MeshCore TCP server on port 5000 (*Settings › MeshCore*, off by default), same framing as
+  the upstream `SerialWifiInterface`, for the MeshCore app (TCP/IP) or meshterm; works next
+  to a Bluetooth app.
+- FATFS API in UTF-8 (SD file names with accents over the web).
+- Docs: `docs/fr|en/wifi.md`, new control-center screenshots.
+
 ## 0.2.20 — 2026-11-24
 
 - MeshCore archive on the SD card in JSON Lines (`/meshcore/c-<key>.jsonl`, `g-<key>.jsonl`),

@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include "esp_err.h"
 
-#define WRX_NETS 3
+#define WRX_NETS 5                       /* réseaux Wi-Fi connus (ordre de préférence) */
 #define WRX_SRV  4                       /* serveurs OpenWebRX mémorisés */
 #define WRX_TONES 5                      /* tonalité : 0 neutre … 4 sourde */
 #define WRX_TONE_DEF 3

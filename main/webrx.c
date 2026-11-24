@@ -46,7 +46,7 @@
 #include "power.h"
 #include "sound.h"
 #include "webrx_cfg.h"
-#include "wifi_sta.h"
+#include "wifi_mgr.h"
 #include "audio_fx.h"
 
 static const char *TAG = "webrx";
@@ -296,6 +296,8 @@ static void play_task(void *arg)
 /* ------------------------------------------------------------------ */
 /* Wi-Fi                                                                */
 /* ------------------------------------------------------------------ */
+static uint32_t s_wgen;                     /* connexion Wi-Fi utilisée */
+
 static void wifi_status(bool fail, const char *msg, const char *detail)
 {
     set_state(fail ? WRX_FAIL : WRX_WIFI, msg, detail);
@@ -303,9 +305,10 @@ static void wifi_status(bool fail, const char *msg, const char *detail)
 
 static bool wifi_connect(void)
 {
-    if (!wsta_connect(&s_cfg, &s_quit, wifi_status)) return false;
+    if (!wifi_wait_up(&s_quit, wifi_status)) return false;
+    s_wgen = wifi_gen();
     lock();
-    s_info.rssi = wsta_rssi();
+    s_info.rssi = wifi_rssi();
     unlock();
     return true;
 }
@@ -850,7 +853,7 @@ static bool session(void)
     s_info.samp_rate = 0;
     unlock();
     while (!s_quit) {
-        if (wsta_lost()) { s_lost = N_("Wi-Fi perdu"); return false; }
+        if (wifi_lost(s_wgen)) { s_lost = N_("Wi-Fi perdu"); return false; }
         if (s_switch >= 0) return false;            /* changement de serveur */
         handle_pending();
         if (!s_have_cfg && s_prof_wait_us && esp_timer_get_time() > s_prof_wait_us) {
@@ -954,15 +957,13 @@ static bool apply_switch(void)
 static void net_task(void *arg)
 {
     int fails = 0, drops = 0;
-    power_set_cpu_max(160);
-    /* pas d'économie d'énergie du modem : le serveur envoie en continu
-     * (audio + FFT) et, s'il ne peut plus écrire pendant 10 s parce que la
-     * montre ne reçoit pas assez vite, il coupe la connexion */
-    if (!wsta_start(WIFI_PS_NONE)) set_state(WRX_FAIL, N_("Erreur Wi-Fi"), "");
-    else while (!s_quit) {
+    /* pas d'économie d'énergie du modem (WIFI_ACQ_PERF) : le serveur envoie
+     * en continu (audio + FFT) et, s'il ne peut plus écrire pendant 10 s
+     * parce que la montre ne reçoit pas assez vite, il coupe la connexion */
+    while (!s_quit) {
         if (apply_switch()) { fails = drops = 0; }
         bool ok = false;
-        if (!wsta_up()) ok = wifi_connect();
+        if (wifi_lost(s_wgen)) ok = wifi_connect();
         else ok = true;
         if (ok && !s_quit && server_connect()) {
             fails = 0;
@@ -1030,7 +1031,6 @@ static void net_task(void *arg)
     }
     s_audio_on = false;
     server_close();
-    wsta_stop();
     xEventGroupSetBits(s_evg, BIT_NETEND);
     vTaskDelete(NULL);
 }
@@ -1086,8 +1086,9 @@ esp_err_t webrx_start(void)
     s_quit = false;
     xEventGroupClearBits(s_evg, 0xFF);
 
-    esp_err_t e = wsta_init("WRX");
+    esp_err_t e = wifi_acquire(WIFI_HOLD_WEBRX, WIFI_ACQ_PAUSE_BLE | WIFI_ACQ_PERF);
     if (e != ESP_OK) return e;
+    s_wgen = 0;
     s_run = true;
     set_state(WRX_WIFI, N_("Recherche du Wi-Fi…"), "");
     /* pile assez grande pour la poignée de main TLS (mbedTLS en PSRAM) */
@@ -1131,12 +1132,11 @@ void webrx_stop(void)
         unlock();
         wrx_state_save(&s_st);
     }
-    wsta_deinit();
-    power_set_cpu_max(0);
+    wifi_release(WIFI_HOLD_WEBRX);
 }
 
 bool webrx_running(void) { return s_run; }
-bool webrx_ble_paused(void) { return wsta_ble_paused(); }
+bool webrx_ble_paused(void) { return wifi_ble_paused(); }
 
 void webrx_retry(void)
 {
