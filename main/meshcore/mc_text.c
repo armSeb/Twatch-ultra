@@ -299,7 +299,7 @@ bool mc_arch_decode(const char *rec, size_t len, mc_msg_t *m)
     if (snr < -32) snr = -32;
     if (snr > 31.75) snr = 31.75;
     m->snr_q4 = (int8_t)(snr * 4 + (snr < 0 ? -0.5 : 0.5));
-    m->hops = (hops >= 1 && hops <= 254) ? (uint8_t)hops : 0xFF;
+    m->hops = (hops >= 1 && hops <= 254) ? mc_hops_of((uint8_t)hops) : 0xFF;  /* avant 0.2.27 : octet brut */
     if (sender[0]) {
         size_t sl = strlen(sender);
         if (sl + 2 < sizeof m->text) {

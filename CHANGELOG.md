@@ -2,6 +2,10 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.38 — 2026-11-24
+
+- Release of 0.2.37 together with the MeshCore hop-count fix of 0.2.27 (merged in parallel).
+
 ## 0.2.37 — 2026-11-24 (test)
 
 - Flash and PSRAM clocks raised from 80 to 120 MHz. Both chips are rated for 133 MHz in quad
@@ -97,6 +101,14 @@ All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 - *Énergie* screen: new line with the frame rate and refresh time of the last animation
   (also logged on the console), to compare builds.
 - Flight game pause screen: average render and send times per frame, next to the frame rate.
+
+## 0.2.27 — 2026-11-24
+
+- MeshCore app: messages relayed by repeaters using 2- or 3-byte path hashes showed a wrong
+  hop count (66 or 67 for 2 or 3 hops). The path length byte carries the hash size in its
+  top 2 bits; the watch now keeps only the hop count. Messages already stored in the history
+  or archived on the SD card are corrected when read. Frames sent to the companion app are
+  unchanged (the app decodes the byte itself).
 
 ## 0.2.26 — 2026-11-24
 

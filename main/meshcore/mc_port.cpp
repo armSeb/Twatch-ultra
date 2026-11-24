@@ -354,7 +354,7 @@ extern "C" bool mc_tcp_rx(const uint8_t *buf, size_t len) { return push_rx(s_tcp
 static void fill_pkt(mc_msg_t &m, mesh::Packet *pkt)
 {
     m.snr_q4 = pkt->_snr;
-    m.hops = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
+    m.hops = pkt->isRouteFlood() ? mc_hops_of((uint8_t)pkt->path_len) : 0xFF;
 }
 
 static void channel_peer(const ChannelDetails &ch, uint8_t out[MC_PEER_LEN])
@@ -500,7 +500,7 @@ static void import_queue(void)
         if (kind == MC_CONV_CONTACT) {
             uint8_t type = f[at + 6 + 1];
             if (type != TXT_TYPE_PLAIN && type != TXT_TYPE_SIGNED_PLAIN) continue;
-            m.hops = f[at + 6];
+            m.hops = mc_hops_of(f[at + 6]);
             text_at = at + 6 + 2 + 4 + (type == TXT_TYPE_SIGNED_PLAIN ? 4 : 0);
             memcpy(m.peer, f + at, MC_PEER_LEN);
             ContactInfo *c = s_mesh->lookupContactByPubKey(f + at, MC_PEER_LEN);
@@ -508,7 +508,7 @@ static void import_queue(void)
             else snprintf(m.from, sizeof m.from, "%02x%02x%02x", f[at], f[at + 1], f[at + 2]);
         } else {
             if (!s_mesh->getChannel(f[at], ch) || !ch.name[0]) continue;
-            m.hops = f[at + 1];
+            m.hops = mc_hops_of(f[at + 1]);
             text_at = at + 1 + 2 + 4;
             channel_peer(ch, m.peer);
             mc_copy_utf8(m.from, sizeof m.from, ch.name, sizeof ch.name);

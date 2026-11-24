@@ -168,6 +168,7 @@ static void sanitize(mc_msg_t *m)
     m->from[MC_NAME_MAX - 1] = 0;           /* fichier abîmé : chaînes bornées */
     m->text[MC_TEXT_MAX] = 0;
     if (m->kind > MC_CONV_CHANNEL) m->kind = MC_CONV_CONTACT;
+    m->hops = mc_hops_of(m->hops);          /* avant 0.2.27 : octet path_len brut */
 }
 
 void mch_save_now(void)
@@ -230,7 +231,7 @@ static bool load_v1(FILE *f, uint32_t n)
         m->kind = o.channel ? MC_CONV_CHANNEL : MC_CONV_CONTACT;
         m->flags = MC_F_READ | MC_F_LEGACY;
         m->snr_q4 = o.snr_q4;
-        m->hops = o.hops;
+        m->hops = mc_hops_of(o.hops);
         o.from[MC_NAME_MAX - 1] = 0;
         o.text[MC_TEXT_MAX] = 0;
         memcpy(m->from, o.from, sizeof m->from);
