@@ -75,6 +75,16 @@ typedef struct mc_msg_s {
     char     text[MC_TEXT_MAX + 1];   /* UTF-8 ; « nom: texte » sur un canal */
 } mc_msg_t;
 
+/* Octet path_len d'un paquet MeshCore : les 2 bits du haut donnent la taille
+ * des empreintes de relais (0 : 1 octet, 1 : 2 octets, 2 : 3 octets), les 6
+ * du bas le nombre de sauts. Un message à 2 sauts en empreintes de 2 octets
+ * porte donc 0x42 (66). 0xFF (direct) est gardé tel quel. Sert aussi à
+ * corriger les historiques écrits avant 0.2.27, où l'octet brut était rangé. */
+static inline uint8_t mc_hops_of(uint8_t path_len)
+{
+    return path_len == 0xFF ? 0xFF : (uint8_t)(path_len & 63);
+}
+
 int  mc_history_count(void);
 bool mc_history_get(int i, mc_msg_t *out);      /* 0 = le plus récent */
 uint32_t mc_history_last_seq(void);             /* change à chaque message ou changement lu/non lu */
