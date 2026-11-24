@@ -108,6 +108,8 @@ CONFIG_LV_USE_ASSERT_NULL=y
 CONFIG_LV_USE_ASSERT_MALLOC=y
 # Glyphes image : émojis en couleur (main/emoji.c)
 CONFIG_LV_USE_IMGFONT=y
+# Décor fixe des cadrans figé en image (main/face_bake.c)
+CONFIG_LV_USE_SNAPSHOT=y
 CONFIG_LV_USE_THEME_DEFAULT=y
 CONFIG_LV_THEME_DEFAULT_DARK=y
 CONFIG_LV_FONT_MONTSERRAT_12=n

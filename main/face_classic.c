@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include "fonts/fonts.h"
 #include "ui_geom.h"
+#include "face_bake.h"
 
 /* ---------- palette « montre ancienne » ---------- */
 #define C_DIAL_TOP   lv_color_hex(0xF2EADA)
@@ -147,15 +148,23 @@ lv_obj_t *face_classic_create(lv_obj_t *parent)
     lv_obj_center(s_root);
     bubble(s_root);
 
+    /* Décor fixe (cadran, graduations, cerclage, index) : dessiné une fois
+     * dans une image (face_bake.c), seules les parties vivantes restent des
+     * objets redessinés à chaque image d'un glissement. */
+    lv_obj_t *base = lv_obj_create(s_root);
+    lv_obj_remove_style_all(base);
+    lv_obj_set_size(base, S(240), S(240));
+    bubble(base);
+
     /* boîtier + cadran ivoire légèrement patiné */
-    lv_obj_t *dial = disc(s_root, CX, CY, DIAL_D, C_DIAL_TOP, 3, C_BEZEL);
+    lv_obj_t *dial = disc(base, CX, CY, DIAL_D, C_DIAL_TOP, 3, C_BEZEL);
     lv_obj_set_style_bg_grad_color(dial, C_DIAL_BOT, 0);
     lv_obj_set_style_bg_grad_dir(dial, LV_GRAD_DIR_VER, 0);
 
     /* chemin de fer des minutes + index appliqués */
-    scale(s_root, CX, CY, 222, 270, 360, 61, 5, 14, 3, 5, C_INDEX, C_PRINT, 1);
-    ring(s_root, CX, CY, 212, 1, C_PRINT);
-    lv_obj_t *twelve = lv_obj_create(s_root);            /* index double à 12 h */
+    scale(base, CX, CY, 222, 270, 360, 61, 5, 14, 3, 5, C_INDEX, C_PRINT, 1);
+    ring(base, CX, CY, 212, 1, C_PRINT);
+    lv_obj_t *twelve = lv_obj_create(base);              /* index double à 12 h */
     lv_obj_remove_style_all(twelve);
     lv_obj_set_size(twelve, S(9), S(16));
     lv_obj_set_pos(twelve, S(CX - 4), S(CY - 111));
@@ -167,18 +176,23 @@ lv_obj_t *face_classic_create(lv_obj_t *parent)
     bubble(twelve);
 
     /* 12 h : réserve de marche (batterie), arc de 120° */
-    scale(s_root, PR_X, PR_Y, 62, 210, 120, 11, 5, 6, 2, 3, C_INDEX, C_PRINT, 1);
-    s_pr_label = text(s_root, &font_small, C_PRINT, _("RÉSERVE"));
-    lv_obj_align(s_pr_label, LV_ALIGN_TOP_MID, 0, S(PR_Y + 6));
-    lv_obj_t *pr0 = text(s_root, &font_small, C_PRINT, "0");
+    scale(base, PR_X, PR_Y, 62, 210, 120, 11, 5, 6, 2, 3, C_INDEX, C_PRINT, 1);
+    lv_obj_t *pr0 = text(base, &font_small, C_PRINT, "0");
     lv_obj_set_pos(pr0, S(PR_X - 30), S(PR_Y - 10));
-    lv_obj_t *pr1 = text(s_root, &font_small, C_PRINT, "100");
+    lv_obj_t *pr1 = text(base, &font_small, C_PRINT, "100");
     lv_obj_set_pos(pr1, S(PR_X + 22), S(PR_Y - 10));
 
     /* 6 h : petite seconde dans un compteur légèrement creusé */
-    lv_obj_t *ssd = disc(s_root, SS_X, SS_Y, SS_D, C_SUBDIAL, 1, C_PRINT);
-    lv_obj_t *sss = scale(ssd, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_INDEX, C_PRINT, 0);
-    (void)sss;
+    lv_obj_t *ssb = disc(base, SS_X, SS_Y, SS_D, C_SUBDIAL, 1, C_PRINT);
+    scale(ssb, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_INDEX, C_PRINT, 0);
+
+    face_bake(base);
+
+    s_pr_label = text(s_root, &font_small, C_PRINT, _("RÉSERVE"));
+    lv_obj_align(s_pr_label, LV_ALIGN_TOP_MID, 0, S(PR_Y + 6));
+    /* calque transparent du compteur : son aiguille et son axe */
+    lv_obj_t *ssd = disc(s_root, SS_X, SS_Y, SS_D, C_SUBDIAL, 0, C_PRINT);
+    lv_obj_set_style_bg_opa(ssd, LV_OPA_TRANSP, 0);
     s_sec = hand(ssd, SS_D, 2, C_INDEX, s_pt_sec);
 
     /* 3 h : guichet jour + date */

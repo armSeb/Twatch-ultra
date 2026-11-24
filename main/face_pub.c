@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "fonts/fonts.h"
 #include "ui_geom.h"
+#include "face_bake.h"
 
 /* ---------- palette « pub irlandais » ---------- */
 #define C_GREEN      lv_color_hex(0x123E28)   /* vert bouteille */
@@ -355,15 +356,23 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
     lv_obj_remove_style_all(s_root);
     lv_obj_set_size(s_root, BOARD_LCD_W, BOARD_LCD_H);
     lv_obj_set_pos(s_root, -UI_PAD_X, -UI_PAD_Y);       /* hors de la marge de l'écran */
-    lv_obj_set_style_radius(s_root, BOARD_LCD_VIS_R, 0);
+    bubble(s_root);
+
+    /* Décor fixe (fond, cerclages, piste, harpe, graduations) : dessiné une
+     * fois dans une image (face_bake.c) ; seules les parties vivantes restent
+     * des objets redessinés à chaque image d'un glissement. */
+    lv_obj_t *base = lv_obj_create(s_root);
+    lv_obj_remove_style_all(base);
+    lv_obj_set_size(base, BOARD_LCD_W, BOARD_LCD_H);
+    lv_obj_set_style_radius(base, BOARD_LCD_VIS_R, 0);
     /* fond uni : un dégradé en RGB565 (sans tramage dans LVGL 9) fait des
      * bandes de teinte, les trois canaux ne changeant pas aux mêmes lignes */
-    lv_obj_set_style_bg_color(s_root, C_GREEN, 0);
-    lv_obj_set_style_bg_opa(s_root, LV_OPA_COVER, 0);
-    bubble(s_root);
+    lv_obj_set_style_bg_color(base, C_GREEN, 0);
+    lv_obj_set_style_bg_opa(base, LV_OPA_COVER, 0);
+    bubble(base);
     static const struct { int inset, w; lv_opa_t opa; } RIM[2] = { { 9, 4, LV_OPA_COVER }, { 19, 1, LV_OPA_40 } };
     for (int i = 0; i < 2; i++) {
-        lv_obj_t *r = lv_obj_create(s_root);
+        lv_obj_t *r = lv_obj_create(base);
         lv_obj_remove_style_all(r);
         lv_obj_set_size(r, BOARD_LCD_W - 2 * (BOARD_LCD_VIS_X + RIM[i].inset),
                         BOARD_LCD_H - BOARD_LCD_VIS_T - BOARD_LCD_VIS_B - 2 * RIM[i].inset);
@@ -375,33 +384,40 @@ lv_obj_t *face_pub_create(lv_obj_t *parent)
         bubble(r);
     }
 
-    lv_obj_t *track = lv_obj_create(s_root);
+    lv_obj_t *track = lv_obj_create(base);
     lv_obj_remove_style_all(track);
     lv_obj_set_size(track, BOARD_LCD_W, BOARD_LCD_H);
     bubble(track);
     lv_obj_add_event_cb(track, track_draw_cb, LV_EVENT_DRAW_MAIN, NULL);
 
-    /* complications et aiguilles : carré du dessin, centré */
-    lv_obj_t *dial = box(s_root, 0, 0, 240, 240, 0);
-    lv_obj_center(dial);
+    /* complications fixes : carré du dessin, centré */
+    lv_obj_t *dial_b = box(base, 0, 0, 240, 240, 0);
+    lv_obj_center(dial_b);
 
     /* 12 h : jauge FUEL */
-    scale(dial, FU_X, FU_Y, FU_D, 210, 120, 9, 4, 7, 2, 4, C_BRASS, C_CREAM);
-    s_fuel_lbl = text(dial, &font_small, C_CREAM, "FUEL");
-    lv_obj_set_style_text_letter_space(s_fuel_lbl, S(1), 0);
-    lv_obj_align(s_fuel_lbl, LV_ALIGN_TOP_MID, 0, S(FU_Y + 6));
-    lv_obj_t *le = text(dial, &font_text, C_RED, "E");
+    scale(dial_b, FU_X, FU_Y, FU_D, 210, 120, 9, 4, 7, 2, 4, C_BRASS, C_CREAM);
+    lv_obj_t *le = text(dial_b, &font_text, C_RED, "E");
     lv_obj_set_pos(le, S(FU_X - 35), S(FU_Y - 14));
-    lv_obj_t *lf = text(dial, &font_text, C_CREAM, "F");
+    lv_obj_t *lf = text(dial_b, &font_text, C_CREAM, "F");
     lv_obj_set_pos(lf, S(FU_X + 27), S(FU_Y - 14));
 
-    lv_obj_t *brand = text(dial, &font_small, C_BRASS, "SLÁINTE");
+    lv_obj_t *brand = text(dial_b, &font_small, C_BRASS, "SLÁINTE");
     lv_obj_set_style_text_letter_space(brand, S(2), 0);
     lv_obj_align(brand, LV_ALIGN_TOP_MID, 0, S(FU_Y + 34));
 
     /* 6 h : petite seconde */
-    lv_obj_t *ssd = disc(dial, SS_X, SS_Y, SS_D, C_SUB, 1, C_BRASS);
-    scale(ssd, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_BRASS, C_CREAM);
+    lv_obj_t *ssb = disc(dial_b, SS_X, SS_Y, SS_D, C_SUB, 1, C_BRASS);
+    scale(ssb, SS_D / 2, SS_D / 2, SS_D - 6, 270, 360, 61, 15, 5, 2, 2, C_BRASS, C_CREAM);
+
+    face_bake(base);
+
+    /* complications vivantes et aiguilles : même carré, au-dessus */
+    lv_obj_t *dial = box(s_root, 0, 0, 240, 240, 0);
+    lv_obj_center(dial);
+    s_fuel_lbl = text(dial, &font_small, C_CREAM, "FUEL");
+    lv_obj_set_style_text_letter_space(s_fuel_lbl, S(1), 0);
+    lv_obj_align(s_fuel_lbl, LV_ALIGN_TOP_MID, 0, S(FU_Y + 6));
+    lv_obj_t *ssd = box(dial, SS_X - SS_D / 2, SS_Y - SS_D / 2, SS_D, SS_D, 0);   /* calque du compteur */
     s_sec = hand(ssd, SS_D, 2, C_RED, s_pt_sec);
 
     /* 3 h : guichet jour + date */

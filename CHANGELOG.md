@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.32 — 2026-11-24
+
+- Analog watch faces (Retro and Pub): sliding to or from the face was still choppy (about
+  48 ms per frame, against well under 20 ms on the Digital face). Their fixed decor (dial and
+  gradient, rims, minute tracks with 61 ticks, sub-dial scales, harp, shamrock, printed
+  labels) is now drawn once into an RGB565 image in PSRAM (≈ 400 KB) when the face is
+  created; only the live parts (hands, date and status windows, fuel/reserve label, badges)
+  are still drawn every frame. Needs `CONFIG_LV_USE_SNAPSHOT`.
+
 ## 0.2.31 — 2026-11-24
 
 - "Pub" watch face: slides over it (pulling the menus) dropped to 2–3 frames since 0.2.28.
