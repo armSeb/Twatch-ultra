@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.27 — 2026-11-24
+
+- MeshCore app: messages relayed by repeaters using 2- or 3-byte path hashes showed a wrong
+  hop count (66 or 67 for 2 or 3 hops). The path length byte carries the hash size in its
+  top 2 bits; the watch now keeps only the hop count. Messages already stored in the history
+  or archived on the SD card are corrected when read. Frames sent to the companion app are
+  unchanged (the app decodes the byte itself).
+
 ## 0.2.26 — 2026-11-24
 
 - New *Settings › Wi-Fi › Turn Bluetooth off* (off by default, also on the web page): while
