@@ -22,6 +22,10 @@ lv_obj_t *face_bake_create(lv_obj_t *holder);
 /* le contenu figé a changé (aiguilles, guichets…) : nouvelle image bientôt */
 void face_bake_dirty(lv_obj_t *holder);
 
+/* refait tout de suite les images en retard (réveil de l'écran, avant la
+ * première image) ; tâche app seulement */
+void face_bake_flush(void);
+
 /* banc de mesure : l'objet qui affiche l'image, et la part (%) des
  * carreaux détaillés de la dernière image (-1 : aucune encore) */
 bool face_bake_is_view(lv_obj_t *o);

@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.40 — 2026-11-24
+
+- Analog faces (Pub, Retro): the hands no longer jump when the screen wakes. LVGL timers do
+  not run while the screen is off, so the baked face image still showed the hands from the
+  moment the watch went to sleep, and the first frame painted before DISPON was stale until
+  the bake timer caught up. The wake path now re-bakes a stale face image right away
+  (`face_bake_flush()`, app task) before that first frame.
+
 ## 0.2.39 — 2026-11-24
 
 - Speaker protection: every stream that follows the global volume (web radio, WebRX, demo,

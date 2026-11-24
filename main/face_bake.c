@@ -18,8 +18,11 @@ typedef struct {
     int tw, th;                       /* carreaux en largeur, en hauteur */
     lv_timer_t *timer;
     bool ready;
+    bool dirty;                       /* image en retard sur le contenu figé */
 } bake_t;
 
+#define MAX_FACES 2
+static bake_t *s_faces[MAX_FACES];    /* cadrans vivants (un seul en pratique) */
 static char s_view_tag;               /* marque l'objet affiché (banc de mesure) */
 static int s_detail_pct = -1;         /* part des carreaux détaillés, dernière image */
 
@@ -45,17 +48,11 @@ static void scan_tiles(bake_t *b)
     s_detail_pct = nd * 100 / (b->tw * b->th);
 }
 
-static void bake_timer_cb(lv_timer_t *t)
+static void bake_run(bake_t *b)
 {
-    bake_t *b = lv_timer_get_user_data(t);
-    /* pas pendant une animation : le rendu complet (~50 ms) la saccaderait */
-    /* ni pendant un glissement au doigt (pas encore une animation) */
-    bool busy = lv_anim_count_running() > 0;
-    for (lv_indev_t *i = lv_indev_get_next(NULL); i && !busy; i = lv_indev_get_next(i))
-        busy = lv_indev_get_state(i) == LV_INDEV_STATE_PRESSED;
-    if (busy) { lv_timer_set_period(t, 50); return; }
-    lv_timer_pause(t);
-    lv_timer_set_period(t, 0);
+    lv_timer_pause(b->timer);
+    lv_timer_set_period(b->timer, 0);
+    b->dirty = false;
     if (!b->buf) {
         b->buf = lv_snapshot_take(b->base, LV_COLOR_FORMAT_RGB565);
         if (!b->buf) return;          /* mémoire : rien d'affiché, nouvel essai au prochain changement */
@@ -70,6 +67,18 @@ static void bake_timer_cb(lv_timer_t *t)
     scan_tiles(b);
     b->ready = true;
     lv_obj_invalidate(b->view);
+}
+
+static void bake_timer_cb(lv_timer_t *t)
+{
+    bake_t *b = lv_timer_get_user_data(t);
+    /* pas pendant une animation : le rendu complet (~50 ms) la saccaderait */
+    /* ni pendant un glissement au doigt (pas encore une animation) */
+    bool busy = lv_anim_count_running() > 0;
+    for (lv_indev_t *i = lv_indev_get_next(NULL); i && !busy; i = lv_indev_get_next(i))
+        busy = lv_indev_get_state(i) == LV_INDEV_STATE_PRESSED;
+    if (busy) { lv_timer_set_period(t, 50); return; }
+    bake_run(b);
 }
 
 static inline void fill16(uint16_t *d, uint16_t c, int n)
@@ -173,6 +182,7 @@ static void view_draw_cb(lv_event_t *e)
 static void holder_delete_cb(lv_event_t *e)
 {
     bake_t *b = lv_event_get_user_data(e);
+    for (int i = 0; i < MAX_FACES; i++) if (s_faces[i] == b) s_faces[i] = NULL;
     if (b->timer) lv_timer_delete(b->timer);
     if (b->off) lv_obj_delete(b->off);
     if (b->buf) { lv_image_cache_drop(b->buf); lv_draw_buf_destroy(b->buf); }
@@ -207,6 +217,8 @@ lv_obj_t *face_bake_create(lv_obj_t *holder)
     lv_obj_set_user_data(holder, b);
     lv_obj_add_event_cb(holder, holder_delete_cb, LV_EVENT_DELETE, b);
     b->timer = lv_timer_create(bake_timer_cb, 0, b);
+    b->dirty = true;
+    for (int i = 0; i < MAX_FACES; i++) if (!s_faces[i]) { s_faces[i] = b; break; }
     return b->base;
 }
 
@@ -214,7 +226,18 @@ void face_bake_dirty(lv_obj_t *holder)
 {
     bake_t *b = holder ? lv_obj_get_user_data(holder) : NULL;
     if (!b || !b->timer) return;
+    b->dirty = true;
     lv_timer_resume(b->timer);
+}
+
+/* Au réveil, l'écran éteint n'a pas fait tourner les minuteurs LVGL : l'image
+ * montre encore les aiguilles de la mise en veille. On la refait tout de suite
+ * pour que la première image peinte avant DISPON soit à l'heure (sinon les
+ * aiguilles sautent à l'allumage). Tâche app uniquement (pile du rendu). */
+void face_bake_flush(void)
+{
+    for (int i = 0; i < MAX_FACES; i++)
+        if (s_faces[i] && s_faces[i]->dirty) bake_run(s_faces[i]);
 }
 
 bool face_bake_is_view(lv_obj_t *o)
