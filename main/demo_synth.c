@@ -419,6 +419,15 @@ float demo_synth_snare(void) { return hit_env(D_S, 90); }
 #ifdef ESP_PLATFORM
 #define CHUNK 256
 
+/* Gain de sortie, Q12. Le volume se règle dans le centre de contrôle ; ici on
+ * remet le morceau à un niveau franc une fois le grave retiré par le filtre
+ * du haut-parleur (sound.c) : démo ≈ -17 dBFS efficaces, crêtes ~1,1 × pleine
+ * échelle ; le jeu, mixé « en fond » et doux, ≈ -19 dBFS (bruitages
+ * par-dessus). Le limiteur doux de sound.c arrondit les rares crêtes.
+ * Mesuré sur 2 min de rendu. */
+#define GAIN_DEMO (4096 * 5 / 2)
+#define GAIN_GAME (4096 * 8)
+
 /* Le flux I2S reste ouvert du début à la fin : couper le son n'envoie que du
  * silence, le morceau continue et reste calé sur l'image. */
 static void synth_task(void *arg)
@@ -431,7 +440,7 @@ static void synth_task(void *arg)
         uint32_t target = (uint32_t)((uint64_t)demo_synth_ms() * DEMO_RATE / 1000);
         while (s_t + DEMO_RATE / 5 < target && s_run) (void)sample();
         for (int i = 0; i < CHUNK; i++) buf[i] = sample();
-        if (open) sound_stream_write(buf, CHUNK, s_sound ? 4096 * 6 / 10 : 0);
+        if (open) sound_stream_write(buf, CHUNK, !s_sound ? 0 : s_song == SONG_GAME ? GAIN_GAME : GAIN_DEMO);
         else {
             vTaskDelay(pdMS_TO_TICKS(CHUNK * 1000 / DEMO_RATE));
             if (s_sound && !sound_muted()) open = sound_stream_open(DEMO_RATE) == ESP_OK;

@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.39 — 2026-11-24
+
+- Speaker protection: every stream that follows the global volume (web radio, WebRX, demo,
+  flight game, Púca) now goes through a 4th-order Butterworth high-pass at 250 Hz
+  (-24 dB/octave) before the soft limiter. The small speaker cannot reproduce bass, but bass
+  and sub-bass drove it into saturation (Seb, web radio). Two float biquads per sample, no
+  extra RAM. The relay tone stream (fixed level) is left untouched.
+- Demo and flight game much louder: their own gain was a leftover from before the global
+  volume (×0.6 on a quiet mix, about -26 dBFS RMS for the demo and -36 dBFS for the game).
+  With the bass filtered out, the demo now plays at about -17 dBFS RMS and the game music at
+  about -19 dBFS, with the sound effects on top; the global volume does the rest.
+
 ## 0.2.38 — 2026-11-24
 
 - Release of 0.2.37 together with the MeshCore hop-count fix of 0.2.27 (merged in parallel).
