@@ -2233,7 +2233,8 @@ static void power_refresh_consumers(char *s, size_t n)
     wifi_get_status(&w);
     if (w.state != WIFI_OFF && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " Wi-Fi");
     if (settings_get()->tap_wake && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " %s", _("tactile"));
-    if (sd_mounted() && k > 0 && k < (int)n) snprintf(s + k, n - k, " · %s", _("carte SD montée"));
+    if (sd_mounted() && k > 0 && k < (int)n)
+        snprintf(s + k, n - k, " · %s", sd_parked() ? _("carte SD au repos") : _("carte SD active"));
 }
 
 static void power_refresh(void)

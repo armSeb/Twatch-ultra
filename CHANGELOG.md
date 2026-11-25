@@ -2,6 +2,19 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.45 — 2026-11-25
+
+- SD card powered only while it is used. A mounted card sitting idle drew about 40 mA (measured
+  by Seb: without the card, the overnight drain disappears). After 30 s without access the card
+  goes *idle*: the FAT is unmounted and its rail (ALDO1) cut; the next read or write (log and
+  MeshCore archive flush every 10 min, web server, history) powers it and remounts it in a few
+  hundred ms. For the rest of the firmware the card stays mounted.
+- The SD rail no longer follows the LoRa radio. When the radio starts, and after the card goes
+  idle, the radio checks it still answers on the shared SPI bus with the card unpowered; if it
+  does not, the rail stays on until reboot as before. The 30 s radio heartbeat repeats the
+  check and switches the rail back on if the radio goes mute.
+- *Energy* screen: "SD card idle" or "SD card active" after the powered parts.
+
 ## 0.2.44 — 2026-11-25
 
 - *Energy* screen laid out again as one scrolling column: every line wraps to its own height,

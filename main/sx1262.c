@@ -80,6 +80,7 @@ static int16_t s_noise = INT16_MIN;
 static volatile int64_t s_rx_busy_until;   /* préambule ou en-tête vu : réception en cours */
 static volatile bool s_tx_busy;            /* paquet sorti de la file, pas encore émis */
 static bool s_ext_ant;
+static volatile bool s_sd_req;            /* essai de coupure du rail SD demandé */
 static esp_err_t s_last_err = ESP_OK;      /* dernier échec de démarrage */                     /* antenne externe (connecteur USB-C) */
 
 /* ------------------------------------------------------------------ SPI */
@@ -324,6 +325,20 @@ static bool transmit(const txreq_t *r)
     return ok;
 }
 
+/* la puce répond-elle ? (mode valide et registre réglé au démarrage) */
+static bool probe_now(void)
+{
+    uint8_t m = (status() >> 4) & 7;
+    return m >= 2 && m <= 6 && reg_read8(R_RX_GAIN) == 0x96;
+}
+
+/* spi_bus : essai de coupure du rail SD, fait dans la tâche lora */
+static void sd_off_request(void)
+{
+    s_sd_req = true;
+    if (s_task) xTaskNotifyGive(s_task);
+}
+
 static void lora_task(void *arg)
 {
     EXT_RAM_BSS_ATTR static txreq_t tx_slot;                                     /* une seule tâche lora à la fois */
@@ -339,6 +354,15 @@ static void lora_task(void *arg)
                      (st >> 4) & 7, (st >> 1) & 7, errors(), (unsigned long)s_stats.tx_ok,
                      (unsigned long)s_stats.tx_fail, (unsigned long)s_stats.rx_ok, (unsigned long)s_stats.rx_crc,
                      s_noise, gpio_get_level(BOARD_LORA_IRQ));
+            if (!spi_sd_powered() && !probe_now()) {           /* bus bloqué sans la carte SD */
+                spi_sd_bus_failed();
+                vTaskDelay(pdMS_TO_TICKS(50));
+                rx_continuous();
+            }
+        }
+        if (s_sd_req) {
+            s_sd_req = false;
+            spi_sd_try_off_run(probe_now);
         }
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
         if (!s_run) break;
@@ -496,6 +520,8 @@ esp_err_t sx_start(const sx_cfg_t *cfg, sx_rx_cb_t cb)
         s_last_err = ESP_ERR_NO_MEM;
         return ESP_ERR_NO_MEM;
     }
+    spi_set_sd_off_runner(sd_off_request);
+    spi_sd_try_off();                                           /* la radio marche-t-elle carte SD coupée ? */
     ESP_LOGI(TAG, "%.3f MHz, BW %.1f kHz, SF%d, CR 4/%d, %d dBm, synchro 0x%02x, préambule %u, antenne %s, "
              "statut 0x%02x, erreurs 0x%04x", s_cfg.freq_hz / 1e6, s_cfg.bw_hz / 1e3, s_cfg.sf, s_cfg.cr,
              s_cfg.power_dbm, s_cfg.sync_word, s_cfg.preamble, s_ext_ant ? "externe" : "intégrée", st0, er0);
@@ -512,6 +538,7 @@ off:
 
 void sx_stop(void)
 {
+    spi_set_sd_off_runner(NULL);
     if (s_run) {
         s_run = false;
         if (s_task) xTaskNotifyGive(s_task);

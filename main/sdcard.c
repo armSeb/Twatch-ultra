@@ -31,8 +31,10 @@ static const char *TAG = "sd";
 #define FLUSH_S        600       /* vidage des tampons sur la carte */
 #define SD_KHZ         20000     /* bus partagé avec la radio (8 MHz) et le NFC */
 #define MAX_FLUSHERS   4
+#define PARK_S         30        /* sans accès : FAT démontée, carte hors tension */
+#define WAKE_WAIT_MS   3000      /* sd_lock() d'une autre tâche : attente du réveil */
 
-enum { REQ_EJECT = 1, REQ_MOUNT = 2, REQ_FLUSH = 4, REQ_INFO = 8, REQ_SHARE = 16, REQ_UNSHARE = 32 };
+enum { REQ_EJECT = 1, REQ_MOUNT = 2, REQ_FLUSH = 4, REQ_INFO = 8, REQ_SHARE = 16, REQ_UNSHARE = 32, REQ_WAKE = 64 };
 
 static TaskHandle_t s_task;
 static SemaphoreHandle_t s_mx;           /* accès aux fichiers de /sd (et à la carte brute) */
@@ -47,6 +49,11 @@ static int s_nflush;
 static sd_flush_cb_t s_closer[MAX_FLUSHERS];
 static int s_ncloser;
 static volatile uint32_t s_flushes;      /* vidages faits (sd_flush_wait) */
+/* Carte « au repos » : état SD_MOUNTED pour le reste du firmware, mais FAT
+ * démontée et rail coupé (une carte au repos sous tension tire des dizaines
+ * de mA). sd_lock() la réveille. Modifié sous s_mx. */
+static volatile bool s_parked;
+static volatile int64_t s_last_use;
 
 static void set_state(sd_state_t st)
 {
@@ -100,7 +107,9 @@ static void host_cfg(sdmmc_host_t *host, sdspi_device_config_t *slot)
 static bool bus_get(void)
 {
     spi_peers_get();
+    spi_sd_get();
     if (spi_shared_get() != ESP_OK) {
+        spi_sd_put();
         spi_peers_put();
         return false;
     }
@@ -111,13 +120,14 @@ static void bus_put(void)
 {
     spi_peers_hold_cs(BOARD_SD_CS);          /* le pilote a rendu la broche : CS haut */
     spi_shared_put();
+    spi_sd_put();                            /* rail SD coupé si la radio s'en passe */
     spi_peers_put();
 }
 
 static bool try_mount(void)
 {
     if (!bus_get()) return false;
-    vTaskDelay(pdMS_TO_TICKS(20));           /* rail tout juste allumé : mise sous tension de la carte */
+    vTaskDelay(pdMS_TO_TICKS(50));           /* rail tout juste allumé : mise sous tension de la carte */
 
     sdmmc_host_t host;
     sdspi_device_config_t slot;
@@ -130,7 +140,7 @@ static bool try_mount(void)
     sdmmc_card_t *card = NULL;
     xSemaphoreTake(s_mx, portMAX_DELAY);
     esp_err_t e = esp_vfs_fat_sdspi_mount(SD_ROOT, &host, &slot, &mc, &card);
-    if (e == ESP_OK) s_card = card;
+    if (e == ESP_OK) { s_card = card; s_parked = false; s_last_use = esp_timer_get_time(); }
     xSemaphoreGive(s_mx);
     if (e != ESP_OK) {
         ESP_LOGW(TAG, "carte illisible : %s", esp_err_to_name(e));
@@ -169,9 +179,63 @@ static void fat_unmount(sd_state_t next)
     xSemaphoreGive(s_mx);
 }
 
+/* ---------------- repos : carte hors tension entre deux accès ---------------- */
+
+static void park(void)
+{
+    xSemaphoreTake(s_mx, portMAX_DELAY);
+    bool now = s_state == SD_MOUNTED && !s_parked;
+    if (now) {
+        for (int i = 0; i < s_ncloser; i++) s_closer[i]();
+        esp_vfs_fat_sdcard_unmount(SD_ROOT, s_card);
+        s_card = NULL;
+        s_parked = true;
+    }
+    xSemaphoreGive(s_mx);
+    if (!now) return;
+    bus_put();
+    ESP_LOGI(TAG, "carte au repos (hors tension)");
+    spi_sd_try_off();                        /* radio en marche : peut-elle s'en passer ? */
+}
+
+/* sous s_mx, carte au repos : rallumée et remontée */
+static bool unpark_locked(void)
+{
+    sdmmc_host_t host;
+    sdspi_device_config_t slot;
+    host_cfg(&host, &slot);
+    esp_vfs_fat_mount_config_t mc = { .format_if_mount_failed = false, .max_files = 4,
+                                      .allocation_unit_size = 16 * 1024 };
+    for (int i = 0; i < 3; i++) {
+        if (bus_get()) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            sdmmc_card_t *card = NULL;
+            esp_err_t e = esp_vfs_fat_sdspi_mount(SD_ROOT, &host, &slot, &mc, &card);
+            if (e == ESP_OK) {
+                s_card = card;
+                s_parked = false;
+                s_last_use = esp_timer_get_time();
+                return true;
+            }
+            ESP_LOGW(TAG, "réveil : %s", esp_err_to_name(e));
+            bus_put();
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    s_parked = false;
+    set_state(SD_FAILED);
+    return false;
+}
+
 static void do_unmount(sd_state_t next)
 {
-    if (s_state == SD_MOUNTED) {
+    if (s_state == SD_MOUNTED && s_parked) {   /* déjà démontée, rail rendu */
+        xSemaphoreTake(s_mx, portMAX_DELAY);
+        set_state(next);
+        s_parked = false;
+        xSemaphoreGive(s_mx);
+        ESP_LOGI(TAG, "%s", next == SD_EJECTED ? "carte éjectée" : "carte retirée");
+    } else if (s_state == SD_MOUNTED) {
         fat_unmount(next);
         bus_put();
         if (next == SD_EJECTED) ESP_LOGI(TAG, "carte éjectée");
@@ -241,13 +305,15 @@ static bool raw_open(void)
 static void do_share(void)
 {
     if (!power_vbus()) return;
-    if (s_state == SD_MOUNTED) {
-        run_flushers();                      /* dernières lignes avant de céder la carte */
+    if (s_state == SD_MOUNTED) run_flushers();   /* dernières lignes (réveille la carte) */
+    if (s_state == SD_MOUNTED && !s_parked) {
         fat_unmount(SD_SHARED);
+    } else if (s_state == SD_MOUNTED) {          /* toujours au repos : réveil raté */
+        return;
     } else if (!bus_get()) {
         return;
     } else {
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
     set_state(SD_SHARED);
     bool ok = raw_open();
@@ -335,6 +401,12 @@ static void sd_task(void *arg)
             continue;
         }
         if (s_state != SD_MOUNTED) continue;
+        if ((req & REQ_WAKE) && s_parked) {
+            xSemaphoreTake(s_mx, portMAX_DELAY);
+            if (s_parked && s_state == SD_MOUNTED) unpark_locked();
+            xSemaphoreGive(s_mx);
+            if (s_state != SD_MOUNTED) continue;
+        }
         if ((req & (REQ_EJECT | REQ_FLUSH)) || now >= next_flush) {
             run_flushers();
             s_flushes++;
@@ -345,6 +417,8 @@ static void sd_task(void *arg)
             continue;
         }
         if (req & REQ_INFO) refresh_info();
+        if (s_state == SD_MOUNTED && !s_parked && esp_timer_get_time() - s_last_use > PARK_S * 1000000LL)
+            park();
     }
 }
 
@@ -427,15 +501,29 @@ void sd_flush_wait(int ms)
     for (int t = 0; t < ms && s_flushes == n && s_state == SD_MOUNTED; t += 20) vTaskDelay(pdMS_TO_TICKS(20));
 }
 
+bool sd_parked(void) { return s_state == SD_MOUNTED && s_parked; }
+
 bool sd_lock(void)
 {
     if (!s_mx || s_state != SD_MOUNTED) return false;
+    bool own = xTaskGetCurrentTaskHandle() == s_task;
+    if (s_parked && !own) {                  /* la tâche sd rallume la carte */
+        request(REQ_WAKE);
+        for (int t = 0; t < WAKE_WAIT_MS && s_parked && s_state == SD_MOUNTED; t += 10)
+            vTaskDelay(pdMS_TO_TICKS(10));
+    }
     xSemaphoreTake(s_mx, portMAX_DELAY);
-    if (s_state != SD_MOUNTED) { xSemaphoreGive(s_mx); return false; }
+    if (s_state == SD_MOUNTED && s_parked && own) unpark_locked();
+    if (s_state != SD_MOUNTED || s_parked) { xSemaphoreGive(s_mx); return false; }
+    s_last_use = esp_timer_get_time();
     return true;
 }
 
-void sd_unlock(void) { xSemaphoreGive(s_mx); }
+void sd_unlock(void)
+{
+    s_last_use = esp_timer_get_time();
+    xSemaphoreGive(s_mx);
+}
 
 void sd_add_flusher(sd_flush_cb_t cb)
 {
