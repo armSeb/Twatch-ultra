@@ -2257,7 +2257,7 @@ static void power_refresh(void)
     lv_label_set_text(p_lbl[0], s);
 
     if (t.vbus) {
-        if (power_measure()) snprintf(s, sizeof(s), "%s", _("Secteur · charge coupée pour la mesure"));
+        if (power_measure()) snprintf(s, sizeof(s), _("Charge coupée pour la mesure · USB %.2f V"), t.vbus_mv / 1000.0f);
         else if (t.charge_done) snprintf(s, sizeof(s), _("Secteur · charge terminée"));
         else if (t.charging) snprintf(s, sizeof(s), _("En charge · USB %.2f V"), t.vbus_mv / 1000.0f);
         else snprintf(s, sizeof(s), _("Secteur · pas de charge"));
@@ -2297,6 +2297,17 @@ static void power_refresh(void)
     /* écran éteint : part du temps en light sleep, réveils, interruptions LoRa */
     if (t.sleep_known) {
         snprintf(s, sizeof(s), _("Veille %.0f %% · %.0f réveils/min"), t.sleep_pct, t.wakes_per_min);
+        if (t.last_off_known) {
+            size_t k = strlen(s);
+            snprintf(s + k, sizeof(s) - k, _(" · dernier écran éteint (%lu s) : veille %.0f %%"),
+                     (unsigned long)t.last_off_s, t.last_off_sleep_pct);
+        }
+        if (power_measure()) {
+            char lk[96];
+            power_measure_locks(lk, sizeof lk);
+            size_t k = strlen(s);
+            snprintf(s + k, sizeof(s) - k, " · %s %s", _("verrous :"), lk[0] ? lk : _("aucun"));
+        }
     } else {
         snprintf(s, sizeof(s), _("Veille : mesure en cours…"));
     }

@@ -2,6 +2,16 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.49 — 2026-11-25
+
+- *Energy* screen, sleep line: also the last screen-off spell alone (how long, share asleep),
+  and in measure mode the power-management locks held while the screen was off. With the SD
+  card inserted the watch drew the same 25-29 mA screen on or off, as if it no longer slept.
+- Measure mode also lowers the AXP2101 USB input voltage threshold (VINDPM) to 3.88 V and shows
+  the USB voltage. An ammeter in series drops the voltage; under the threshold the AXP limits
+  the USB current and the battery quietly supplies the rest, so readings plateaued near 28 mA
+  (even during a Wi-Fi OTA).
+
 ## 0.2.48 — 2026-11-25
 
 - Measure mode: tapping the *Powered* line switches the SD card rail (ALDO1) by hand, to check
