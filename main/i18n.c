@@ -27,7 +27,10 @@ static const tr_t EN[] = {
     { "carte SD active", "SD card active" },
     { "Secteur · charge coupée pour la mesure", "Mains · charging off for measuring" },
     { "Mesure au testeur USB : brancher le câble", "USB meter measurement: plug in the cable" },
-    { "Mesure en cours : charge coupée, veille permise. Toucher pour arrêter", "Measuring: charging off, sleep allowed. Tap to stop" },
+    { "Mesure en cours : charge coupée, veille permise. Toucher pour arrêter. "
+      "Toucher « Alimentés » allume ou coupe le rail SD (test)",
+      "Measuring: charging off, sleep allowed. Tap to stop. Tap \"Powered\" to switch the SD rail (test)" },
+    { "Consommation : lire le testeur USB", "Consumption: read the USB meter" },
     { "Mesure au testeur USB : toucher pour couper la charge", "USB meter measurement: tap to stop charging" },
     { ", allumée %lu %% du temps, %lu réveils", ", powered %lu %% of the time, %lu wakeups" },
     { "Veille : mesure en cours…", "Sleep: measuring…" },

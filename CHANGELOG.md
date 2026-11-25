@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.48 — 2026-11-25
+
+- Measure mode: tapping the *Powered* line switches the SD card rail (ALDO1) by hand, to check
+  with a meter whether it really powers the card (a parked card with every rail off still added
+  about 25 mA on Seb's watch). The average-consumption line reads "read the USB meter" while
+  measuring instead of "unplug to measure".
+
 ## 0.2.47 — 2026-11-25
 
 - *Energy* screen, new last line: measuring with a USB meter on the cable. A tap stops battery

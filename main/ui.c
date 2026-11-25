@@ -2270,7 +2270,9 @@ static void power_refresh(void)
              t.pct_start, t.percent, hh, mm);
     lv_label_set_text(p_lbl[2], s);
 
-    if (t.vbus) {
+    if (t.vbus && power_measure()) {
+        snprintf(s, sizeof(s), "%s", _("Consommation : lire le testeur USB"));
+    } else if (t.vbus) {
         snprintf(s, sizeof(s), _("Débrancher pour mesurer"));
     } else if (t.avg_ma > 0.1f) {
         float left_h = BATTERY_CAPACITY_MAH * t.percent / 100.0f / t.avg_ma;
@@ -2340,9 +2342,20 @@ static void power_refresh(void)
     lv_label_set_text(p_lbl[10], s);
 
     if (!t.vbus) snprintf(s, sizeof s, "%s", _("Mesure au testeur USB : brancher le câble"));
-    else snprintf(s, sizeof s, "%s", power_measure() ? _("Mesure en cours : charge coupée, veille permise. Toucher pour arrêter")
+    else snprintf(s, sizeof s, "%s", power_measure() ? _("Mesure en cours : charge coupée, veille permise. Toucher pour arrêter. "
+                                                        "Toucher « Alimentés » allume ou coupe le rail SD (test)")
                                                     : _("Mesure au testeur USB : toucher pour couper la charge"));
     lv_label_set_text(p_lbl[11], s);
+}
+
+/* test (mode mesure) : rail SD forcé, pour voir s'il alimente vraiment la carte */
+static void rail_sd_cb(lv_event_t *e)
+{
+    if (!power_measure()) return;
+    bool on = !axp_rail_is_on(AXP_RAIL_SD);
+    axp_rail(AXP_RAIL_SD, on);
+    ESP_LOGI("power", "test : rail SD %s à la main", on ? "allumé" : "coupé");
+    power_refresh();
 }
 
 static void measure_cb(lv_event_t *e)
@@ -2450,6 +2463,8 @@ static void build_power(void)
     lv_obj_add_flag(p_lbl[8], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(p_lbl[8], S(10));
     lv_obj_add_event_cb(p_lbl[8], bench_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(p_lbl[10], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(p_lbl[10], rail_sd_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_text_color(p_lbl[11], C_ACC, 0);
     lv_obj_add_flag(p_lbl[11], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(p_lbl[11], S(10));
