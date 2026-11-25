@@ -115,7 +115,7 @@ static void nav_open(scr_id_t id, lv_screen_load_anim_t anim);
 static void menu_refresh_summaries(void);
 static lv_timer_t *m_toast_t;
 /* énergie */
-static lv_obj_t *p_lbl[9];
+static lv_obj_t *p_lbl[12];
 static lv_timer_t *p_timer;
 static lv_timer_t *mu_timer;
 static void media_refresh(bool full);
@@ -2206,20 +2206,59 @@ static void menu_sync_from_settings(void)
 /* ------------------------------------------------------------------ */
 /* Énergie : télémétrie AXP2101 (jauge interne, pas de mesure de courant) */
 /* ------------------------------------------------------------------ */
+/* Courant du SX1262 en émission selon la puissance (fiche Semtech, PA
+ * haute puissance, régulateur DC-DC) : ordre de grandeur, en mA. */
+static float lora_tx_ma(int dbm)
+{
+    static const struct { int8_t dbm; uint8_t ma; } T[] = { { 10, 30 }, { 14, 45 }, { 17, 90 }, { 20, 102 }, { 22, 118 } };
+    if (dbm <= T[0].dbm) return T[0].ma;
+    for (size_t i = 1; i < sizeof T / sizeof T[0]; i++)
+        if (dbm <= T[i].dbm)
+            return T[i - 1].ma + (float)(T[i].ma - T[i - 1].ma) * (dbm - T[i - 1].dbm) / (T[i].dbm - T[i - 1].dbm);
+    return T[4].ma;
+}
+
+/* Ce qui reste alimenté (rails de l'AXP2101 et périphériques) : l'AXP ne
+ * mesure aucun courant, la liste dit au moins qui peut consommer. */
+static void power_refresh_consumers(char *s, size_t n)
+{
+    static const struct { uint8_t bit; const char *name; } R[] = {
+        { 2, "LoRa" }, { 0, "SD" }, { 7, "NFC" }, { 3, N_("capteur") }, { 4, "GNSS" }, { 5, N_("ampli") },
+    };
+    uint8_t on = axp_reg(0x90);
+    int k = snprintf(s, n, "%s", _("Alimentés :"));
+    for (size_t i = 0; i < sizeof R / sizeof R[0] && k > 0 && k < (int)n; i++)
+        if ((on >> R[i].bit) & 1) k += snprintf(s + k, n - k, " %s", _(R[i].name));
+    wifi_status_t w;
+    wifi_get_status(&w);
+    if (w.state != WIFI_OFF && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " Wi-Fi");
+    if (settings_get()->tap_wake && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " %s", _("tactile"));
+    if (sd_mounted() && k > 0 && k < (int)n) {
+        uint32_t wk, on_s;
+        sd_power_stats(&wk, &on_s);
+        uint32_t up = (uint32_t)(esp_timer_get_time() / 1000000);
+        k += snprintf(s + k, n - k, " · %s", sd_parked() ? _("carte SD au repos") : _("carte SD active"));
+        if (k > 0 && k < (int)n)
+            snprintf(s + k, n - k, _(", allumée %lu %% du temps, %lu réveils"),
+                     (unsigned long)(up ? on_s * 100 / up : 0), (unsigned long)wk);
+    }
+}
+
 static void power_refresh(void)
 {
     power_telemetry_t t;
     power_get_telemetry(&t);
     ble_info_t b;
     ble_get_info(&b);
-    char s[112];
+    char s[192];
     unsigned long hh = t.since_s / 3600, mm = (t.since_s / 60) % 60;
 
     snprintf(s, sizeof(s), _("Batterie  %d %%  ·  %.3f V"), t.percent, t.vbat_mv / 1000.0f);
     lv_label_set_text(p_lbl[0], s);
 
     if (t.vbus) {
-        if (t.charge_done) snprintf(s, sizeof(s), _("Secteur · charge terminée"));
+        if (power_measure()) snprintf(s, sizeof(s), _("Charge coupée pour la mesure · USB %.2f V"), t.vbus_mv / 1000.0f);
+        else if (t.charge_done) snprintf(s, sizeof(s), _("Secteur · charge terminée"));
         else if (t.charging) snprintf(s, sizeof(s), _("En charge · USB %.2f V"), t.vbus_mv / 1000.0f);
         else snprintf(s, sizeof(s), _("Secteur · pas de charge"));
     } else {
@@ -2231,7 +2270,9 @@ static void power_refresh(void)
              t.pct_start, t.percent, hh, mm);
     lv_label_set_text(p_lbl[2], s);
 
-    if (t.vbus) {
+    if (t.vbus && power_measure()) {
+        snprintf(s, sizeof(s), "%s", _("Consommation : lire le testeur USB"));
+    } else if (t.vbus) {
         snprintf(s, sizeof(s), _("Débrancher pour mesurer"));
     } else if (t.avg_ma > 0.1f) {
         float left_h = BATTERY_CAPACITY_MAH * t.percent / 100.0f / t.avg_ma;
@@ -2255,16 +2296,39 @@ static void power_refresh(void)
 
     /* écran éteint : part du temps en light sleep, réveils, interruptions LoRa */
     if (t.sleep_known) {
-        int n = snprintf(s, sizeof(s), _("Veille %.0f %% · %.1f réveils/min"), t.sleep_pct, t.wakes_per_min);
-        if (sx_running() && n > 0 && n < (int)sizeof(s)) {
-            sx_stats_t x;
-            sx_get_stats(&x);
-            snprintf(s + n, sizeof(s) - n, " · LoRa %lu", (unsigned long)x.irq);
+        snprintf(s, sizeof(s), _("Veille %.0f %% · %.0f réveils/min"), t.sleep_pct, t.wakes_per_min);
+        if (t.last_off_known) {
+            size_t k = strlen(s);
+            snprintf(s + k, sizeof(s) - k, _(" · dernier écran éteint (%lu s) : veille %.0f %%"),
+                     (unsigned long)t.last_off_s, t.last_off_sleep_pct);
+        }
+        if (power_measure()) {
+            char lk[96];
+            power_measure_locks(lk, sizeof lk);
+            size_t k = strlen(s);
+            snprintf(s + k, sizeof(s) - k, " · %s %s", _("verrous :"), lk[0] ? lk : _("aucun"));
         }
     } else {
         snprintf(s, sizeof(s), _("Veille : mesure en cours…"));
     }
     lv_label_set_text(p_lbl[6], s);
+
+    /* LoRa : temps d'émission depuis le démarrage, et ce qu'il coûte en
+     * moyenne ; relais = la montre réémet les paquets des autres */
+    if (sx_running()) {
+        sx_stats_t x;
+        sx_get_stats(&x);
+        mc_status_t m;
+        mc_get_status(&m);
+        double up_ms = esp_timer_get_time() / 1000.0;
+        float duty = up_ms > 0 ? (float)(100.0 * x.tx_ms / up_ms) : 0;
+        snprintf(s, sizeof(s), _("LoRa : %lu émis (%lu s, ~%.1f mA) · %lu reçus · relais %s"),
+                 (unsigned long)x.tx_ok, (unsigned long)(x.tx_ms / 1000),
+                 duty / 100.0f * lora_tx_ma(m.tx_dbm), (unsigned long)x.rx_ok, m.repeat ? _("oui") : _("non"));
+    } else {
+        snprintf(s, sizeof(s), "%s", _("LoRa : radio coupée"));
+    }
+    lv_label_set_text(p_lbl[9], s);
 
     /* décharge précédente */
     power_hist_t h;
@@ -2284,6 +2348,31 @@ static void power_refresh(void)
                          dp.avg_us / 1000.0f, dp.max_us / 1000.0f);
     else snprintf(s, sizeof(s), "%s", _("Animation : pas encore mesurée"));
     lv_label_set_text(p_lbl[8], s);
+
+    power_refresh_consumers(s, sizeof s);
+    lv_label_set_text(p_lbl[10], s);
+
+    if (!t.vbus) snprintf(s, sizeof s, "%s", _("Mesure au testeur USB : brancher le câble"));
+    else snprintf(s, sizeof s, "%s", power_measure() ? _("Mesure en cours : charge coupée, veille permise. Toucher pour arrêter. "
+                                                        "Toucher « Alimentés » allume ou coupe le rail SD (test)")
+                                                    : _("Mesure au testeur USB : toucher pour couper la charge"));
+    lv_label_set_text(p_lbl[11], s);
+}
+
+/* test (mode mesure) : rail SD forcé, pour voir s'il alimente vraiment la carte */
+static void rail_sd_cb(lv_event_t *e)
+{
+    if (!power_measure()) return;
+    bool on = !axp_rail_is_on(AXP_RAIL_SD);
+    axp_rail(AXP_RAIL_SD, on);
+    ESP_LOGI("power", "test : rail SD %s à la main", on ? "allumé" : "coupé");
+    power_refresh();
+}
+
+static void measure_cb(lv_event_t *e)
+{
+    power_set_measure(!power_measure());
+    power_refresh();
 }
 
 static void power_timer_cb(lv_timer_t *t) { power_refresh(); }
@@ -2351,25 +2440,46 @@ static void bench_cb(lv_event_t *e)
 
 static void build_power(void)
 {
+    /* Colonne qui défile : chaque ligne prend la hauteur de son texte (retour
+     * à la ligne, rien de coupé ni de superposé). En haut la batterie, en
+     * dessous le diagnostic de consommation. */
     lv_obj_t *s = s_scr[SCR_POWER] = mk_screen();
-    lv_obj_t *h = mk_label(s, &font_title, C_FG, with_sym(LV_SYMBOL_CHARGE, _("Énergie")));
-    lv_obj_align(h, LV_ALIGN_TOP_LEFT, S(12), S(10));
-    for (int i = 0; i < 8; i++) {
-        p_lbl[i] = mk_label(s, i == 7 ? &font_small : &font_text, i == 3 ? C_ACC : (i == 7 ? C_DIM : C_FG), "");
-        lv_label_set_long_mode(p_lbl[i], LV_LABEL_LONG_DOT);
-        lv_obj_set_size(p_lbl[i], UI_W - S(24), lv_font_get_line_height(&font_text));
-        lv_obj_set_pos(p_lbl[i], S(12), S(42) + i * S(27));
+    lv_obj_add_flag(s, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(s, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_set_flex_flow(s, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(s, S(8), 0);
+    lv_obj_set_style_pad_left(s, UI_PAD_X + S(12), 0);
+    lv_obj_set_style_pad_right(s, UI_PAD_X + S(12), 0);
+    lv_obj_set_style_pad_top(s, UI_PAD_Y + S(10), 0);
+    lv_obj_set_style_pad_bottom(s, UI_PAD_Y + S(16), 0);
+
+    mk_label(s, &font_title, C_FG, with_sym(LV_SYMBOL_CHARGE, _("Énergie")));
+
+    /* ordre d'affichage (les index restent ceux de power_refresh). Tout en
+     * police normale et en blanc : lisible d'un coup d'œil, l'écran défile. */
+    static const uint8_t ROWS[] = {
+        0, 1, 2, 3,          /* batterie, état, période, moyenne */
+        6, 9, 10,            /* veille, LoRa, alimentés */
+        4, 5, 7, 8,          /* BLE, écran, décharge précédente, animation */
+        11,                  /* mode mesure (testeur USB) */
+    };
+    for (size_t r = 0; r < sizeof ROWS; r++) {
+        int i = ROWS[r];
+        p_lbl[i] = mk_label(s, &font_text, i == 3 ? C_ACC : C_FG, "");
+        lv_label_set_long_mode(p_lbl[i], LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(p_lbl[i], LV_PCT(100));
+        if (i == 6 || i == 11) lv_obj_set_style_margin_top(p_lbl[i], S(10), 0);   /* sépare les blocs */
     }
-    lv_label_set_long_mode(p_lbl[7], LV_LABEL_LONG_WRAP);        /* 2 lignes en petit */
-    lv_obj_set_height(p_lbl[7], 2 * lv_font_get_line_height(&font_small));
-    p_lbl[8] = mk_label(s, &font_small, C_DIM, "");
-    lv_obj_set_width(p_lbl[8], UI_W - S(60));
-    lv_obj_set_style_text_align(p_lbl[8], LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(p_lbl[8], LV_LABEL_LONG_DOT);
-    lv_obj_align_to(p_lbl[8], p_lbl[7], LV_ALIGN_OUT_BOTTOM_MID, 0, S(2));
     lv_obj_add_flag(p_lbl[8], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(p_lbl[8], S(10));
     lv_obj_add_event_cb(p_lbl[8], bench_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(p_lbl[10], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(p_lbl[10], rail_sd_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_text_color(p_lbl[11], C_ACC, 0);
+    lv_obj_add_flag(p_lbl[11], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(p_lbl[11], S(10));
+    lv_obj_add_event_cb(p_lbl[11], measure_cb, LV_EVENT_CLICKED, NULL);
     p_timer = lv_timer_create(power_timer_cb, 1000, NULL);
     lv_timer_pause(p_timer);
 }

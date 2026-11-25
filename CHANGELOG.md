@@ -2,6 +2,81 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.50 — 2026-11-25
+
+- XL9555: the SD card detect line (P12) is forced to input at boot. The expander keeps its
+  configuration as long as the battery powers it, so an earlier firmware may have left it as
+  an output; driven high, the card-detect switch shorts it to ground when a card is in. Seb
+  measured 41 mA more with any card inserted, even one with taped-over contacts.
+
+## 0.2.49 — 2026-11-25
+
+- *Energy* screen, sleep line: also the last screen-off spell alone (how long, share asleep),
+  and in measure mode the power-management locks held while the screen was off. With the SD
+  card inserted the watch drew the same 25-29 mA screen on or off, as if it no longer slept.
+- Measure mode also lowers the AXP2101 USB input voltage threshold (VINDPM) to 3.88 V and shows
+  the USB voltage. An ammeter in series drops the voltage; under the threshold the AXP limits
+  the USB current and the battery quietly supplies the rest, so readings plateaued near 28 mA
+  (even during a Wi-Fi OTA).
+
+## 0.2.48 — 2026-11-25
+
+- Measure mode: tapping the *Powered* line switches the SD card rail (ALDO1) by hand, to check
+  with a meter whether it really powers the card (a parked card with every rail off still added
+  about 25 mA on Seb's watch). The average-consumption line reads "read the USB meter" while
+  measuring instead of "unplug to measure".
+
+## 0.2.47 — 2026-11-25
+
+- *Energy* screen, new last line: measuring with a USB meter on the cable. A tap stops battery
+  charging and lets the watch sleep while plugged in (normally it never sleeps on USB, to keep
+  the console). The cable then powers the watch alone, so the meter reads its real consumption
+  without waiting for a full battery. Not saved; unplugging the cable or another tap turns
+  charging back on.
+
+## 0.2.46 — 2026-11-25
+
+- *Energy* screen: the SD card part of the *Powered* line also gives how much of the time the
+  card has been powered since boot and how many times it was woken, to check the idle mode.
+
+## 0.2.45 — 2026-11-25
+
+- SD card powered only while it is used. A mounted card sitting idle drew about 40 mA (measured
+  by Seb: without the card, the overnight drain disappears). After 30 s without access the card
+  goes *idle*: the FAT is unmounted and its rail (ALDO1) cut; the next read or write (log and
+  MeshCore archive flush every 10 min, web server, history) powers it and remounts it in a few
+  hundred ms. For the rest of the firmware the card stays mounted.
+- The SD rail no longer follows the LoRa radio. When the radio starts, and after the card goes
+  idle, the radio checks it still answers on the shared SPI bus with the card unpowered; if it
+  does not, the rail stays on until reboot as before. The 30 s radio heartbeat repeats the
+  check and switches the rail back on if the radio goes mute.
+- *Energy* screen: "SD card idle" or "SD card active" after the powered parts.
+
+## 0.2.44 — 2026-11-25
+
+- *Energy* screen laid out again as one scrolling column: every line wraps to its own height,
+  so nothing is cut off or drawn over another line. Everything in the normal text size and in
+  white for easy reading: battery at the top, then the consumption diagnostics (sleep, LoRa,
+  powered parts, Bluetooth, screen, previous discharge, animation).
+
+## 0.2.43 — 2026-11-25
+
+- *Energy* screen scrolls vertically: in 0.2.42 the new LoRa and *Powered* lines ran past
+  the bottom of the screen.
+
+## 0.2.42 — 2026-11-25
+
+- *Energy* screen, power diagnostics for the overnight drain (about 50 mA with the watch
+  asleep 97 % of the time, so something stays powered or transmits):
+  - LoRa line: packets sent and the total transmit time since boot, its share of the time
+    and what it costs on average (the SX1262 draws about 120 mA at 22 dBm), packets
+    received, and whether MeshCore relays other nodes' packets (*repeat*, set from the app).
+  - *Powered* line: the AXP2101 rails that are on (LoRa, SD, NFC, sensor, GNSS, amp), Wi-Fi
+    when its driver runs, touch when double tap is on, and whether the SD card is mounted.
+  - The sleep line shows whole wakeups per minute so it fits on one line.
+- The XL9555 expander pins wired to nothing (P00-P05, P11, P14-P17 on the V1.0 schematic)
+  are driven high instead of left as floating inputs.
+
 ## 0.2.41 — 2026-11-24
 
 - Clock: the time no longer goes back at boot. MeshCore assumes a board without an RTC and,

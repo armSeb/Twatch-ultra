@@ -24,6 +24,11 @@ typedef struct {
     bool  sleep_known;     /* false : mesure indisponible ou trop courte */
     float sleep_pct;
     float wakes_per_min;
+    /* dernière période écran éteint (au moins 20 s) : veille, réveils */
+    bool  last_off_known;
+    uint32_t last_off_s;
+    float last_off_sleep_pct;
+    float last_off_wakes_per_min;
 } power_telemetry_t;
 
 esp_err_t power_init(void);           /* AXP2101, XL9555, vibreur, PM, IRQ, capteur */
@@ -31,6 +36,14 @@ esp_err_t power_init(void);           /* AXP2101, XL9555, vibreur, PM, IRQ, capt
 /* Verrous PM (comptés). « active » = interaction : CPU max + pas de light sleep. */
 void power_hold_active(bool hold);
 void power_hold_nosleep(bool hold);
+/* Mode mesure (testeur USB sur le câble) : charge coupée, veille autorisée
+ * câble branché, pour que le testeur lise la consommation de la montre.
+ * Pas mémorisé ; se coupe au débranchement. */
+void power_set_measure(bool on);
+bool power_measure(void);
+/* mode mesure : verrous PM tenus pendant la dernière période écran éteint
+ * (relevés toutes les 5 s), "" si aucun */
+void power_measure_locks(char *out, size_t n);
 /* plafond CPU (MHz, 80/160/240 ; 0 = défaut) : 160 pendant les apps radio */
 void power_set_cpu_max(int mhz);
 void power_hold_cpu_floor(bool hold);   /* compteur : CPU >= POWER_CPU_FLOOR_MHZ au repos */

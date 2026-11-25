@@ -1,4 +1,5 @@
 #include "power.h"
+#include <stdio.h>
 #include <string.h>
 #include "nvs.h"
 #include "esp_system.h"
@@ -141,6 +142,13 @@ static int     s_pct_start = -1;
 static bool    s_seg_on;
 static int64_t s_seg_us, s_on_us, s_off_us;
 
+/* dernière période écran éteint */
+static int64_t  s_off_t0, s_off_sl0;
+static uint32_t s_off_n0;
+static bool     s_last_off_known;
+static uint32_t s_last_off_s;
+static float    s_last_off_pct, s_last_off_wpm;
+
 static void period_restart(void)
 {
     s_period_start_us = s_seg_us = esp_timer_get_time();
@@ -154,6 +162,17 @@ void power_screen_segment(bool on)
 {
     int64_t now = esp_timer_get_time();
     if (s_seg_on) s_on_us += now - s_seg_us; else s_off_us += now - s_seg_us;
+    if (on && !s_seg_on && s_off_t0 > 0 && now - s_off_t0 >= 20 * 1000000LL) {
+        double d = (double)(now - s_off_t0);
+        s_last_off_s = (uint32_t)(d / 1e6);
+        s_last_off_pct = (float)(100.0 * (s_sleep_us - s_off_sl0) / d);
+        if (s_last_off_pct > 100.0f) s_last_off_pct = 100.0f;
+        s_last_off_wpm = (float)((s_sleep_n - s_off_n0) * 60e6 / d);
+        s_last_off_known = true;
+        ESP_LOGI(TAG, "écran éteint %lu s : veille %.1f %%, %.0f réveils/min", (unsigned long)s_last_off_s,
+                 s_last_off_pct, s_last_off_wpm);
+    }
+    if (!on) { s_off_t0 = now; s_off_sl0 = s_sleep_us; s_off_n0 = s_sleep_n; }
     s_seg_us = now;
     s_seg_on = on;
 }
@@ -236,13 +255,81 @@ bool power_last_discharge(power_hist_t *out)
 /* Câble USB branché : pas de light sleep. La console USB Serial/JTAG se
  * coupe à chaque sommeil (journal haché, port qui disparaît) ; sur
  * chargeur, la consommation n'importe pas. */
-static bool s_usb_hold;
+static bool s_usb_hold, s_measure;
+static char s_locks[96], s_locks_cur[96];
+static TaskHandle_t s_diag_task;
+
+/* verrous PM actifs (esp_pm_dump_locks), « nom » par verrou tenu */
+static void locks_snapshot(char *out, size_t n)
+{
+    out[0] = 0;
+#if CONFIG_PM_ENABLE
+    static char buf[1024];
+    FILE *f = fmemopen(buf, sizeof buf - 1, "w");
+    if (!f) return;
+    esp_pm_dump_locks(f);
+    long len = ftell(f);
+    fclose(f);
+    if (len < 0) return;
+    buf[len < (long)sizeof buf ? len : (long)sizeof buf - 1] = 0;
+    size_t k = 0;
+    for (char *l = buf, *e; l && *l; l = e ? e + 1 : NULL) {
+        e = strchr(l, '\n');
+        if (e) *e = 0;
+        char name[16], type[16];
+        int arg, active;
+        if (sscanf(l, "%15s %15s %d %d", name, type, &arg, &active) == 4 && active > 0 && k + 1 < n) {
+            int w = snprintf(out + k, n - k, "%s%s", k ? " " : "", name);
+            if (w > 0) k += (size_t)w;
+            if (k >= n) { out[n - 1] = 0; break; }
+        }
+    }
+#endif
+}
+
+static void diag_task(void *arg)
+{
+    while (s_measure) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        if (s_seg_on) {                         /* écran allumé : on garde le relevé écran éteint */
+            memcpy(s_locks, s_locks_cur, sizeof s_locks);
+            continue;
+        }
+        locks_snapshot(s_locks_cur, sizeof s_locks_cur);
+    }
+    s_diag_task = NULL;
+    vTaskDelete(NULL);
+}
+
+void power_measure_locks(char *out, size_t n) { snprintf(out, n, "%s", s_locks); }
 static void usb_hold_update(void)
 {
-    if (s_vbus == s_usb_hold) return;
-    s_usb_hold = s_vbus;
-    power_hold_nosleep(s_vbus);
+    if (s_measure && !s_vbus) {                 /* débranché : fin de la mesure, charge rétablie */
+        s_measure = false;
+        axp_charge_enable(true);
+        axp_vindpm_low(false);
+    }
+    bool hold = s_vbus && !s_measure;
+    if (hold == s_usb_hold) return;
+    s_usb_hold = hold;
+    power_hold_nosleep(hold);
 }
+
+void power_set_measure(bool on)
+{
+    if (on && !s_vbus) return;
+    s_measure = on;
+    axp_charge_enable(!on);
+    axp_vindpm_low(on);
+    usb_hold_update();
+    if (on && !s_diag_task) {
+        s_locks[0] = s_locks_cur[0] = 0;
+        xTaskCreatePinnedToCore(diag_task, "pmdiag", 3072, NULL, 1, &s_diag_task, 0);
+    }
+    ESP_LOGI(TAG, "mode mesure %s", on ? "actif : charge coupée, veille permise sur câble" : "arrêté");
+}
+
+bool power_measure(void) { return s_measure; }
 
 uint32_t power_handle_irq(void)
 {
@@ -439,6 +526,10 @@ void power_get_telemetry(power_telemetry_t *t)
     if (!t->vbus && drop >= 2 && t->since_s >= 3600)
         t->avg_ma = drop * (BATTERY_CAPACITY_MAH / 100.0f) / (t->since_s / 3600.0f);
     t->screen_pct = screen_pct_now();
+    t->last_off_known = s_last_off_known;
+    t->last_off_s = s_last_off_s;
+    t->last_off_sleep_pct = s_last_off_pct;
+    t->last_off_wakes_per_min = s_last_off_wpm;
 
     /* le sommeil n'a lieu qu'écran éteint : rapporté au temps écran éteint */
     int64_t now = esp_timer_get_time();

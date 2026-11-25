@@ -456,6 +456,7 @@ static void update_status(void)
     t.app_queue = s_mesh->getOfflineQueueLen();
     t.app_connected = s_link || s_tcp_link;
     t.tcp_connected = s_tcp_link;
+    t.repeat = p->isRepeatEn();
     portENTER_CRITICAL(&s_st_mux);
     s_st = t;
     portEXIT_CRITICAL(&s_st_mux);

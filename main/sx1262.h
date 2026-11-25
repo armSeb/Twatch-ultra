@@ -55,5 +55,6 @@ esp_err_t sx_last_error(void);
 /* compteurs (diagnostic) */
 /* irq : interruptions DIO1 traitées (préambules, en-têtes, paquets), chacune
  * réveille la montre */
-typedef struct { uint32_t rx_ok, rx_crc, tx_ok, tx_fail, irq; } sx_stats_t;
+/* tx_ms : temps d'émission cumulé (la puce tire ~120 mA à 22 dBm) */
+typedef struct { uint32_t rx_ok, rx_crc, tx_ok, tx_fail, irq, tx_ms; } sx_stats_t;
 void      sx_get_stats(sx_stats_t *out);

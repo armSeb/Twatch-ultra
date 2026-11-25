@@ -179,6 +179,24 @@ uint32_t axp_irq_read_and_clear(void)
 
 bool axp_vbus_present(void) { return (rd(REG_STATUS1) >> 5) & 1; }
 bool axp_is_charging(void)  { return (rd(REG_STATUS2) >> 5) == 0x01; }
+void axp_charge_enable(bool on) { upd(REG_MODULE_EN, 0x02, on ? 0x02 : 0x00); }
+
+/* Seuil de tension d'entrée (VINDPM, 0x15 : 3,88 V + 80 mV × n) : sous ce
+ * seuil, l'AXP limite le courant pris sur l'USB et la batterie complète.
+ * Un ampèremètre en série fait chuter la tension : en mesure, seuil au plus
+ * bas, sinon la batterie fournit une partie du courant sans qu'on la voie. */
+void axp_vindpm_low(bool low)
+{
+    static int saved = -1;
+    if (low) {
+        if (saved < 0) saved = rd(0x15) & 0x0F;
+        upd(0x15, 0x0F, 0x00);
+    } else if (saved >= 0) {
+        upd(0x15, 0x0F, (uint8_t)saved);
+        saved = -1;
+    }
+}
+
 bool axp_charge_done(void)  { return (rd(REG_STATUS2) & 0x07) == 4; }
 
 int axp_batt_mv(void)
