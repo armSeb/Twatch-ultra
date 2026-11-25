@@ -125,6 +125,7 @@ typedef struct {
     int      app_queue;           /* messages pas encore récupérés par l'app */
     bool     app_connected;       /* par Bluetooth ou TCP */
     bool     tcp_connected;
+    bool     repeat;              /* relais des paquets des autres (réglage de l'app) */
 } mc_status_t;
 void mc_get_status(mc_status_t *out);
 

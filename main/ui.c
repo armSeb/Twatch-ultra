@@ -115,7 +115,7 @@ static void nav_open(scr_id_t id, lv_screen_load_anim_t anim);
 static void menu_refresh_summaries(void);
 static lv_timer_t *m_toast_t;
 /* énergie */
-static lv_obj_t *p_lbl[9];
+static lv_obj_t *p_lbl[11];
 static lv_timer_t *p_timer;
 static lv_timer_t *mu_timer;
 static void media_refresh(bool full);
@@ -2206,6 +2206,36 @@ static void menu_sync_from_settings(void)
 /* ------------------------------------------------------------------ */
 /* Énergie : télémétrie AXP2101 (jauge interne, pas de mesure de courant) */
 /* ------------------------------------------------------------------ */
+/* Courant du SX1262 en émission selon la puissance (fiche Semtech, PA
+ * haute puissance, régulateur DC-DC) : ordre de grandeur, en mA. */
+static float lora_tx_ma(int dbm)
+{
+    static const struct { int8_t dbm; uint8_t ma; } T[] = { { 10, 30 }, { 14, 45 }, { 17, 90 }, { 20, 102 }, { 22, 118 } };
+    if (dbm <= T[0].dbm) return T[0].ma;
+    for (size_t i = 1; i < sizeof T / sizeof T[0]; i++)
+        if (dbm <= T[i].dbm)
+            return T[i - 1].ma + (float)(T[i].ma - T[i - 1].ma) * (dbm - T[i - 1].dbm) / (T[i].dbm - T[i - 1].dbm);
+    return T[4].ma;
+}
+
+/* Ce qui reste alimenté (rails de l'AXP2101 et périphériques) : l'AXP ne
+ * mesure aucun courant, la liste dit au moins qui peut consommer. */
+static void power_refresh_consumers(char *s, size_t n)
+{
+    static const struct { uint8_t bit; const char *name; } R[] = {
+        { 2, "LoRa" }, { 0, "SD" }, { 7, "NFC" }, { 3, N_("capteur") }, { 4, "GNSS" }, { 5, N_("ampli") },
+    };
+    uint8_t on = axp_reg(0x90);
+    int k = snprintf(s, n, "%s", _("Alimentés :"));
+    for (size_t i = 0; i < sizeof R / sizeof R[0] && k > 0 && k < (int)n; i++)
+        if ((on >> R[i].bit) & 1) k += snprintf(s + k, n - k, " %s", _(R[i].name));
+    wifi_status_t w;
+    wifi_get_status(&w);
+    if (w.state != WIFI_OFF && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " Wi-Fi");
+    if (settings_get()->tap_wake && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " %s", _("tactile"));
+    if (sd_mounted() && k > 0 && k < (int)n) snprintf(s + k, n - k, " · %s", _("carte SD montée"));
+}
+
 static void power_refresh(void)
 {
     power_telemetry_t t;
@@ -2255,16 +2285,28 @@ static void power_refresh(void)
 
     /* écran éteint : part du temps en light sleep, réveils, interruptions LoRa */
     if (t.sleep_known) {
-        int n = snprintf(s, sizeof(s), _("Veille %.0f %% · %.1f réveils/min"), t.sleep_pct, t.wakes_per_min);
-        if (sx_running() && n > 0 && n < (int)sizeof(s)) {
-            sx_stats_t x;
-            sx_get_stats(&x);
-            snprintf(s + n, sizeof(s) - n, " · LoRa %lu", (unsigned long)x.irq);
-        }
+        snprintf(s, sizeof(s), _("Veille %.0f %% · %.0f réveils/min"), t.sleep_pct, t.wakes_per_min);
     } else {
         snprintf(s, sizeof(s), _("Veille : mesure en cours…"));
     }
     lv_label_set_text(p_lbl[6], s);
+
+    /* LoRa : temps d'émission depuis le démarrage, et ce qu'il coûte en
+     * moyenne ; relais = la montre réémet les paquets des autres */
+    if (sx_running()) {
+        sx_stats_t x;
+        sx_get_stats(&x);
+        mc_status_t m;
+        mc_get_status(&m);
+        double up_ms = esp_timer_get_time() / 1000.0;
+        float duty = up_ms > 0 ? (float)(100.0 * x.tx_ms / up_ms) : 0;
+        snprintf(s, sizeof(s), _("LoRa : %lu émis, %lu s (%.1f %%, ~%.1f mA) · %lu reçus · relais %s"),
+                 (unsigned long)x.tx_ok, (unsigned long)(x.tx_ms / 1000), duty,
+                 duty / 100.0f * lora_tx_ma(m.tx_dbm), (unsigned long)x.rx_ok, m.repeat ? _("oui") : _("non"));
+    } else {
+        snprintf(s, sizeof(s), "%s", _("LoRa : radio coupée"));
+    }
+    lv_label_set_text(p_lbl[9], s);
 
     /* décharge précédente */
     power_hist_t h;
@@ -2284,6 +2326,9 @@ static void power_refresh(void)
                          dp.avg_us / 1000.0f, dp.max_us / 1000.0f);
     else snprintf(s, sizeof(s), "%s", _("Animation : pas encore mesurée"));
     lv_label_set_text(p_lbl[8], s);
+
+    power_refresh_consumers(s, sizeof s);
+    lv_label_set_text(p_lbl[10], s);
 }
 
 static void power_timer_cb(lv_timer_t *t) { power_refresh(); }
@@ -2367,6 +2412,13 @@ static void build_power(void)
     lv_obj_set_style_text_align(p_lbl[8], LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(p_lbl[8], LV_LABEL_LONG_DOT);
     lv_obj_align_to(p_lbl[8], p_lbl[7], LV_ALIGN_OUT_BOTTOM_MID, 0, S(2));
+    /* diagnostic de consommation : LoRa, puis ce qui reste alimenté */
+    for (int i = 9; i < 11; i++) {
+        p_lbl[i] = mk_label(s, &font_small, C_DIM, "");
+        lv_label_set_long_mode(p_lbl[i], LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(p_lbl[i], UI_W - S(24));
+        lv_obj_align_to(p_lbl[i], p_lbl[i - 1], LV_ALIGN_OUT_BOTTOM_LEFT, i == 9 ? -S(18) : 0, S(4));
+    }
     lv_obj_add_flag(p_lbl[8], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(p_lbl[8], S(10));
     lv_obj_add_event_cb(p_lbl[8], bench_cb, LV_EVENT_CLICKED, NULL);

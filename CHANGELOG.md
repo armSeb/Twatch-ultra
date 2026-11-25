@@ -2,6 +2,19 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.42 — 2026-11-25
+
+- *Energy* screen, power diagnostics for the overnight drain (about 50 mA with the watch
+  asleep 97 % of the time, so something stays powered or transmits):
+  - LoRa line: packets sent and the total transmit time since boot, its share of the time
+    and what it costs on average (the SX1262 draws about 120 mA at 22 dBm), packets
+    received, and whether MeshCore relays other nodes' packets (*repeat*, set from the app).
+  - *Powered* line: the AXP2101 rails that are on (LoRa, SD, NFC, sensor, GNSS, amp), Wi-Fi
+    when its driver runs, touch when double tap is on, and whether the SD card is mounted.
+  - The sleep line shows whole wakeups per minute so it fits on one line.
+- The XL9555 expander pins wired to nothing (P00-P05, P11, P14-P17 on the V1.0 schematic)
+  are driven high instead of left as floating inputs.
+
 ## 0.2.41 — 2026-11-24
 
 - Clock: the time no longer goes back at boot. MeshCore assumes a board without an RTC and,

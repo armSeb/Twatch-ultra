@@ -313,6 +313,7 @@ static bool transmit(const txreq_t *r)
     }
     irq_clear(0xFFFF);
     gpio_intr_enable(BOARD_LORA_IRQ);
+    s_stats.tx_ms += (uint32_t)((esp_timer_get_time() - t0) / 1000);
     if (ok) {
         s_stats.tx_ok++;
         ESP_LOGI(TAG, "émis %u o en %d ms (prévu %u)", r->len, (int)((esp_timer_get_time() - t0) / 1000), (unsigned)air);
