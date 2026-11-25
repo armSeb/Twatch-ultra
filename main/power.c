@@ -236,13 +236,29 @@ bool power_last_discharge(power_hist_t *out)
 /* Câble USB branché : pas de light sleep. La console USB Serial/JTAG se
  * coupe à chaque sommeil (journal haché, port qui disparaît) ; sur
  * chargeur, la consommation n'importe pas. */
-static bool s_usb_hold;
+static bool s_usb_hold, s_measure;
 static void usb_hold_update(void)
 {
-    if (s_vbus == s_usb_hold) return;
-    s_usb_hold = s_vbus;
-    power_hold_nosleep(s_vbus);
+    if (s_measure && !s_vbus) {                 /* débranché : fin de la mesure, charge rétablie */
+        s_measure = false;
+        axp_charge_enable(true);
+    }
+    bool hold = s_vbus && !s_measure;
+    if (hold == s_usb_hold) return;
+    s_usb_hold = hold;
+    power_hold_nosleep(hold);
 }
+
+void power_set_measure(bool on)
+{
+    if (on && !s_vbus) return;
+    s_measure = on;
+    axp_charge_enable(!on);
+    usb_hold_update();
+    ESP_LOGI(TAG, "mode mesure %s", on ? "actif : charge coupée, veille permise sur câble" : "arrêté");
+}
+
+bool power_measure(void) { return s_measure; }
 
 uint32_t power_handle_irq(void)
 {

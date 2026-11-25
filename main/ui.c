@@ -115,7 +115,7 @@ static void nav_open(scr_id_t id, lv_screen_load_anim_t anim);
 static void menu_refresh_summaries(void);
 static lv_timer_t *m_toast_t;
 /* énergie */
-static lv_obj_t *p_lbl[11];
+static lv_obj_t *p_lbl[12];
 static lv_timer_t *p_timer;
 static lv_timer_t *mu_timer;
 static void media_refresh(bool full);
@@ -2257,7 +2257,8 @@ static void power_refresh(void)
     lv_label_set_text(p_lbl[0], s);
 
     if (t.vbus) {
-        if (t.charge_done) snprintf(s, sizeof(s), _("Secteur · charge terminée"));
+        if (power_measure()) snprintf(s, sizeof(s), "%s", _("Secteur · charge coupée pour la mesure"));
+        else if (t.charge_done) snprintf(s, sizeof(s), _("Secteur · charge terminée"));
         else if (t.charging) snprintf(s, sizeof(s), _("En charge · USB %.2f V"), t.vbus_mv / 1000.0f);
         else snprintf(s, sizeof(s), _("Secteur · pas de charge"));
     } else {
@@ -2337,6 +2338,17 @@ static void power_refresh(void)
 
     power_refresh_consumers(s, sizeof s);
     lv_label_set_text(p_lbl[10], s);
+
+    if (!t.vbus) snprintf(s, sizeof s, "%s", _("Mesure au testeur USB : brancher le câble"));
+    else snprintf(s, sizeof s, "%s", power_measure() ? _("Mesure en cours : charge coupée, veille permise. Toucher pour arrêter")
+                                                    : _("Mesure au testeur USB : toucher pour couper la charge"));
+    lv_label_set_text(p_lbl[11], s);
+}
+
+static void measure_cb(lv_event_t *e)
+{
+    power_set_measure(!power_measure());
+    power_refresh();
 }
 
 static void power_timer_cb(lv_timer_t *t) { power_refresh(); }
@@ -2426,17 +2438,22 @@ static void build_power(void)
         0, 1, 2, 3,          /* batterie, état, période, moyenne */
         6, 9, 10,            /* veille, LoRa, alimentés */
         4, 5, 7, 8,          /* BLE, écran, décharge précédente, animation */
+        11,                  /* mode mesure (testeur USB) */
     };
     for (size_t r = 0; r < sizeof ROWS; r++) {
         int i = ROWS[r];
         p_lbl[i] = mk_label(s, &font_text, i == 3 ? C_ACC : C_FG, "");
         lv_label_set_long_mode(p_lbl[i], LV_LABEL_LONG_WRAP);
         lv_obj_set_width(p_lbl[i], LV_PCT(100));
-        if (i == 6) lv_obj_set_style_margin_top(p_lbl[i], S(10), 0);   /* sépare le diagnostic */
+        if (i == 6 || i == 11) lv_obj_set_style_margin_top(p_lbl[i], S(10), 0);   /* sépare les blocs */
     }
     lv_obj_add_flag(p_lbl[8], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(p_lbl[8], S(10));
     lv_obj_add_event_cb(p_lbl[8], bench_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_text_color(p_lbl[11], C_ACC, 0);
+    lv_obj_add_flag(p_lbl[11], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(p_lbl[11], S(10));
+    lv_obj_add_event_cb(p_lbl[11], measure_cb, LV_EVENT_CLICKED, NULL);
     p_timer = lv_timer_create(power_timer_cb, 1000, NULL);
     lv_timer_pause(p_timer);
 }

@@ -44,6 +44,7 @@ uint32_t  axp_irq_read_and_clear(void);
 bool      axp_vbus_present(void);
 bool      axp_is_charging(void);
 bool      axp_charge_done(void);
+void      axp_charge_enable(bool on);     /* coupée : le câble alimente la montre, batterie au repos */
 int       axp_batt_mv(void);              /* 0 si batterie absente */
 int       axp_vbus_mv(void);
 int       axp_vsys_mv(void);

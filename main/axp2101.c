@@ -179,6 +179,8 @@ uint32_t axp_irq_read_and_clear(void)
 
 bool axp_vbus_present(void) { return (rd(REG_STATUS1) >> 5) & 1; }
 bool axp_is_charging(void)  { return (rd(REG_STATUS2) >> 5) == 0x01; }
+void axp_charge_enable(bool on) { upd(REG_MODULE_EN, 0x02, on ? 0x02 : 0x00); }
+
 bool axp_charge_done(void)  { return (rd(REG_STATUS2) & 0x07) == 4; }
 
 int axp_batt_mv(void)

@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.47 — 2026-11-25
+
+- *Energy* screen, new last line: measuring with a USB meter on the cable. A tap stops battery
+  charging and lets the watch sleep while plugged in (normally it never sleeps on USB, to keep
+  the console). The cable then powers the watch alone, so the meter reads its real consumption
+  without waiting for a full battery. Not saved; unplugging the cable or another tap turns
+  charging back on.
+
 ## 0.2.46 — 2026-11-25
 
 - *Energy* screen: the SD card part of the *Powered* line also gives how much of the time the
