@@ -2300,8 +2300,8 @@ static void power_refresh(void)
         mc_get_status(&m);
         double up_ms = esp_timer_get_time() / 1000.0;
         float duty = up_ms > 0 ? (float)(100.0 * x.tx_ms / up_ms) : 0;
-        snprintf(s, sizeof(s), _("LoRa : %lu émis, %lu s (%.1f %%, ~%.1f mA) · %lu reçus · relais %s"),
-                 (unsigned long)x.tx_ok, (unsigned long)(x.tx_ms / 1000), duty,
+        snprintf(s, sizeof(s), _("LoRa : %lu émis (%lu s, ~%.1f mA) · %lu reçus · relais %s"),
+                 (unsigned long)x.tx_ok, (unsigned long)(x.tx_ms / 1000),
                  duty / 100.0f * lora_tx_ma(m.tx_dbm), (unsigned long)x.rx_ok, m.repeat ? _("oui") : _("non"));
     } else {
         snprintf(s, sizeof(s), "%s", _("LoRa : radio coupée"));
@@ -2396,31 +2396,35 @@ static void bench_cb(lv_event_t *e)
 
 static void build_power(void)
 {
+    /* Colonne qui défile : chaque ligne prend la hauteur de son texte (retour
+     * à la ligne, rien de coupé ni de superposé). En haut la batterie, en
+     * dessous le diagnostic de consommation. */
     lv_obj_t *s = s_scr[SCR_POWER] = mk_screen();
-    lv_obj_add_flag(s, LV_OBJ_FLAG_SCROLLABLE);       /* diagnostic de consommation en dessous */
+    lv_obj_add_flag(s, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(s, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s, LV_SCROLLBAR_MODE_ACTIVE);
-    lv_obj_t *h = mk_label(s, &font_title, C_FG, with_sym(LV_SYMBOL_CHARGE, _("Énergie")));
-    lv_obj_align(h, LV_ALIGN_TOP_LEFT, S(12), S(10));
-    for (int i = 0; i < 8; i++) {
-        p_lbl[i] = mk_label(s, i == 7 ? &font_small : &font_text, i == 3 ? C_ACC : (i == 7 ? C_DIM : C_FG), "");
-        lv_label_set_long_mode(p_lbl[i], LV_LABEL_LONG_DOT);
-        lv_obj_set_size(p_lbl[i], UI_W - S(24), lv_font_get_line_height(&font_text));
-        lv_obj_set_pos(p_lbl[i], S(12), S(42) + i * S(27));
-    }
-    lv_label_set_long_mode(p_lbl[7], LV_LABEL_LONG_WRAP);        /* 2 lignes en petit */
-    lv_obj_set_height(p_lbl[7], 2 * lv_font_get_line_height(&font_small));
-    p_lbl[8] = mk_label(s, &font_small, C_DIM, "");
-    lv_obj_set_width(p_lbl[8], UI_W - S(60));
-    lv_obj_set_style_text_align(p_lbl[8], LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(p_lbl[8], LV_LABEL_LONG_DOT);
-    lv_obj_align_to(p_lbl[8], p_lbl[7], LV_ALIGN_OUT_BOTTOM_MID, 0, S(2));
-    /* diagnostic de consommation : LoRa, puis ce qui reste alimenté */
-    for (int i = 9; i < 11; i++) {
-        p_lbl[i] = mk_label(s, &font_small, C_DIM, "");
+    lv_obj_set_flex_flow(s, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(s, S(8), 0);
+    lv_obj_set_style_pad_left(s, UI_PAD_X + S(12), 0);
+    lv_obj_set_style_pad_right(s, UI_PAD_X + S(12), 0);
+    lv_obj_set_style_pad_top(s, UI_PAD_Y + S(10), 0);
+    lv_obj_set_style_pad_bottom(s, UI_PAD_Y + S(16), 0);
+
+    mk_label(s, &font_title, C_FG, with_sym(LV_SYMBOL_CHARGE, _("Énergie")));
+
+    /* ordre d'affichage (les index restent ceux de power_refresh). Tout en
+     * police normale et en blanc : lisible d'un coup d'œil, l'écran défile. */
+    static const uint8_t ROWS[] = {
+        0, 1, 2, 3,          /* batterie, état, période, moyenne */
+        6, 9, 10,            /* veille, LoRa, alimentés */
+        4, 5, 7, 8,          /* BLE, écran, décharge précédente, animation */
+    };
+    for (size_t r = 0; r < sizeof ROWS; r++) {
+        int i = ROWS[r];
+        p_lbl[i] = mk_label(s, &font_text, i == 3 ? C_ACC : C_FG, "");
         lv_label_set_long_mode(p_lbl[i], LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(p_lbl[i], UI_W - S(24));
-        lv_obj_align_to(p_lbl[i], p_lbl[i - 1], LV_ALIGN_OUT_BOTTOM_LEFT, i == 9 ? -S(18) : 0, S(4));
+        lv_obj_set_width(p_lbl[i], LV_PCT(100));
+        if (i == 6) lv_obj_set_style_margin_top(p_lbl[i], S(10), 0);   /* sépare le diagnostic */
     }
     lv_obj_add_flag(p_lbl[8], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(p_lbl[8], S(10));

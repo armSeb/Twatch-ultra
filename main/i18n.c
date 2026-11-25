@@ -17,7 +17,7 @@ static const tr_t EN[] = {
     { "Moy. ~%.1f mA, reste ~%.0f h", "Avg ~%.1f mA, ~%.0f h left" },
     { "Écran %.0f %% du temps · PMU %.0f °C", "Screen %.0f %% of the time · PMU %.0f °C" },
     { "Veille %.0f %% · %.0f réveils/min", "Asleep %.0f %% · %.0f wakeups/min" },
-    { "LoRa : %lu émis, %lu s (%.1f %%, ~%.1f mA) · %lu reçus · relais %s", "LoRa: %lu sent, %lu s (%.1f %%, ~%.1f mA) · %lu received · relay %s" },
+    { "LoRa : %lu émis (%lu s, ~%.1f mA) · %lu reçus · relais %s", "LoRa: %lu sent (%lu s, ~%.1f mA) · %lu received · relay %s" },
     { "LoRa : radio coupée", "LoRa: radio off" },
     { "Alimentés :", "Powered:" },
     { "capteur", "sensor" },
