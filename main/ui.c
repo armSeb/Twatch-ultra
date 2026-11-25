@@ -2233,8 +2233,15 @@ static void power_refresh_consumers(char *s, size_t n)
     wifi_get_status(&w);
     if (w.state != WIFI_OFF && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " Wi-Fi");
     if (settings_get()->tap_wake && k > 0 && k < (int)n) k += snprintf(s + k, n - k, " %s", _("tactile"));
-    if (sd_mounted() && k > 0 && k < (int)n)
-        snprintf(s + k, n - k, " · %s", sd_parked() ? _("carte SD au repos") : _("carte SD active"));
+    if (sd_mounted() && k > 0 && k < (int)n) {
+        uint32_t wk, on_s;
+        sd_power_stats(&wk, &on_s);
+        uint32_t up = (uint32_t)(esp_timer_get_time() / 1000000);
+        k += snprintf(s + k, n - k, " · %s", sd_parked() ? _("carte SD au repos") : _("carte SD active"));
+        if (k > 0 && k < (int)n)
+            snprintf(s + k, n - k, _(", allumée %lu %% du temps, %lu réveils"),
+                     (unsigned long)(up ? on_s * 100 / up : 0), (unsigned long)wk);
+    }
 }
 
 static void power_refresh(void)
@@ -2243,7 +2250,7 @@ static void power_refresh(void)
     power_get_telemetry(&t);
     ble_info_t b;
     ble_get_info(&b);
-    char s[112];
+    char s[192];
     unsigned long hh = t.since_s / 3600, mm = (t.since_s / 60) % 60;
 
     snprintf(s, sizeof(s), _("Batterie  %d %%  ·  %.3f V"), t.percent, t.vbat_mv / 1000.0f);

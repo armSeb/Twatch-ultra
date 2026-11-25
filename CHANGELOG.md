@@ -2,6 +2,11 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.46 — 2026-11-25
+
+- *Energy* screen: the SD card part of the *Powered* line also gives how much of the time the
+  card has been powered since boot and how many times it was woken, to check the idle mode.
+
 ## 0.2.45 — 2026-11-25
 
 - SD card powered only while it is used. A mounted card sitting idle drew about 40 mA (measured

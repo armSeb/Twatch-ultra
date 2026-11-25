@@ -52,6 +52,7 @@ bool       sd_share_host_seen(void);    /* le PC a reconnu le disque */
  * hors tension (l'état reste SD_MOUNTED). sd_lock() la rallume (jusqu'à
  * quelques centaines de ms, 3 s au plus hors de la tâche sd). */
 bool sd_parked(void);
+void sd_power_stats(uint32_t *wakes, uint32_t *on_s);   /* depuis le démarrage */
 bool sd_lock(void);             /* false : pas de carte montée (rien n'est pris) */
 void sd_unlock(void);
 

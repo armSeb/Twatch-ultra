@@ -25,6 +25,7 @@ static const tr_t EN[] = {
     { "tactile", "touch" },
     { "carte SD au repos", "SD card idle (off)" },
     { "carte SD active", "SD card active" },
+    { ", allumée %lu %% du temps, %lu réveils", ", powered %lu %% of the time, %lu wakeups" },
     { "Veille : mesure en cours…", "Sleep: measuring…" },
     { "Préc. %u %% → %u %% en %luh%02lu, %s", "Prev. %u %% → %u %% in %luh%02lu, %s" },
     { "Pas encore de décharge enregistrée", "No discharge recorded yet" },

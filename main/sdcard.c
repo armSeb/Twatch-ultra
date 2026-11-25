@@ -54,6 +54,8 @@ static volatile uint32_t s_flushes;      /* vidages faits (sd_flush_wait) */
  * de mA). sd_lock() la réveille. Modifié sous s_mx. */
 static volatile bool s_parked;
 static volatile int64_t s_last_use;
+static int64_t s_on_since = -1, s_on_us;  /* carte alimentée : depuis, cumul */
+static uint32_t s_wakes;
 
 static void set_state(sd_state_t st)
 {
@@ -106,6 +108,7 @@ static void host_cfg(sdmmc_host_t *host, sdspi_device_config_t *slot)
 /* rails SD et NFC, CS hauts, bus SPI : pris tant que la carte est ouverte */
 static bool bus_get(void)
 {
+    if (s_on_since < 0) s_on_since = esp_timer_get_time();
     spi_peers_get();
     spi_sd_get();
     if (spi_shared_get() != ESP_OK) {
@@ -118,6 +121,7 @@ static bool bus_get(void)
 
 static void bus_put(void)
 {
+    if (s_on_since >= 0) { s_on_us += esp_timer_get_time() - s_on_since; s_on_since = -1; }
     spi_peers_hold_cs(BOARD_SD_CS);          /* le pilote a rendu la broche : CS haut */
     spi_shared_put();
     spi_sd_put();                            /* rail SD coupé si la radio s'en passe */
@@ -215,6 +219,7 @@ static bool unpark_locked(void)
                 s_card = card;
                 s_parked = false;
                 s_last_use = esp_timer_get_time();
+                s_wakes++;
                 return true;
             }
             ESP_LOGW(TAG, "réveil : %s", esp_err_to_name(e));
@@ -499,6 +504,14 @@ void sd_flush_wait(int ms)
     uint32_t n = s_flushes;
     request(REQ_FLUSH);
     for (int t = 0; t < ms && s_flushes == n && s_state == SD_MOUNTED; t += 20) vTaskDelay(pdMS_TO_TICKS(20));
+}
+
+void sd_power_stats(uint32_t *wakes, uint32_t *on_s)
+{
+    int64_t on = s_on_us, since = s_on_since;
+    if (since >= 0) on += esp_timer_get_time() - since;
+    *wakes = s_wakes;
+    *on_s = (uint32_t)(on / 1000000);
 }
 
 bool sd_parked(void) { return s_state == SD_MOUNTED && s_parked; }
