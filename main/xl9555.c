@@ -31,6 +31,14 @@ esp_err_t xl9555_init(void)
     const uint16_t unused = 0x003F | (1u << 9) | 0xF000;
     s_out |= unused;
     s_cfg &= (uint16_t)~unused;
+    /* SD_DET : toujours en entrée. Le XL9555 garde sa configuration tant
+     * que la batterie l'alimente (un firmware précédent a pu en faire une
+     * sortie) : en sortie haute, le contact de détection, qui met la ligne
+     * à la masse quand une carte est insérée, la court-circuite (~40 mA
+     * mesurés, carte aux contacts isolés). */
+    if (!(s_cfg & (1u << XIO_SD_DET)))
+        ESP_LOGW("xl9555", "SD_DET était configurée en sortie : remise en entrée");
+    s_cfg |= 1u << XIO_SD_DET;
     if (write16(REG_OUT0, s_out) == ESP_OK) write16(REG_CFG0, s_cfg);
     return ESP_OK;
 }

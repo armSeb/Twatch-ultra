@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.50 — 2026-11-25
+
+- XL9555: the SD card detect line (P12) is forced to input at boot. The expander keeps its
+  configuration as long as the battery powers it, so an earlier firmware may have left it as
+  an output; driven high, the card-detect switch shorts it to ground when a card is in. Seb
+  measured 41 mA more with any card inserted, even one with taped-over contacts.
+
 ## 0.2.49 — 2026-11-25
 
 - *Energy* screen, sleep line: also the last screen-off spell alone (how long, share asleep),
