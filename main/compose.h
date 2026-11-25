@@ -31,11 +31,13 @@ enum { KB_LAYOUT_AZERTY = 0, KB_LAYOUT_QWERTY = 1 };
  * l'appelant de prévenir) */
 typedef bool (*compose_send_cb_t)(const char *utf8, void *ud);
 
+#define COMPOSE_NO_CAPS 0x01       /* pas de majuscule automatique (noms, identifiants) */
+
 /* scr : écran de l'app ; draft_id : brouillon gardé tant que la montre
  * tourne, retrouvé si on revient écrire au même endroit ; max_bytes :
- * longueur maximale du texte en octets UTF-8 */
+ * longueur maximale du texte en octets UTF-8 ; flags : COMPOSE_* */
 void compose_open(lv_obj_t *scr, const char *title, uint32_t draft_id, int max_bytes,
-                  compose_send_cb_t cb, void *ud);
+                  unsigned flags, compose_send_cb_t cb, void *ud);
 bool compose_is_open(void);
 void compose_close(bool anim);
 bool compose_on_back(void);          /* bouton retour : ferme d'abord le panneau ouvert */

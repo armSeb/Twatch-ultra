@@ -90,6 +90,25 @@ resends it.
 The iPhone app does not see messages written on the watch: the companion protocol has no
 frame for that. They stay in the watch history and on the SD card (with their state).
 
+### Regions
+
+A region (*scope*) limits a message's flood to the repeaters that know it. The node only
+keeps its **default** region; the iPhone app's region list and per-channel choice stay in
+the app. So the watch has its own:
+
+![Region list, channel region in the header, region picker](../img/meshcore-regions.png)
+
+- **Radio tab › Regions**: the list. **Add a region** opens the keyboard (no automatic
+  capital; type the name without #, e.g. "bzh"). The bin removes it.
+- **Discover** asks directly reachable repeaters among the contacts (known path, or 0-hop
+  neighbours; at most 12, one every 1.5 s) for their regions. Names received join the list.
+  A repeater only answers direct requests and rate-limits them.
+- In a **channel**, the button at the top right shows the region of its sends (*Region*:
+  the node's default). Tap it to pick one, or add one.
+
+A region's key is computed as on repeaters (SHA-256 of "#name"). Private regions ($) are not
+handled. Direct messages keep the default region.
+
 ### Read and unread
 
 - Opening a conversation on the watch marks it **read**.

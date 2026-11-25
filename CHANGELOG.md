@@ -2,6 +2,21 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.54 — 2026-11-25
+
+MeshCore regions on the watch (the node only stores its default scope; the iPhone app keeps
+its region list and per-channel choice to itself):
+- Region list in Radio › Regions (`main/meshcore/mc_region.c`, NVS `mcreg`): add with the
+  keyboard (new `COMPOSE_NO_CAPS` flag), remove, **Discover**: anonymous `REGIONS` request
+  (0x01) to each repeater contact reachable directly (known path with the reversed path as
+  reply path, else 0-hop), up to 12, one every 1.5 s; names in the replies join the list.
+- Per-channel region: chip at the top right of a channel conversation, picker with *Node
+  default* and the list. Watch channel sends use that region's key (SHA-256 of `#name`, first
+  16 bytes, like `RegionMap`).
+- MeshCore patches: `Listener::onWatchResponse` (responses to the watch's own request tags are
+  not passed to the app), `twatchScopeBegin(key)`.
+- Conversation titles stay on one line.
+
 ## 0.2.53 — 2026-11-25
 
 - T9: a letter key acts as soon as the finger touches it, and only that key is redrawn (the

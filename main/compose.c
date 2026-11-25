@@ -244,8 +244,11 @@ static void refresh_text(void)
 static void kb_invalidate(void) { if (o_kb) lv_obj_invalidate(o_kb); }
 
 /* majuscule automatique : début du message, après « . », « ! » ou « ? » */
+static bool s_no_caps;
+
 static void auto_shift(void)
 {
+    if (s_no_caps) return;
     if (s_shift == 2 || (s_page != PG_ALPHA && s_page != PG_T9)) return;
     int i = s_len;
     while (i > 0 && s_txt[i - 1] == ' ') i--;
@@ -888,8 +891,9 @@ void compose_forget(void)
 }
 
 void compose_open(lv_obj_t *scr, const char *title, uint32_t draft_id, int max_bytes,
-                  compose_send_cb_t cb, void *ud)
+                  unsigned flags, compose_send_cb_t cb, void *ud)
 {
+    s_no_caps = flags & COMPOSE_NO_CAPS;
     if (o_root) compose_close(false);
     s_cb = cb;
     s_ud = ud;
