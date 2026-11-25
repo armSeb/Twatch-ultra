@@ -42,14 +42,16 @@ void mc_region_set(const uint8_t peer[MC_PEER_LEN], const char *name);   /* NULL
 bool mc_region_key_of(const uint8_t peer[MC_PEER_LEN], uint8_t key[16]);
 
 /* découverte (mc_port.cpp) : requête « régions » aux répéteurs joignables
- * directement (chemin connu, ou voisins à 0 saut) ; les noms reçus entrent
- * dans la liste */
+ * en direct (chemin connu du contact, ou chemin de sa dernière annonce
+ * entendue) ; les noms reçus entrent dans la liste */
 typedef struct {
     bool    running;
     bool    ran;                   /* lancée au moins une fois */
     uint8_t asked, replied;        /* répéteurs interrogés, réponses */
     uint8_t found;                 /* régions nouvelles dans la liste */
-    uint8_t candidates;            /* répéteurs connus (0 : aucun à interroger) */
+    uint8_t candidates;            /* répéteurs dans les contacts */
+    uint8_t reachable;             /* dont joignables en direct (interrogés, 12 au plus) */
+    char    names[96];             /* régions reçues, « a, b, c » */
 } mc_region_disc_t;
 bool mc_region_discover(void);     /* false : MeshCore coupé, ou déjà en cours */
 void mc_region_disc_status(mc_region_disc_t *out);

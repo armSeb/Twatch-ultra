@@ -100,9 +100,10 @@ the app. So the watch has its own:
 
 - **Radio tab › Regions**: the list. **Add a region** opens the keyboard (no automatic
   capital; type the name without #, e.g. "bzh"). The bin removes it.
-- **Discover** asks directly reachable repeaters among the contacts (known path, or 0-hop
-  neighbours; at most 12, one every 1.5 s) for their regions. Names received join the list.
-  A repeater only answers direct requests and rate-limits them.
+- **Discover** asks repeaters among the contacts that are reachable directly for their
+  regions: known path (after an exchange with it), or the path of its last advert heard since
+  the watch started. At most 12, one every 1.5 s. Names received join the list and are shown
+  under the button. A repeater only answers direct requests and rate-limits them.
 - In a **channel**, the button at the top right shows the region of its sends (*Region*:
   the node's default). Tap it to pick one, or add one.
 

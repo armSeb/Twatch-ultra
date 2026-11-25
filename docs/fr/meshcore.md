@@ -106,9 +106,11 @@ l'app iPhone restent dans l'app. La montre a donc les siens :
 
 - **Onglet Radio › Régions** : la liste. **Ajouter une région** ouvre le clavier (sans
   majuscule automatique ; le nom s'écrit sans #, comme « bzh »). La corbeille la retire.
-- **Découvrir** demande leurs régions aux répéteurs des contacts joignables en direct
-  (chemin connu, ou voisins à 0 saut ; 12 au plus, un toutes les 1,5 s). Les noms reçus
-  entrent dans la liste. Un répéteur ne répond qu'en direct et limite ces requêtes.
+- **Découvrir** demande leurs régions aux répéteurs des contacts joignables en direct : chemin
+  connu (après un échange avec lui), ou chemin de sa dernière annonce entendue depuis le
+  démarrage de la montre. 12 au plus, un toutes les 1,5 s. Les noms reçus entrent dans la
+  liste et s'affichent sous le bouton. Un répéteur ne répond qu'en direct et limite ces
+  requêtes.
 - Dans un **canal**, le bouton en haut à droite montre la région de ses envois
   (*Région* : celle par défaut du nœud). Le toucher pour la choisir, ou en ajouter une.
 

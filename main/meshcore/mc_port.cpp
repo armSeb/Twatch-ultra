@@ -612,10 +612,14 @@ typedef struct {
 static QueueHandle_t s_cmdq;
 
 /* ================================================================== découverte des régions */
-/* Requête anonyme « régions » (ANON_REQ_TYPE_REGIONS) à chaque répéteur
- * joignable en direct : le répéteur ne répond qu'à une requête routée en
- * direct, avec le chemin retour qu'on lui donne. Chemin connu : celui-là
- * (retour = le même à l'envers) ; sinon à 0 saut (voisins seulement).
+/* Requête anonyme « régions » (ANON_REQ_TYPE_REGIONS) aux répéteurs
+ * joignables en direct : un répéteur ne répond qu'à une requête routée en
+ * direct, par le chemin retour qu'on lui donne. Chemin vers le répéteur :
+ *   - celui du contact (appris par un échange), retour = le même à l'envers ;
+ *   - sinon celui de sa dernière annonce entendue depuis le démarrage
+ *     (advert_paths : origine → nous), aller = à l'envers, retour = tel quel ;
+ *   - sinon : injoignable, pas interrogé (une requête à 0 saut ne touche que
+ *     les voisins : c'était l'erreur de la 0.2.54).
  * Une requête toutes les DISC_GAP_MS, réponses attendues DISC_WAIT_MS après
  * la dernière. Tâche mesh seule, sauf l'état (s_st_mux). */
 #define DISC_MAX      12
@@ -623,14 +627,33 @@ static QueueHandle_t s_cmdq;
 #define DISC_WAIT_MS  15000
 #define ANON_REQ_REGIONS 0x01
 
-static struct {
+typedef struct {
+    uint8_t  pub[PUB_KEY_SIZE];
+    uint8_t  out_len, ret_len;          /* encodage path_len (taille d'empreinte, sauts) */
+    uint8_t  out[MAX_PATH_SIZE], ret[MAX_PATH_SIZE];
+    uint32_t tag;
+} disc_t;
+
+EXT_RAM_BSS_ATTR static struct {
     bool     running;
     uint8_t  n, next;
-    uint8_t  pub[DISC_MAX][PUB_KEY_SIZE];
-    uint32_t tags[DISC_MAX];
+    disc_t   t[DISC_MAX];
     int64_t  at_us;                     /* prochaine requête, ou fin */
 } s_disc;
-static mc_region_disc_t s_disc_st;
+EXT_RAM_BSS_ATTR static mc_region_disc_t s_disc_st;
+
+/* chemin à l'envers (empreintes de 1 à 3 octets) */
+static void path_reverse(uint8_t *dst, const uint8_t *src, uint8_t path_len)
+{
+    uint8_t sz = (path_len >> 6) + 1, hops = path_len & 63;
+    for (int h = 0; h < hops; h++) memcpy(&dst[h * sz], &src[(hops - 1 - h) * sz], sz);
+}
+
+static bool path_ok(uint8_t path_len)
+{
+    return path_len != OUT_PATH_UNKNOWN && mesh::Packet::isValidPathLen(path_len) &&
+           (path_len & 63) * ((path_len >> 6) + 1) <= MAX_PATH_SIZE;
+}
 
 static void disc_status(void)
 {
@@ -643,60 +666,78 @@ static void disc_start(void)
 {
     if (s_disc.running) return;
     static ContactInfo c;
-    /* chemin connu d'abord, puis les plus récemment entendus */
-    struct cand_t { uint32_t idx, when; bool path; };
+    EXT_RAM_BSS_ATTR static AdvertPath heard[ADVERT_PATH_TABLE_SIZE];
+    int nh = s_mesh->getRecentlyHeard(heard, ADVERT_PATH_TABLE_SIZE);
+    /* chemin connu d'abord, le plus court, puis annonces entendues */
+    struct cand_t { uint32_t idx; int src; uint8_t hops; };     /* src : -1 contact, sinon heard[] */
     EXT_RAM_BSS_ATTR static cand_t cand[MAX_CONTACTS];
-    int nc = 0, total = s_mesh->getNumContacts() + MAX_ANON_CONTACTS;
+    int nc = 0, nrep = 0, total = s_mesh->getNumContacts() + MAX_ANON_CONTACTS;
     for (int i = 0; i < total && nc < MAX_CONTACTS; i++) {
         if (!s_mesh->getContactByIdx(i, c) || c.type != ADV_TYPE_REPEATER) continue;
-        cand[nc++] = { (uint32_t)i, c.lastmod, c.out_path_len != OUT_PATH_UNKNOWN };
+        nrep++;
+        if (path_ok(c.out_path_len)) { cand[nc++] = { (uint32_t)i, -1, (uint8_t)(c.out_path_len & 63) }; continue; }
+        for (int h = 0; h < nh; h++) {
+            if (!heard[h].recv_timestamp || memcmp(heard[h].pubkey_prefix, c.id.pub_key, sizeof heard[h].pubkey_prefix)) continue;
+            if (path_ok(heard[h].path_len)) cand[nc++] = { (uint32_t)i, h, (uint8_t)(heard[h].path_len & 63) };
+            break;
+        }
     }
     std::sort(cand, cand + nc, [](const cand_t &a, const cand_t &b) {
-        return a.path != b.path ? a.path : a.when > b.when;
+        return (a.src < 0) != (b.src < 0) ? a.src < 0 : a.hops < b.hops;
     });
     memset(&s_disc, 0, sizeof s_disc);
-    for (int i = 0; i < nc && s_disc.n < DISC_MAX; i++)
-        if (s_mesh->getContactByIdx(cand[i].idx, c)) memcpy(s_disc.pub[s_disc.n++], c.id.pub_key, PUB_KEY_SIZE);
+    for (int i = 0; i < nc && s_disc.n < DISC_MAX; i++) {
+        if (!s_mesh->getContactByIdx(cand[i].idx, c)) continue;
+        disc_t &t = s_disc.t[s_disc.n++];
+        memcpy(t.pub, c.id.pub_key, PUB_KEY_SIZE);
+        if (cand[i].src < 0) {
+            t.out_len = c.out_path_len;
+            memcpy(t.out, c.out_path, sizeof t.out);
+            t.ret_len = c.out_path_len;
+            path_reverse(t.ret, c.out_path, c.out_path_len);
+        } else {
+            const AdvertPath &a = heard[cand[i].src];
+            t.ret_len = a.path_len;
+            memcpy(t.ret, a.path, sizeof t.ret);
+            t.out_len = a.path_len;
+            path_reverse(t.out, a.path, a.path_len);
+        }
+    }
     s_disc.running = s_disc.n > 0;
     s_disc.at_us = esp_timer_get_time();
     portENTER_CRITICAL(&s_st_mux);
-    s_disc_st = {};
+    memset(&s_disc_st, 0, sizeof s_disc_st);
     s_disc_st.running = s_disc.running;
     s_disc_st.ran = true;
-    s_disc_st.candidates = (uint8_t)(nc > 255 ? 255 : nc);
+    s_disc_st.candidates = (uint8_t)(nrep > 255 ? 255 : nrep);
+    s_disc_st.reachable = s_disc.n;
     portEXIT_CRITICAL(&s_st_mux);
-    ESP_LOGI(TAG, "régions : %d répéteur(s) connu(s), %u interrogé(s)", nc, s_disc.n);
+    ESP_LOGI(TAG, "régions : %d répéteur(s) connu(s), %u joignable(s) en direct", nrep, s_disc.n);
 }
 
 static void disc_send(int k)
 {
-    ContactInfo *rc = s_mesh->lookupContactByPubKey(s_disc.pub[k], PUB_KEY_SIZE);
+    disc_t &d = s_disc.t[k];
+    ContactInfo *rc = s_mesh->lookupContactByPubKey(d.pub, PUB_KEY_SIZE);
     if (!rc) return;
     static ContactInfo t;
     t = *rc;
+    t.out_path_len = d.out_len;
+    memcpy(t.out_path, d.out, sizeof t.out_path);
     /* données : {type}{longueur du chemin retour}{chemin retour} */
     uint8_t req[2 + MAX_PATH_SIZE];
     req[0] = ANON_REQ_REGIONS;
-    int len = 2;
-    if (t.out_path_len == OUT_PATH_UNKNOWN) {
-        t.out_path_len = 0;                             /* voisin direct, ou personne */
-        req[1] = 0;
-    } else {
-        uint8_t sz = (t.out_path_len >> 6) + 1, hops = t.out_path_len & 63;
-        if (hops * sz > MAX_PATH_SIZE) return;
-        req[1] = t.out_path_len;
-        for (int h = 0; h < hops; h++)                  /* retour : chemin à l'envers */
-            memcpy(&req[2 + h * sz], &t.out_path[(hops - 1 - h) * sz], sz);
-        len += hops * sz;
-    }
+    req[1] = d.ret_len;
+    int len = 2 + (d.ret_len & 63) * ((d.ret_len >> 6) + 1);
+    memcpy(&req[2], d.ret, len - 2);
     uint32_t tag = 0, est = 0;
     int r = s_mesh->sendAnonReq(t, req, (uint8_t)len, tag, est);
     if (r == MSG_SEND_FAILED) return;
-    s_disc.tags[k] = tag;
+    d.tag = tag;
     portENTER_CRITICAL(&s_st_mux);
     s_disc_st.asked++;
     portEXIT_CRITICAL(&s_st_mux);
-    ESP_LOGI(TAG, "régions : requête à « %s » (%u saut(s))", t.name, t.out_path_len & 63);
+    ESP_LOGI(TAG, "régions : requête à « %s » (%u saut(s))", t.name, d.out_len & 63);
 }
 
 static void disc_tick(int64_t now)
@@ -716,18 +757,30 @@ bool WatchListener::onWatchResponse(const ContactInfo &from, uint32_t tag, const
 {
     if (!s_disc.running || !tag) return false;
     int k = -1;
-    for (int i = 0; i < s_disc.n; i++) if (s_disc.tags[i] == tag) { k = i; break; }
+    for (int i = 0; i < s_disc.n; i++) if (s_disc.t[i].tag == tag) { k = i; break; }
     if (k < 0) return false;
-    s_disc.tags[k] = 0;
+    s_disc.t[k].tag = 0;
     /* réponse : {étiquette}{heure du répéteur}{noms séparés par des virgules} */
     int found = 0;
     char nm[MC_REGION_NAME];
-    int i = 8, n = 0;
-    for (; i <= len; i++) {
+    EXT_RAM_BSS_ATTR static char got[sizeof s_disc_st.names];
+    portENTER_CRITICAL(&s_st_mux);
+    memcpy(got, s_disc_st.names, sizeof got);
+    portEXIT_CRITICAL(&s_st_mux);
+    int n = 0;
+    for (int i = 8; i <= len; i++) {
         if (i == len || data[i] == ',' || data[i] == 0) {
             nm[n] = 0;
             bool added = false;
-            if (n && strcmp(nm, "*") && mc_region_add(nm, &added) && added) found++;
+            if (n && strcmp(nm, "*")) {
+                if (mc_region_add(nm, &added) && added) found++;
+                const char *p = nm[0] == '#' ? nm + 1 : nm;
+                bool dup = false;                           /* liste des noms reçus, sans doublon */
+                for (const char *s = got; (s = strstr(s, p)); s++)
+                    if ((s == got || s[-1] == ' ') && (s[strlen(p)] == ',' || !s[strlen(p)])) { dup = true; break; }
+                if (!dup && strlen(got) + strlen(p) + 3 < sizeof got)
+                    snprintf(got + strlen(got), sizeof got - strlen(got), "%s%s", got[0] ? ", " : "", p);
+            }
             n = 0;
             if (i < len && data[i] == 0) break;
         } else if (n < MC_REGION_NAME - 1) {
@@ -737,8 +790,10 @@ bool WatchListener::onWatchResponse(const ContactInfo &from, uint32_t tag, const
     portENTER_CRITICAL(&s_st_mux);
     s_disc_st.replied++;
     s_disc_st.found = (uint8_t)(s_disc_st.found + found);
+    memcpy(s_disc_st.names, got, sizeof got);
     portEXIT_CRITICAL(&s_st_mux);
-    ESP_LOGI(TAG, "régions : réponse de « %s » (%d nouvelle(s))", from.name, found);
+    ESP_LOGI(TAG, "régions : réponse de « %s » : « %.*s » (%d nouvelle(s))", from.name, len > 8 ? len - 8 : 0,
+             (const char *)data + 8, found);
     return true;
 }
 

@@ -209,13 +209,20 @@ static void reg_status(void)
     if (!r_stat) return;
     mc_region_disc_t st;
     mc_region_disc_status(&st);
-    char b[128];
+    char b[200];
     if (st.running)
-        snprintf(b, sizeof b, _("Répéteurs interrogés : %u · réponses : %u"), st.asked, st.replied);
+        snprintf(b, sizeof b, _("Répéteurs interrogés : %u/%u · réponses : %u"), st.asked, st.reachable, st.replied);
     else if (st.ran && !st.candidates)
         snprintf(b, sizeof b, "%s", _("Aucun répéteur dans les contacts : la découverte n'a personne à interroger."));
+    else if (st.ran && !st.reachable)
+        snprintf(b, sizeof b, _("Aucun des %u répéteurs n'a de chemin connu : échange un message avec l'un d'eux, ou attends son annonce, puis recommence."),
+                 st.candidates);
+    else if (st.ran && !st.replied)
+        snprintf(b, sizeof b, _("Aucune réponse des %u répéteurs interrogés (hors de portée, ou version sans requête des régions)."), st.asked);
+    else if (st.ran && !st.names[0])
+        snprintf(b, sizeof b, _("%u réponse(s) sur %u : aucune région déclarée sur ces répéteurs."), st.replied, st.asked);
     else if (st.ran)
-        snprintf(b, sizeof b, _("%u réponse(s) sur %u répéteur(s), %u région(s) nouvelle(s)."), st.replied, st.asked, st.found);
+        snprintf(b, sizeof b, _("%u réponse(s) sur %u. Reçues : %s (%u nouvelle(s))."), st.replied, st.asked, st.names, st.found);
     else
         snprintf(b, sizeof b, "%s", _("Découvrir demande leurs régions aux répéteurs joignables en direct."));
     lv_label_set_text(r_stat, b);

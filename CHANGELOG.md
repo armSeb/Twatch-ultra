@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.55 — 2026-11-26
+
+- Region discovery only asks repeaters reachable directly: known contact path (reply path =
+  reversed), else the path of their last advert heard since boot (out path = reversed, reply
+  path = as heard). 0.2.54 sent a 0-hop request to every repeater without a path, which only
+  reaches neighbours, so most requests went nowhere.
+- Discovery result says why nothing came back (no path, no reply, no region set) and lists the
+  region names received.
+
 ## 0.2.54 — 2026-11-25
 
 MeshCore regions on the watch (the node only stores its default scope; the iPhone app keeps
