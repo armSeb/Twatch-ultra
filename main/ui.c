@@ -2397,6 +2397,9 @@ static void bench_cb(lv_event_t *e)
 static void build_power(void)
 {
     lv_obj_t *s = s_scr[SCR_POWER] = mk_screen();
+    lv_obj_add_flag(s, LV_OBJ_FLAG_SCROLLABLE);       /* diagnostic de consommation en dessous */
+    lv_obj_set_scroll_dir(s, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s, LV_SCROLLBAR_MODE_ACTIVE);
     lv_obj_t *h = mk_label(s, &font_title, C_FG, with_sym(LV_SYMBOL_CHARGE, _("Énergie")));
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, S(12), S(10));
     for (int i = 0; i < 8; i++) {

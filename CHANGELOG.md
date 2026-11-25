@@ -2,6 +2,11 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.43 — 2026-11-25
+
+- *Energy* screen scrolls vertically: in 0.2.42 the new LoRa and *Powered* lines ran past
+  the bottom of the screen.
+
 ## 0.2.42 — 2026-11-25
 
 - *Energy* screen, power diagnostics for the overnight drain (about 50 mA with the watch
