@@ -2,6 +2,20 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.51 — 2026-11-25
+
+Pin audit against schematic V1.0, so that every pin is in a known state whatever an earlier
+firmware left behind (the XL9555 and the AXP2101 keep their registers as long as the battery
+powers them):
+- XL9555: every direction is rewritten at boot. P12 SD_DET is the only input. P06, P07, P10 and
+  P13 are outputs at their current level until their driver sets them. Unconnected pins
+  (P00-P05, P11, P14-P17) are outputs driven high. Directions found different are logged.
+- ESP32-S3: GPIO46, unconnected, joins the pins left high-impedance at boot. The other unused
+  or unpowered peripherals (SPI bus, GNSS UART, I2S, PDM mic, RTC and NFC interrupts) were
+  already handled; GPIO15/16 carry the 32 kHz crystal.
+- AXP2101: USB input voltage threshold (VINDPM 4.36 V) and input current limit (900 mA) set
+  explicitly instead of inherited.
+
 ## 0.2.50 — 2026-11-25
 
 - XL9555: the SD card detect line (P12) is forced to input at boot. The expander keeps its
