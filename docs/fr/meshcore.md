@@ -40,11 +40,13 @@ L'app **MeshCore** (la première de la liste) a trois onglets :
 - **Contacts** : les contacts de discussion et les salons, plus les conversations dont le
   contact a été supprimé depuis ;
 - **Canaux** : les canaux réglés dans l'app iPhone ;
-- **Radio** : nom du nœud, fréquence, SF et puissance, état de l'app iPhone (connectée, à
+- **Radio** : boutons **Annonce flood** (relayée par tout le réseau) et **Annonce locale**
+  (0 saut), nom du nœud, fréquence, SF et puissance, état de l'app iPhone (connectée, à
   jour, ou nombre de messages qui l'attendent), compteurs radio (`TX` avec les ratés, `RX`
   avec les abîmés, bruit de fond) et état de la carte SD.
 
-Les listes mettent en tête les conversations qui ont des **non lus**, puis suivent l'ordre
+Les listes mettent en tête les conversations qui ont des **non lus**, puis le canal
+**Public** (le canal de MeshCore à la clé connue de tous), puis suivent l'ordre
 **alphabétique** (émojis et ponctuation en début de nom ignorés, sans majuscules ni accents).
 Chaque ligne montre le dernier message, son heure et une pastille avec le nombre de non lus ;
 le titre des onglets compte aussi les non lus. Au-delà de 40 lignes, *Afficher plus* charge
@@ -55,6 +57,44 @@ de l'expéditeur sur les canaux, messages envoyés depuis l'iPhone à droite, re
 *Messages plus anciens* remonte dans l'historique (montre, puis carte SD). Retour : la flèche,
 un glissé vers la droite ou le bouton. Émojis et tout texte UTF-8 s'affichent comme sur le
 téléphone.
+
+### Écrire depuis la montre
+
+En bas de chaque conversation, **Écrire** ouvre le clavier en plein écran. Il marche avec
+tout contact ou canal, même sans message.
+
+![Clavier AZERTY avec les accents d'un appui long, et clavier T9](../img/meshcore-compose.png)
+
+- **Clavier complet** (AZERTY ou QWERTY, *Réglages › MeshCore*) : la touche retenue est celle
+  sous le doigt **au lâcher**, montrée en grand au-dessus ; on peut donc glisser pour
+  corriger. **Appui long** sur e, a, c, i, o, u, y, n, ' ou . : les accents (é è ê ë…),
+  glisser dessus puis lâcher. Majuscule automatique en début de phrase ; ⇧ deux fois :
+  verrouillage. *123* : chiffres et symboles.
+- **T9** : touches géantes. Toucher plusieurs fois la même touche fait défiler ses lettres
+  (2 : a b c 2 à â ç) ; la lettre en cours est surlignée et se valide au bout d'une seconde ou
+  avec une autre touche. Appui long : le chiffre.
+- Le bouton en haut à droite passe de l'un à l'autre (**T9** / **ABC**) ; le dernier choisi
+  revient la fois suivante.
+- 🙂 : émojis courants. 💬 : **réponses rapides** (« OK 👍 », « J'arrive », « Où es-tu ? »…).
+- Le compteur montre les octets utilisés (158 en privé ; sur un canal, le nom du nœud en
+  prend une partie). Le brouillon reste si on ferme sans envoyer.
+
+**État de l'envoi**, sous chaque message écrit sur la montre, comme dans l'app iPhone :
+
+| | Privé | Canal |
+|---|---|---|
+| en cours | *Envoi… 2/3* (tentative) | *Envoyé, en attente de relais* |
+| réussi | *✓ Livré · 1,8 s* (accusé du destinataire, aller-retour) | *✓ Relayé ×3* (répétitions entendues) |
+| raté | *✗ Échec* | *Aucun relais entendu* |
+
+En privé, la montre **réessaie** tant que le destinataire n'a pas confirmé, jusqu'au nombre
+de *Tentatives* des réglages (3 par défaut, comme l'app iPhone) ; la dernière repart en
+inondation si le chemin direct reste muet. Les essais continuent **app fermée et écran
+éteint**. Toucher un message en échec le renvoie.
+
+L'app iPhone ne voit pas les messages écrits sur la montre : le protocole compagnon n'a pas
+de trame pour ça. Ils restent dans l'historique de la montre et sur la carte SD (avec leur
+état).
 
 ### Lu et non lu
 
@@ -129,5 +169,5 @@ alimentées tirent le bus vers le bas et la radio ne répond plus (détails dans
 
 ## Pas encore
 
-Alertes de message (bandeau et vibration), réponse depuis la montre, réception basse
-consommation, et liaison TCP pour les clients sur ordinateur.
+Alertes de message (bandeau et vibration), saisie prédictive en T9, réception basse
+consommation.

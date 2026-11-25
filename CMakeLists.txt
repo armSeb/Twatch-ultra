@@ -20,6 +20,6 @@ endif()
 idf_build_set_property(COMPILE_DEFINITIONS "CFG_TUSB_CONFIG_FILE=\"${CMAKE_CURRENT_LIST_DIR}/main/usb/tusb_config.h\"" APPEND)
 
 # Version affichée (À propos, page de mise à jour) et comparée lors d'une OTA
-set(PROJECT_VER "0.2.51")
+set(PROJECT_VER "0.2.52")
 
 project(twatch_ultra)

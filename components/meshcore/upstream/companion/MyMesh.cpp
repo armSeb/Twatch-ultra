@@ -503,6 +503,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
 }
 
 bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
+  if (_listener) _listener->onFloodHeard(packet);   // twatch
   // REVISIT: try to determine which Region (from transport_codes[1]) that Sender is indicating for replies/responses
   //    if unknown, fallback to finding Region from transport_codes[0], the 'scope' used by Sender
   return false;
@@ -513,6 +514,7 @@ bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
 }
 
 void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis) {
+  pkt->calculatePacketHash(_tw_flood_hash);   // twatch : pour reconnaître ses relais
   if (scope.isNull()) {
     sendFlood(pkt, delay_millis, _prefs.path_hash_mode + 1);
   } else {
@@ -2476,6 +2478,25 @@ bool MyMesh::advert() {
   } else {
     return false;
   }
+}
+
+// twatch : comme CMD_SEND_SELF_ADVERT
+bool MyMesh::twatchAdvert(bool flood) {
+  mesh::Packet* pkt;
+  if (_prefs.advert_loc_policy == ADVERT_LOC_NONE) {
+    pkt = createSelfAdvert(_prefs.node_name);
+  } else {
+    pkt = createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon);
+  }
+  if (!pkt) return false;
+  if (flood) {
+    TransportKey default_scope;
+    memcpy(&default_scope.key, _prefs.default_scope_key, sizeof(default_scope.key));
+    sendFloodScoped(default_scope, pkt, 0);
+  } else {
+    sendZeroHop(pkt);
+  }
+  return true;
 }
 
 // To check if there is pending work

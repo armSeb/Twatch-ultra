@@ -22,6 +22,7 @@ typedef struct {
     uint8_t kind;
     uint8_t peer[MC_PEER_LEN];
     char    name[MC_NAME_MAX];
+    bool    pub;                /* canal public de MeshCore (clé connue de tous) */
 } mch_peer_t;
 
 void mch_init(void);                    /* avant tout le reste */
@@ -39,6 +40,11 @@ void mch_add(mc_msg_t *m, bool recv);
  * perdu) : ajouté tel quel ; false s'il y est déjà */
 bool mch_has_qkey(uint32_t qkey);
 bool mch_import(const mc_msg_t *m);
+
+/* état d'un message envoyé depuis la montre (MC_F_PEND/ACK/FAIL, hops,
+ * snr_q4) ; false s'il n'est plus dans l'anneau */
+bool mch_set_send_state(uint32_t seq, uint8_t flags, uint8_t hops, int8_t rtt);
+bool mch_get(uint32_t seq, mc_msg_t *out);
 
 /* contacts et canaux connus, recopiés par la tâche mesh sur demande */
 bool mch_peers_wanted(void);

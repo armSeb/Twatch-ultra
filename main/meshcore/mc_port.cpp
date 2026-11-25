@@ -424,6 +424,8 @@ public:
         mch_add(&m, false);
     }
     void onQueueSizeChanged(int n) override { }
+    void onACKRecv(uint32_t ack_crc) override;
+    void onFloodHeard(const mesh::Packet *pkt) override;
 };
 
 /* ================================================================== mesh */
@@ -551,20 +553,307 @@ static void peers_snapshot(void)
     int n = 0, nc = s_mesh->getNumContacts() + MAX_ANON_CONTACTS;   /* index bruts : réservés en tête */
     for (int i = 0; i < nc && n < MCH_PEERS_MAX; i++) {
         if (!s_mesh->getContactByIdx(i, c) || (c.type != ADV_TYPE_CHAT && c.type != ADV_TYPE_ROOM)) continue;
+        p[n].pub = false;
         p[n].kind = MC_CONV_CONTACT;
         memcpy(p[n].peer, c.id.pub_key, MC_PEER_LEN);
         mc_copy_utf8(p[n].name, sizeof p[n].name, c.name, sizeof c.name);
         n++;
     }
     static const uint8_t zero[sizeof ch.channel.secret] = {};
+    /* clé du canal public de MeshCore (« izOH6cXN6mrJ5e26oRXNcg== ») */
+    static const uint8_t pub_key[16] = { 0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a,
+                                         0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd, 0x72 };
     for (int i = 0; i < MAX_GROUP_CHANNELS && n < MCH_PEERS_MAX; i++) {
         if (!s_mesh->getChannel(i, ch) || !ch.name[0] || !memcmp(ch.channel.secret, zero, sizeof zero)) continue;
+        p[n].pub = !memcmp(ch.channel.secret, pub_key, sizeof pub_key) &&
+                   !memcmp(ch.channel.secret + sizeof pub_key, zero, sizeof ch.channel.secret - sizeof pub_key);
         p[n].kind = MC_CONV_CHANNEL;
         channel_peer(ch, p[n].peer);
         mc_copy_utf8(p[n].name, sizeof p[n].name, ch.name, sizeof ch.name);
         n++;
     }
     mch_peers_set(p, n);
+}
+
+
+/* ================================================================== envoi depuis la montre */
+/* Demandes de la tâche app, exécutées par la tâche mesh. Les envois en
+ * cours (accusé ou relais attendus) vivent dans s_pend, tâche mesh seule. */
+enum { REQ_TEXT, REQ_RESEND, REQ_ADVERT };
+typedef struct {
+    uint8_t  op, kind;
+    uint8_t  peer[MC_PEER_LEN];
+    bool     flood;
+    uint32_t seq;
+    char     text[MC_TEXT_MAX + 1];
+} send_req_t;
+
+#define PEND_N         8
+#define TRIES_MAX      5
+#define RELAY_WAIT_MS  60000    /* canal : relais comptés une minute */
+#define ACK_MARGIN_MS  2000     /* privé : marge sur le délai estimé par MeshCore */
+
+typedef struct {
+    bool     used;
+    uint8_t  kind;
+    uint8_t  attempt, tries;
+    uint8_t  relays;
+    uint8_t  peer[MC_PEER_LEN];
+    uint8_t  hash[MAX_HASH_SIZE];   /* canal : empreinte du paquet émis */
+    uint32_t seq, ts;
+    uint32_t acks[TRIES_MAX];       /* privé : accusé attendu de chaque tentative */
+    int64_t  sent_us, deadline_us;
+    char     text[MC_TEXT_MAX + 1];
+} pend_t;
+
+static QueueHandle_t s_cmdq;
+EXT_RAM_BSS_ATTR static pend_t s_pend[PEND_N];
+static int s_npend_chan;                /* envois de canal qui attendent des relais */
+
+static uint8_t tries_setting(void)
+{
+    uint8_t t = settings_get()->mesh_tries;
+    return t < 1 ? 1 : t > TRIES_MAX ? TRIES_MAX : t;
+}
+
+static int find_channel(const uint8_t peer[MC_PEER_LEN], ChannelDetails &ch)
+{
+    uint8_t p[MC_PEER_LEN];
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+        if (!s_mesh->getChannel(i, ch) || !ch.name[0]) continue;
+        mc_channel_peer(ch.channel.secret, sizeof ch.channel.secret, p);
+        if (!memcmp(p, peer, MC_PEER_LEN)) return i;
+    }
+    return -1;
+}
+
+static void pend_state(pend_t &p, uint8_t flags, int8_t rtt)
+{
+    uint8_t hops = p.kind == MC_CONV_CHANNEL ? p.relays : p.attempt;
+    mch_set_send_state(p.seq, flags, hops, rtt);
+}
+
+static void pend_fail(pend_t &p)
+{
+    pend_state(p, MC_F_FAIL, 0);
+    if (p.kind == MC_CONV_CHANNEL && s_npend_chan > 0) s_npend_chan--;
+    p.used = false;
+}
+
+/* une tentative (privé) ; false : impossible, l'envoi est en échec */
+static bool dm_attempt(pend_t &p)
+{
+    ContactInfo *c = s_mesh->lookupContactByPubKey(p.peer, MC_PEER_LEN);
+    if (!c) { ESP_LOGW(TAG, "envoi : contact inconnu"); return false; }
+    /* dernière tentative, chemin direct resté muet : on repart en inondation
+     * (l'app iPhone fait de même) */
+    if (p.attempt > 0 && p.attempt + 1 == p.tries && c->out_path_len != OUT_PATH_UNKNOWN) {
+        ESP_LOGI(TAG, "envoi : chemin direct sans réponse, inondation");
+        s_mesh->resetPathTo(*c);
+    }
+    uint32_t ack = 0, est = 0;
+    int r = s_mesh->sendMessage(*c, p.ts, p.attempt, p.text, ack, est);
+    if (r == MSG_SEND_FAILED) { ESP_LOGW(TAG, "envoi : file radio pleine"); return false; }
+    p.acks[p.attempt] = ack;
+    p.sent_us = esp_timer_get_time();
+    p.deadline_us = p.sent_us + (int64_t)(est + ACK_MARGIN_MS) * 1000;
+    ESP_LOGI(TAG, "privé : tentative %u/%u (%s), accusé attendu sous %lu ms", p.attempt + 1, p.tries,
+             r == MSG_SEND_SENT_FLOOD ? "inondation" : "direct", (unsigned long)est);
+    pend_state(p, MC_F_PEND, 0);
+    return true;
+}
+
+static bool chan_send(pend_t &p)
+{
+    static ChannelDetails ch;
+    if (find_channel(p.peer, ch) < 0) { ESP_LOGW(TAG, "envoi : canal inconnu"); return false; }
+    NodePrefs *np = s_mesh->getNodePrefs();
+    if (!s_mesh->sendGroupMessage(p.ts, ch.channel, np->node_name, p.text, (int)strlen(p.text))) return false;
+    memcpy(p.hash, s_mesh->twatchLastFloodHash(), sizeof p.hash);
+    p.sent_us = esp_timer_get_time();
+    p.deadline_us = p.sent_us + RELAY_WAIT_MS * 1000LL;
+    p.relays = 0;
+    s_npend_chan++;
+    pend_state(p, MC_F_PEND, 0);
+    return true;
+}
+
+static pend_t *pend_alloc(void)
+{
+    for (int i = 0; i < PEND_N; i++) if (!s_pend[i].used) return &s_pend[i];
+    return NULL;
+}
+
+static void pend_start(pend_t *p)
+{
+    p->used = true;
+    p->attempt = 0;
+    p->tries = p->kind == MC_CONV_CHANNEL ? 1 : tries_setting();
+    memset(p->acks, 0, sizeof p->acks);
+    bool ok = p->kind == MC_CONV_CHANNEL ? chan_send(*p) : dm_attempt(*p);
+    if (!ok) {
+        pend_state(*p, MC_F_FAIL, 0);
+        p->used = false;
+    }
+}
+
+static void do_request(const send_req_t &r)
+{
+    static mc_msg_t m;
+    if (r.op == REQ_ADVERT) {
+        bool ok = s_mesh->twatchAdvert(r.flood);
+        ESP_LOGI(TAG, "annonce %s %s", r.flood ? "flood" : "0 saut", ok ? "envoyée" : "impossible");
+        return;
+    }
+    pend_t *p = pend_alloc();
+    if (r.op == REQ_RESEND) {
+        if (!mch_get(r.seq, &m) || (m.flags & (MC_F_WATCH | MC_F_FAIL)) != (MC_F_WATCH | MC_F_FAIL)) return;
+        for (int i = 0; i < PEND_N; i++) if (s_pend[i].used && s_pend[i].seq == r.seq) return;
+        if (!p) return;
+        memset(p, 0, sizeof *p);
+        p->seq = m.seq;
+        p->kind = m.kind;
+        memcpy(p->peer, m.peer, MC_PEER_LEN);
+        memcpy(p->text, m.text, sizeof p->text);
+        /* nouvel horodatage : même paquet sinon, ignoré comme doublon */
+        p->ts = s_mesh->getRTCClock()->getCurrentTimeUnique();
+        pend_start(p);
+        return;
+    }
+    /* nouveau message : dans l'historique d'abord (la conversation l'affiche
+     * tout de suite), puis émis */
+    memset(&m, 0, sizeof m);
+    m.kind = r.kind;
+    m.ts = s_mesh->getRTCClock()->getCurrentTimeUnique();
+    m.flags = MC_F_OUT | MC_F_READ | MC_F_WATCH | (p ? MC_F_PEND : MC_F_FAIL);
+    m.hops = 0;
+    memcpy(m.peer, r.peer, MC_PEER_LEN);
+    if (r.kind == MC_CONV_CONTACT) {
+        ContactInfo *c = s_mesh->lookupContactByPubKey(r.peer, MC_PEER_LEN);
+        if (c) mc_copy_utf8(m.from, sizeof m.from, c->name, sizeof c->name);
+    } else {
+        static ChannelDetails ch;
+        if (find_channel(r.peer, ch) >= 0) mc_copy_utf8(m.from, sizeof m.from, ch.name, sizeof ch.name);
+    }
+    mc_copy_utf8(m.text, sizeof m.text, r.text, sizeof r.text);
+    mch_add(&m, false);
+    if (!p) { ESP_LOGW(TAG, "envoi : trop d'envois en cours"); return; }
+    memset(p, 0, sizeof *p);
+    p->seq = m.seq;
+    p->kind = m.kind;
+    p->ts = m.ts;
+    memcpy(p->peer, m.peer, MC_PEER_LEN);
+    memcpy(p->text, m.text, sizeof p->text);
+    pend_start(p);
+}
+
+/* tâche mesh, à chaque tour */
+static void pend_tick(int64_t now)
+{
+    if (s_cmdq) {
+        EXT_RAM_BSS_ATTR static send_req_t r;
+        while (xQueueReceive(s_cmdq, &r, 0) == pdTRUE) do_request(r);
+    }
+    for (int i = 0; i < PEND_N; i++) {
+        pend_t &p = s_pend[i];
+        if (!p.used || now < p.deadline_us) continue;
+        if (p.kind == MC_CONV_CHANNEL) {
+            if (p.relays) {
+                if (s_npend_chan > 0) s_npend_chan--;
+                p.used = false;                 /* état ACK déjà posé */
+            } else {
+                pend_fail(p);
+            }
+            continue;
+        }
+        if (p.attempt + 1 < p.tries) {
+            p.attempt++;
+            if (!dm_attempt(p)) pend_fail(p);
+        } else {
+            ESP_LOGI(TAG, "privé : pas d'accusé après %u tentative(s)", p.tries);
+            pend_fail(p);
+        }
+    }
+}
+
+void WatchListener::onACKRecv(uint32_t ack_crc)
+{
+    int64_t now = esp_timer_get_time();
+    for (int i = 0; i < PEND_N; i++) {
+        pend_t &p = s_pend[i];
+        if (!p.used || p.kind != MC_CONV_CONTACT) continue;
+        for (int a = 0; a <= p.attempt && a < TRIES_MAX; a++) {
+            if (!p.acks[a] || p.acks[a] != ack_crc) continue;
+            int64_t rtt = (now - p.sent_us) / 100000;           /* 1/10 s */
+            pend_state(p, MC_F_ACK, (int8_t)(rtt > 127 ? 127 : rtt < 1 ? 1 : rtt));
+            ESP_LOGI(TAG, "privé : reçu (tentative %u)", a + 1);
+            p.used = false;
+            return;
+        }
+    }
+}
+
+void WatchListener::onFloodHeard(const mesh::Packet *pkt)
+{
+    if (!s_npend_chan || pkt->getPayloadType() != PAYLOAD_TYPE_GRP_TXT) return;
+    uint8_t h[MAX_HASH_SIZE];
+    pkt->calculatePacketHash(h);
+    for (int i = 0; i < PEND_N; i++) {
+        pend_t &p = s_pend[i];
+        if (!p.used || p.kind != MC_CONV_CHANNEL || memcmp(p.hash, h, sizeof h)) continue;
+        if (p.relays < 250) p.relays++;
+        pend_state(p, MC_F_ACK, 0);
+        ESP_LOGI(TAG, "canal : relais entendu (%u)", p.relays);
+        return;
+    }
+}
+
+static bool post_req(const send_req_t &r)
+{
+    if (!s_run || !s_cmdq) return false;
+    if (xQueueSend(s_cmdq, &r, 0) != pdTRUE) return false;
+    s_busy_until = esp_timer_get_time() + BUSY_HOLD_MS * 1000LL;
+    wake_task();
+    return true;
+}
+
+extern "C" int mc_text_max(uint8_t kind)
+{
+    if (kind != MC_CONV_CHANNEL) return MAX_TEXT_LEN - 2;      /* octet de tentative au-delà de 3 */
+    mc_status_t st;
+    mc_get_status(&st);
+    int n = MAX_TEXT_LEN - (int)strlen(st.name) - 2;           /* « nom: » */
+    return n < 0 ? 0 : n > MC_TEXT_MAX ? MC_TEXT_MAX : n;
+}
+
+extern "C" bool mc_send_text(uint8_t kind, const uint8_t peer[MC_PEER_LEN], const char *text)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;       /* tâche app seule */
+    if (!text || !text[0] || (int)strlen(text) > mc_text_max(kind)) return false;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_TEXT;
+    r.kind = kind == MC_CONV_CHANNEL ? MC_CONV_CHANNEL : MC_CONV_CONTACT;
+    memcpy(r.peer, peer, MC_PEER_LEN);
+    mc_copy_utf8(r.text, sizeof r.text, text, SIZE_MAX);
+    return post_req(r);
+}
+
+extern "C" bool mc_resend(uint32_t seq)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_RESEND;
+    r.seq = seq;
+    return post_req(r);
+}
+
+extern "C" bool mc_send_advert(bool flood)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_ADVERT;
+    r.flood = flood;
+    return post_req(r);
 }
 
 static void mesh_task(void *arg)
@@ -583,6 +872,7 @@ static void mesh_task(void *arg)
         rtc_clock.tick();
 
         int64_t now = esp_timer_get_time();
+        pend_tick(now);
         if (s_mesh->isOfflineQueueDirty()) {
             if (!s_offq_dirty_at) s_offq_dirty_at = now;
             /* l'app vide la file : on attend la fin de la synchro */
@@ -593,6 +883,7 @@ static void mesh_task(void *arg)
         update_status();
 
         bool busy = now < s_busy_until || s_mesh->hasPendingWork() || s_ble->pending() ||
+                    (s_cmdq && uxQueueMessagesWaiting(s_cmdq)) ||
                     !sx_tx_idle() || (s_rxq && uxQueueMessagesWaiting(s_rxq));
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(busy ? BUSY_TICK_MS : IDLE_TICK_MS));
     }
@@ -616,8 +907,9 @@ extern "C" esp_err_t mc_start(void)
         s_rxq = xQueueCreate(RXQ_LEN, sizeof(rxpkt_t));
         s_ble_rxq = xQueueCreate(6, sizeof(frame_t));
         s_tcp_rxq = xQueueCreate(6, sizeof(frame_t));
+        s_cmdq = xQueueCreate(4, sizeof(send_req_t));
         s_ble = new (std::nothrow) Companion();
-        if (!s_rxq || !s_ble_rxq || !s_tcp_rxq || !s_ble) {
+        if (!s_rxq || !s_ble_rxq || !s_tcp_rxq || !s_cmdq || !s_ble) {
             heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
             return ESP_ERR_NO_MEM;
         }

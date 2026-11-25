@@ -31,6 +31,9 @@ typedef struct {
     bool    mesh_tcp;         /* serveur TCP MeshCore (port 5000) quand le Wi-Fi est connecté */
     bool    web_on;           /* serveur web (réglages, mise à jour) */
     bool    web_sd;           /* fichiers de la carte SD sur le serveur web */
+    uint8_t mesh_tries;       /* MeshCore, message privé : tentatives 1..5 (comme l'app iPhone) */
+    uint8_t kb_mode;          /* clavier : 0 complet, 1 T9 (KB_MODE_*) */
+    uint8_t kb_layout;        /* clavier complet : 0 AZERTY, 1 QWERTY */
 } settings_t;
 
 void        settings_load(void);

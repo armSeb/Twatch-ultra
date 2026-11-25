@@ -111,6 +111,9 @@ public:
       virtual void onOfflineFrameSynced(const uint8_t *frame, int len) { }
       virtual void onAppMessageSent(const ContactInfo *to, const ChannelDetails *ch, uint32_t timestamp,
                                     const char *text, int len) { }
+      // twatch : paquet en inondation entendu (avant le filtre des doublons) :
+      // la montre y reconnaît le relais de ses propres messages de canal
+      virtual void onFloodHeard(const mesh::Packet *pkt) { }
       virtual ~Listener() { }
   };
 
@@ -128,6 +131,10 @@ public:
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
+  // twatch : annonce envoyée depuis la montre (flood : relayée par le réseau)
+  bool twatchAdvert(bool flood);
+  // twatch : empreinte du dernier paquet envoyé en inondation
+  const uint8_t *twatchLastFloodHash() const { return _tw_flood_hash; }
   void enterCLIRescue();
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
@@ -266,6 +273,7 @@ private:
   uint32_t pending_req;   // pending _BINARY_REQ
   BaseSerialInterface *_serial;
   Listener* _listener;
+  uint8_t _tw_flood_hash[MAX_HASH_SIZE];   // twatch
 
   ContactsIterator _iter;
   uint32_t _iter_filter_since;

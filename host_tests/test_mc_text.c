@@ -128,6 +128,19 @@ static void t_arch(void)
     CHECK(!strcmp(d.from, o.from));
     CHECK(strlen(d.text) > 100 && strspn(d.text, "\"") == strlen(d.text));
 
+    /* écrit sur la montre : l'état de l'envoi survit à l'archive */
+    mc_msg_t w = { .seq = 9, .ts = 6, .kind = MC_CONV_CONTACT, .flags = MC_F_OUT | MC_F_READ | MC_F_WATCH | MC_F_ACK,
+                   .snr_q4 = 18, .hops = 1 };
+    strcpy(w.from, "Alice"); strcpy(w.text, "Salut");
+    mc_arch_encode(&w, 0, rec);
+    CHECK(strstr(rec, "\"status\":\"delivered\"") != NULL);
+    CHECK(mc_arch_decode(rec, sizeof rec, &d));
+    CHECK(d.flags == (MC_F_READ | MC_F_OUT | MC_F_WATCH | MC_F_ACK) && d.snr_q4 == 18);
+    w.kind = MC_CONV_CHANNEL; w.flags = MC_F_OUT | MC_F_READ | MC_F_WATCH | MC_F_PEND;
+    mc_arch_encode(&w, 0, rec);
+    CHECK(mc_arch_decode(rec, sizeof rec, &d));
+    CHECK(d.flags == (MC_F_READ | MC_F_OUT | MC_F_WATCH | MC_F_FAIL));     /* coupé en plein envoi */
+
     /* lignes abîmées */
     CHECK(!mc_arch_decode("                \n", 17, &d));
     const char *bad = "{\"seq\":3,\"ts\":1,\"conv\":\"x\",\"text\":\"pas fini";

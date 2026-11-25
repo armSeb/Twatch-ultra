@@ -84,6 +84,7 @@ static uint32_t b_hash;
 static void banner_hide(bool anim);
 static lv_obj_t *m_sw_nwake, *m_sw_tap, *m_sw_steps, *m_sw_wrist, *m_sw_mesh, *m_sw_ant;
 static lv_obj_t *m_bm_wsens, *m_sw_glance, *m_bm_gpct, *m_bm_gdur, *m_bm_wpwr;
+static lv_obj_t *m_bm_mtry, *m_bm_kbl, *m_bm_kbm;
 static const uint8_t GPCT_VALUES[] = { 10, 25, 50 };
 static const uint8_t GDUR_VALUES[] = { 3, 4, 6 };
 static lv_obj_t *m_slider, *m_sw_vib, *m_sw_bt, *m_bm_tmo, *m_bm_face, *m_bm_lang, *m_toast;
@@ -869,6 +870,30 @@ static void menu_wpwr_cb(lv_event_t *ev)
     settings_get()->wifi_pwr = (uint8_t)i;
     settings_save();
     wifi_apply_power();                     /* tout de suite si le Wi-Fi tourne */
+}
+
+static void menu_mtry_cb(lv_event_t *ev)
+{
+    uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_mtry);
+    if (i > 4) return;
+    settings_get()->mesh_tries = (uint8_t)(i + 1);
+    settings_save();
+}
+
+static void menu_kbl_cb(lv_event_t *ev)
+{
+    uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_kbl);
+    if (i > 1) return;
+    settings_get()->kb_layout = (uint8_t)i;
+    settings_save();
+}
+
+static void menu_kbm_cb(lv_event_t *ev)
+{
+    uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_kbm);
+    if (i > 1) return;
+    settings_get()->kb_mode = (uint8_t)i;
+    settings_save();
 }
 
 static void menu_glance_cb(lv_event_t *ev)
@@ -1838,6 +1863,19 @@ static void build_menu(void)
                              _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
     lv_label_set_long_mode(mn2, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(mn2, lv_pct(100));
+    mk_section(col, _("MESSAGES PRIVÉS : TENTATIVES"));
+    static const char *const mtry_map[] = { "1", "2", "3", "4", "5", "" };
+    m_bm_mtry = mk_segmented(col, mtry_map, menu_mtry_cb);
+    lv_obj_t *mtn = mk_label(col, &font_small, C_DIM,
+                             _("Envois depuis la montre : nouvel essai tant que le destinataire n'a pas confirmé. Le dernier repart en inondation."));
+    lv_label_set_long_mode(mtn, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(mtn, lv_pct(100));
+    mk_section(col, _("CLAVIER"));
+    static const char *const kbl_map[] = { "AZERTY", "QWERTY", "" };
+    m_bm_kbl = mk_segmented(col, kbl_map, menu_kbl_cb);
+    static const char *kbm_map[3];
+    kbm_map[0] = _("Complet"); kbm_map[1] = "T9"; kbm_map[2] = "";
+    m_bm_kbm = mk_segmented(col, kbm_map, menu_kbm_cb);
     m_sw_mtcp = mk_switch_row(col, _("Serveur TCP"), _("App ou meshterm par le Wi-Fi"), menu_mtcp_cb);
     m_mtcp_info = mk_label(col, &font_small, C_DIM, "");
     lv_label_set_long_mode(m_mtcp_info, LV_LABEL_LONG_WRAP);
@@ -2174,6 +2212,10 @@ static void menu_sync_from_settings(void)
     lv_obj_set_state(m_sw_mesh, LV_STATE_CHECKED, st->meshcore);
     lv_obj_set_state(m_sw_ant, LV_STATE_CHECKED, st->lora_ext_ant);
     lv_buttonmatrix_set_button_ctrl(m_bm_wpwr, st->wifi_pwr <= 3 ? st->wifi_pwr : 3, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(m_bm_mtry, st->mesh_tries >= 1 && st->mesh_tries <= 5 ? st->mesh_tries - 1 : 2,
+                                    LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(m_bm_kbl, st->kb_layout ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(m_bm_kbm, st->kb_mode ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_buttonmatrix_set_button_ctrl(m_bm_wsens, st->wrist_sens <= 2 ? st->wrist_sens : 1, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_obj_set_state(m_sw_glance, LV_STATE_CHECKED, st->glance);
     for (size_t i = 0; i < sizeof(GPCT_VALUES); i++)

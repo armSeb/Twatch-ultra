@@ -163,6 +163,12 @@ void mc_arch_encode(const mc_msg_t *m, int32_t tz_min, char rec[MC_ARCH_REC])
         put_raw(rec, &k, lim, "\",\"sender\":\"");
         put_str(rec, &k, lim - 120, sender);
     }
+    if (m->flags & MC_F_WATCH) {            /* écrit sur la montre : état de l'envoi */
+        const char *st = (m->flags & MC_F_ACK) ? (m->kind == MC_CONV_CHANNEL ? "relayed" : "delivered") :
+                         (m->flags & MC_F_FAIL) ? "failed" : "sending";
+        put_raw(rec, &k, lim, "\",\"status\":\"");
+        put_raw(rec, &k, lim, st);
+    }
     put_raw(rec, &k, lim, "\",\"text\":\"");
     put_str(rec, &k, lim - 2, txt);
     int q = m->snr_q4, a = q < 0 ? -q : q;
@@ -296,6 +302,11 @@ bool mc_arch_decode(const char *rec, size_t len, mc_msg_t *m)
     m->ts = (uint32_t)ts;
     m->qkey = 0;
     m->flags = (uint8_t)(MC_F_READ | (!strcmp(dir, "out") ? MC_F_OUT : 0));
+    char st[12];
+    if ((m->flags & MC_F_OUT) && get_str(find_key(rec, len, "status"), end, st, sizeof st)) {
+        m->flags |= MC_F_WATCH;
+        m->flags |= (!strcmp(st, "delivered") || !strcmp(st, "relayed")) ? MC_F_ACK : MC_F_FAIL;
+    }
     if (snr < -32) snr = -32;
     if (snr > 31.75) snr = 31.75;
     m->snr_q4 = (int8_t)(snr * 4 + (snr < 0 ? -0.5 : 0.5));

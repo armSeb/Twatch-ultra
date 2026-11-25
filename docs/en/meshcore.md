@@ -37,11 +37,13 @@ The **MeshCore** app (first in the app list) has three tabs:
 
 - **Contacts**: chat contacts and rooms, plus conversations whose contact was deleted since;
 - **Channels**: the channels set up in the iPhone app;
-- **Radio**: node name, frequency, SF and power, iPhone app state (connected, up to date, or
+- **Radio**: **Flood advert** (repeated across the network) and **Zero-hop advert** buttons,
+  node name, frequency, SF and power, iPhone app state (connected, up to date, or
   number of messages waiting for it), radio counters (`TX` with failures, `RX` with damaged
   packets, noise floor) and SD card state.
 
-Lists put conversations with **unread** messages first, then follow **alphabetical** order
+Lists put conversations with **unread** messages first, then the **Public** channel (MeshCore's
+channel with the well-known key), then follow **alphabetical** order
 (leading emoji and punctuation ignored, case and accents ignored). Each row shows the last
 message, its time and a badge with the unread count; tab titles count unread messages too.
 Past 40 rows, *Show more* loads the rest.
@@ -50,6 +52,43 @@ Touching a row **slides the conversation in**: bubbles, oldest at the top, sende
 channels, messages sent from the iPhone on the right, an *Unread* marker. *Older messages*
 goes further back (watch, then SD card). Back: the arrow, a swipe right or the button. Emoji
 and any UTF-8 text display as on the phone.
+
+### Writing from the watch
+
+At the bottom of every conversation, **Write** opens the full-screen keyboard. It works with
+any contact or channel, even without messages.
+
+![AZERTY keyboard with long-press accents, and T9 keyboard](../img/meshcore-compose.png)
+
+- **Full keyboard** (AZERTY or QWERTY, *Settings › MeshCore*): the key that counts is the one
+  under the finger **on release**, shown large above it, so you can slide to correct.
+  **Long press** on e, a, c, i, o, u, y, n, ' or .: accents (é è ê ë…), slide onto one and
+  release. Automatic capital at the start of a sentence; ⇧ twice: caps lock. *123*: digits and
+  symbols.
+- **T9**: huge keys. Tapping the same key cycles through its letters (2: a b c 2 à â ç); the
+  pending letter is highlighted and is kept after one second or with another key. Long press:
+  the digit.
+- The top-right button switches between them (**T9** / **ABC**); the last one used comes back
+  next time.
+- 🙂: common emoji. 💬: **quick replies** ("OK 👍", "On my way", "Where are you?"…).
+- The counter shows bytes used (158 for a direct message; on a channel the node name takes
+  part of it). The draft is kept if you close without sending.
+
+**Delivery state**, under every message written on the watch, as in the iPhone app:
+
+| | Direct | Channel |
+|---|---|---|
+| in progress | *Sending… 2/3* (attempt) | *Sent, waiting for repeats* |
+| success | *✓ Delivered · 1.8 s* (recipient's ack, round trip) | *✓ Heard 3 repeat(s)* |
+| failed | *✗ Failed* | *No repeat heard* |
+
+For direct messages the watch **retries** until the recipient confirms, up to the *Attempts*
+setting (3 by default, like the iPhone app); the last attempt floods if the direct path stays
+silent. Retries go on **with the app closed and the screen off**. Touching a failed message
+resends it.
+
+The iPhone app does not see messages written on the watch: the companion protocol has no
+frame for that. They stay in the watch history and on the SD card (with their state).
 
 ### Read and unread
 
@@ -120,5 +159,4 @@ down and the radio does not answer (details in [hardware notes](hardware.md)).
 
 ## Not yet
 
-Message alerts (banner and vibration), replying from the watch, low-power receive, and a
-TCP link for desktop clients.
+Message alerts (banner and vibration), predictive T9 input, low-power receive.

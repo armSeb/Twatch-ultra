@@ -2,6 +2,27 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.52 — 2026-11-25
+
+Writing MeshCore messages from the watch:
+- Every conversation (contact or channel, even without messages) has a **Write** bar that opens
+  a full-screen keyboard (`main/compose.c`): full AZERTY or QWERTY with keys chosen on release
+  and shown large above the finger, long press for accents, automatic capitals, digits and
+  symbols page, common emoji page, quick replies; or T9 multi-tap with huge keys (long press:
+  digit). The keyboard mode switches from the keyboard itself and the last one is remembered;
+  layout in Settings › MeshCore. Drafts survive closing. The keyboard is a single LVGL object
+  drawn key by key, culled to each render strip.
+- Direct messages are retried in the mesh task (app closed or screen off) until the recipient's
+  ack, up to the new *Attempts* setting (1-5, default 3 like the iPhone app); the last attempt
+  floods when the direct path stays silent. Channel messages count the repeats heard (packet
+  hash of our flood seen again). States are shown under each bubble like the iPhone app
+  (Sending… 2/3, ✓ Delivered · 1.8 s, ✓ Heard 3 repeat(s), ✗ Failed) and kept in history
+  and in the SD archive (`"status"`). Tapping a failed message resends it.
+- MeshCore patches: `MyMesh::Listener::onFloodHeard`, `twatchAdvert(flood)`, last flood
+  packet hash.
+- Radio tab: Flood advert and Zero-hop advert buttons.
+- Channels tab: the Public channel comes first, below channels with unread messages.
+
 ## 0.2.51 — 2026-11-25
 
 Pin audit against schematic V1.0, so that every pin is in a known state whatever an earlier

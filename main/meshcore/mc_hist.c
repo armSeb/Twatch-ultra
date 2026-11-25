@@ -162,6 +162,42 @@ bool mc_history_get(int i, mc_msg_t *out)
     return ok;
 }
 
+bool mch_set_send_state(uint32_t seq, uint8_t flags, uint8_t hops, int8_t rtt)
+{
+    if (!s_mx) return false;
+    bool hit = false;
+    lock();
+    for (int i = 0; i < s_n; i++) {
+        mc_msg_t *e = &AT(i);
+        if (e->seq != seq) continue;
+        uint8_t f = (uint8_t)((e->flags & ~(MC_F_PEND | MC_F_ACK | MC_F_FAIL)) | (flags & (MC_F_PEND | MC_F_ACK | MC_F_FAIL)));
+        if (f != e->flags || e->hops != hops || e->snr_q4 != rtt) {
+            e->flags = f;
+            e->hops = hops;
+            e->snr_q4 = rtt;
+            touch();
+        }
+        hit = true;
+        break;
+    }
+    unlock();
+    if (hit) notify(NULL);
+    return hit;
+}
+
+bool mch_get(uint32_t seq, mc_msg_t *out)
+{
+    if (!s_mx) return false;
+    bool hit = false;
+    lock();
+    for (int i = 0; i < s_n && !hit; i++)
+        if (AT(i).seq == seq) { *out = AT(i); hit = true; }
+    unlock();
+    return hit;
+}
+
+bool mc_msg_get(uint32_t seq, mc_msg_t *out) { return mch_get(seq, out); }
+
 /* ------------------------------------------------------------------ FAT interne */
 static void sanitize(mc_msg_t *m)
 {
@@ -169,6 +205,7 @@ static void sanitize(mc_msg_t *m)
     m->text[MC_TEXT_MAX] = 0;
     if (m->kind > MC_CONV_CHANNEL) m->kind = MC_CONV_CONTACT;
     m->hops = mc_hops_of(m->hops);          /* avant 0.2.27 : octet path_len brut */
+    if (m->flags & MC_F_PEND) m->flags = (uint8_t)((m->flags & ~MC_F_PEND) | MC_F_FAIL);   /* coupé en plein envoi */
 }
 
 void mch_save_now(void)
@@ -417,12 +454,14 @@ void mc_conv_refresh(void) { s_peers_req = true; }
 typedef struct {
     mc_conv_t c;
     char key[24];
+    bool pub;
 } item_t;
 
 static int item_cmp(const void *a, const void *b)
 {
     const item_t *x = a, *y = b;
     if ((x->c.unread > 0) != (y->c.unread > 0)) return x->c.unread > 0 ? -1 : 1;
+    if (x->pub != y->pub) return x->pub ? -1 : 1;          /* canal public en tête de son groupe */
     int r = strcmp(x->key, y->key);
     return r ? r : strcmp(x->c.name, y->c.name);
 }
@@ -439,6 +478,7 @@ int mc_conv_list(uint8_t kind, mc_conv_t *out, int max)
         w[n].c.kind = kind;
         memcpy(w[n].c.peer, s_peers[i].peer, MC_PEER_LEN);
         memcpy(w[n].c.name, s_peers[i].name, MC_NAME_MAX);
+        w[n].pub = s_peers[i].pub;
         n++;
     }
     for (int i = 0; i < s_n; i++) {          /* du plus récent au plus ancien */

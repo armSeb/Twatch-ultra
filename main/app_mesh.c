@@ -13,6 +13,12 @@
  *
  * La montre lit sa propre copie des messages (mc_hist.c) : les lire ici ne
  * les retire pas de la file que l'app MeshCore récupère à la connexion.
+ *
+ * Écrire : la barre « Écrire » en bas d'une conversation ouvre le clavier
+ * (compose.c). Sous chaque message envoyé de la montre, son état, comme
+ * l'app iPhone : privé « Envoi… 2/3 », « Livré · 1,8 s » ou « Échec » ;
+ * canal « Envoyé », « Relayé ×3 » ou « Aucun relais entendu ». Toucher un
+ * message en échec le renvoie. Les essais continuent app fermée (tâche mesh).
  */
 #include <stdio.h>
 #include <string.h>
@@ -30,6 +36,7 @@
 #include "meshcore/mc_port.h"
 #include "meshcore/mc_text.h"
 #include "sx1262.h"
+#include "compose.h"
 
 #define EV_NEW     1
 #define ROWS_STEP  40           /* lignes construites d'un coup (« Afficher plus ») */
@@ -37,6 +44,8 @@
 #define PAGE       20           /* bulles chargées d'un coup */
 #define BUBBLES_MAX 200         /* objets LVGL bornés dans une conversation */
 #define SLIDE_MS   200
+#define TRACK_N    16           /* messages envoyés suivis dans la conversation ouverte */
+#define WRITE_H    S(40)        /* barre « Écrire » */
 
 enum { TAB_CONTACTS, TAB_CHANNELS, TAB_RADIO, TAB_N };
 
@@ -61,6 +70,9 @@ static mc_conv_t c_conv;
 static bool c_open;
 static uint32_t c_oldest, c_newest;
 static int c_count;
+/* état des messages envoyés depuis la montre : ligne à mettre à jour */
+static struct { uint32_t seq; uint8_t flags, hops; int8_t rtt; lv_obj_t *meta; } c_track[TRACK_N];
+static int c_ntrack;
 
 /* ------------------------------------------------------------------ outils */
 static void fmt_time(uint32_t ts, char *b, size_t n)
@@ -148,6 +160,87 @@ static void refresh_radio(void)
 }
 
 /* ------------------------------------------------------------------ conversation */
+/* ligne sous une bulle : heure, puis état de l'envoi (messages de la montre) */
+static void meta_text(const mc_msg_t *m, lv_obj_t *mt)
+{
+    char meta[64], when[16];
+    bool out = m->flags & MC_F_OUT;
+    fmt_stamp(m->ts, when, sizeof when);
+    lv_color_t col = out ? lv_color_hex(0x93C5FD) : C_DIM;
+    if (out && (m->flags & MC_F_WATCH)) {
+        bool chan = m->kind == MC_CONV_CHANNEL;
+        if (m->flags & MC_F_ACK) {
+            col = C_OK;
+            if (chan) snprintf(meta, sizeof meta, _("%s · ✓ Relayé ×%u"), when, m->hops);
+            else if (m->snr_q4 > 0) {
+                char rt[12];
+                snprintf(rt, sizeof rt, "%d.%d", m->snr_q4 / 10, m->snr_q4 % 10);
+                if (i18n_get() == LANG_FR) for (char *q = rt; *q; q++) if (*q == '.') *q = ',';
+                snprintf(meta, sizeof meta, _("%s · ✓ Livré · %s s"), when, rt);
+            } else snprintf(meta, sizeof meta, _("%s · ✓ Livré"), when);
+        } else if (m->flags & MC_F_FAIL) {
+            col = chan ? C_WARN : C_BAD;
+            snprintf(meta, sizeof meta, "%s · %s", when,
+                     chan ? _("Aucun relais entendu · toucher pour renvoyer") : _("✗ Échec · toucher pour renvoyer"));
+        } else if (m->flags & MC_F_PEND) {
+            uint8_t tries = settings_get()->mesh_tries;
+            if (chan) snprintf(meta, sizeof meta, _("%s · Envoyé, en attente de relais"), when);
+            else if (tries > 1) snprintf(meta, sizeof meta, _("%s · Envoi… %u/%u"), when, m->hops + 1, tries);
+            else snprintf(meta, sizeof meta, _("%s · Envoi…"), when);
+        } else {
+            snprintf(meta, sizeof meta, "%s", when);
+        }
+    } else if (out) snprintf(meta, sizeof meta, "%s", when);
+    else if (m->hops == 0xFF || m->hops == 0) snprintf(meta, sizeof meta, "%s · %s", when, _("direct"));
+    else snprintf(meta, sizeof meta, _("%s · %u saut(s)"), when, m->hops);
+    lv_obj_set_style_text_color(mt, col, 0);
+    lv_label_set_text(mt, meta);
+}
+
+static void track(const mc_msg_t *m, lv_obj_t *mt)
+{
+    if (!(m->flags & MC_F_WATCH)) return;
+    int i = 0;
+    while (i < c_ntrack && c_track[i].seq != m->seq) i++;
+    if (i == c_ntrack) {
+        if (c_ntrack < TRACK_N) c_ntrack++;
+        else {                                   /* le plus ancien suivi cède sa place */
+            int o = 0;
+            for (int k = 1; k < TRACK_N; k++) if (c_track[k].seq < c_track[o].seq) o = k;
+            if (c_track[o].seq > m->seq) return;
+            i = o;
+        }
+    }
+    c_track[i].seq = m->seq;
+    c_track[i].flags = m->flags;
+    c_track[i].hops = m->hops;
+    c_track[i].rtt = m->snr_q4;
+    c_track[i].meta = mt;
+}
+
+/* états changés depuis l'affichage (accusé, relais, nouvel essai) */
+static void track_refresh(void)
+{
+    static mc_msg_t m;
+    for (int i = 0; i < c_ntrack; i++) {
+        if (!c_track[i].meta || !mc_msg_get(c_track[i].seq, &m)) continue;
+        if (m.flags == c_track[i].flags && m.hops == c_track[i].hops && m.snr_q4 == c_track[i].rtt) continue;
+        c_track[i].flags = m.flags;
+        c_track[i].hops = m.hops;
+        c_track[i].rtt = m.snr_q4;
+        meta_text(&m, c_track[i].meta);
+    }
+}
+
+static void bubble_cb(lv_event_t *e)
+{
+    uint32_t seq = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+    static mc_msg_t m;
+    if (!mc_msg_get(seq, &m) || !(m.flags & MC_F_FAIL) || !(m.flags & MC_F_WATCH)) return;
+    if (mc_resend(seq)) ui_toast(_("Nouvel essai"));
+    else ui_toast(_("Radio LoRa indisponible"));
+}
+
 static void add_bubble(const mc_msg_t *m, bool at_top)
 {
     bool out = m->flags & MC_F_OUT;
@@ -168,6 +261,11 @@ static void add_bubble(const mc_msg_t *m, bool at_top)
     lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(c, S(2), 0);
     ui_bubble(c);
+    if (m->flags & MC_F_WATCH) {                /* en échec : toucher pour renvoyer */
+        lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_bg_color(c, lv_color_hex(0x2B4BA8), LV_STATE_PRESSED);
+        lv_obj_add_event_cb(c, bubble_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)m->seq);
+    }
 
     const char *text = m->text;
     char who[MC_NAME_MAX];
@@ -186,13 +284,12 @@ static void add_bubble(const mc_msg_t *m, bool at_top)
     lv_obj_set_style_max_width(t, UI_W * 82 / 100 - S(14), 0);
     emoji_label_set_text(t, text);
 
-    char meta[40], when[16];
-    fmt_stamp(m->ts, when, sizeof when);
-    if (out) snprintf(meta, sizeof meta, "%s", when);
-    else if (m->hops == 0xFF || m->hops == 0) snprintf(meta, sizeof meta, "%s · %s", when, _("direct"));
-    else snprintf(meta, sizeof meta, _("%s · %u saut(s)"), when, m->hops);
-    lv_obj_t *mt = ui_label(c, &font_small, out ? lv_color_hex(0x93C5FD) : C_DIM, meta);
+    lv_obj_t *mt = ui_label(c, &font_small, C_DIM, "");
+    lv_label_set_long_mode(mt, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_max_width(mt, UI_W * 82 / 100 - S(14), 0);
+    meta_text(m, mt);
     if (out) lv_obj_set_style_text_align(mt, LV_TEXT_ALIGN_RIGHT, 0);
+    track(m, mt);
     c_count++;
 }
 
@@ -233,7 +330,11 @@ static void conv_append_new(void)
     bool at_end = lv_obj_get_scroll_bottom(c_list) < S(40);
     int k = 0;
     while (k < n && m_buf[k].seq > c_newest) k++;
-    for (int i = k - 1; i >= 0; i--) add_bubble(&m_buf[i], false);
+    for (int i = k - 1; i >= 0; i--) {
+        add_bubble(&m_buf[i], false);
+        if (m_buf[i].flags & MC_F_OUT) at_end = true;      /* son propre message : on le montre */
+    }
+    track_refresh();
     if (k) {
         c_newest = m_buf[0].seq;
         mc_conv_mark_read(c_conv.kind, c_conv.peer);
@@ -259,6 +360,8 @@ static void close_conv(bool anim)
     lv_obj_t *p = c_panel;
     c_panel = c_list = c_more = NULL;
     c_open = false;
+    c_ntrack = 0;
+    compose_close(false);
     rebuild(true);                      /* liste : compteurs de non lus à jour */
     if (!anim) { lv_obj_delete(p); return; }
     if (c_closing) { lv_anim_delete(c_closing, NULL); lv_obj_delete(c_closing); }
@@ -277,12 +380,33 @@ static void close_conv(bool anim)
 
 static void conv_back_cb(lv_event_t *e) { close_conv(true); }
 
+static bool send_cb(const char *text, void *ud)
+{
+    if (!c_open) return false;
+    if (!mc_running()) { ui_toast(_("MeshCore coupé")); return false; }
+    if (!mc_send_text(c_conv.kind, c_conv.peer, text)) { ui_toast(_("Envoi impossible pour l'instant")); return false; }
+    return true;
+}
+
+static void write_cb(lv_event_t *e)
+{
+    if (!c_open) return;
+    if (!mc_running()) { ui_toast(_("MeshCore coupé")); return; }
+    char title[MC_NAME_MAX + 8];
+    snprintf(title, sizeof title, "%s%s", c_conv.kind == MC_CONV_CHANNEL && c_conv.name[0] != '#' ? "#" : "", c_conv.name);
+    uint8_t key[MC_PEER_LEN + 1];
+    key[0] = c_conv.kind;
+    memcpy(key + 1, c_conv.peer, MC_PEER_LEN);
+    compose_open(v_scr, title, mc_fnv32(key, sizeof key), mc_text_max(c_conv.kind), send_cb, NULL);
+}
+
 static void open_conv(const mc_conv_t *cv)
 {
     if (c_panel) close_conv(false);
     c_conv = *cv;
     c_open = true;
     c_count = 0;
+    c_ntrack = 0;
 
     c_panel = ui_container(v_scr);
     lv_obj_add_flag(c_panel, LV_OBJ_FLAG_FLOATING);
@@ -310,7 +434,7 @@ static void open_conv(const mc_conv_t *cv)
     emoji_label_set_text(t, title);
 
     c_list = ui_container(c_panel);
-    lv_obj_set_size(c_list, UI_W, UI_H - S(42));
+    lv_obj_set_size(c_list, UI_W, UI_H - S(42) - WRITE_H - S(4));
     lv_obj_set_pos(c_list, 0, S(42));
     lv_obj_set_style_pad_hor(c_list, S(4), 0);
     lv_obj_set_style_pad_row(c_list, S(6), 0);
@@ -320,6 +444,16 @@ static void open_conv(const mc_conv_t *cv)
     lv_obj_set_scrollbar_mode(c_list, LV_SCROLLBAR_MODE_ACTIVE);
     lv_obj_add_flag(c_list, LV_OBJ_FLAG_SCROLLABLE);
     ui_bubble(c_list);
+
+    /* barre « Écrire » : en bas, rétrécie pour les coins arrondis */
+    lv_obj_t *wb = ui_button(c_panel, "", C_ACC, write_cb, NULL);
+    lv_obj_set_size(wb, UI_W - S(60), WRITE_H);
+    lv_obj_set_style_radius(wb, WRITE_H / 2, 0);
+    lv_obj_align(wb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    char wt[48];
+    snprintf(wt, sizeof wt, "%s  %s", SYM_PEN, _("Écrire"));
+    lv_label_set_text(lv_obj_get_child(wb, 0), wt);
+    if (!mc_running()) lv_obj_add_state(wb, LV_STATE_DISABLED);
 
     c_more = ui_button(c_list, _("Messages plus anciens"), C_CARD, more_cb, NULL);
     lv_obj_set_size(c_more, lv_pct(100), S(36));
@@ -524,6 +658,14 @@ static void enable_cb(lv_event_t *e)
     rebuild(true);
 }
 
+static void advert_cb(lv_event_t *e)
+{
+    bool flood = lv_event_get_user_data(e) != NULL;
+    if (!mc_running()) { ui_toast(_("MeshCore coupé")); return; }
+    if (mc_send_advert(flood)) ui_toast(flood ? _("Annonce flood envoyée") : _("Annonce locale envoyée"));
+    else ui_toast(_("Envoi impossible pour l'instant"));
+}
+
 static void tick_cb(lv_timer_t *t)
 {
     if (m_tab == TAB_RADIO && !c_open) refresh_radio();
@@ -567,6 +709,9 @@ static void create(lv_obj_t *scr)
     lv_obj_set_style_pad_hor(v_radio, S(8), 0);
     lv_obj_set_style_pad_row(v_radio, S(8), 0);
     lv_obj_set_flex_flow(v_radio, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_bottom(v_radio, S(20), 0);
+    lv_obj_set_scroll_dir(v_radio, LV_DIR_VER);
+    lv_obj_add_flag(v_radio, LV_OBJ_FLAG_SCROLLABLE);
     ui_bubble(v_radio);
     v_status = ui_label(v_radio, &font_text, C_FG, "");
     lv_label_set_long_mode(v_status, LV_LABEL_LONG_WRAP);
@@ -577,6 +722,14 @@ static void create(lv_obj_t *scr)
     v_sd = ui_label(v_radio, &font_small, C_DIM, "");
     lv_label_set_long_mode(v_sd, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(v_sd, lv_pct(100));
+    /* annonces : la montre se fait connaître (flood : relayée par tout le réseau) */
+    lv_obj_t *af = ui_button(v_radio, "", C_ACC, advert_cb, (void *)1);
+    lv_obj_set_size(af, lv_pct(100), S(44));
+    char ab[64];
+    snprintf(ab, sizeof ab, "%s  %s", SYM_TOWER, _("Annonce flood"));
+    lv_label_set_text(lv_obj_get_child(af, 0), ab);
+    lv_obj_t *az = ui_button(v_radio, _("Annonce locale (0 saut)"), C_CARD, advert_cb, (void *)0);
+    lv_obj_set_size(az, lv_pct(100), S(40));
     lv_obj_t *hint = ui_label(v_radio, &font_small, C_DIM,
                               _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
@@ -607,6 +760,8 @@ static void destroy(void)
     if (c_panel) lv_anim_delete(c_panel, NULL);       /* l'écran et ses enfants partent ensuite */
     if (c_closing) lv_anim_delete(c_closing, NULL);
     mc_set_msg_cb(NULL);
+    compose_forget();
+    c_ntrack = 0;
     v_scr = v_tabs = v_list = v_off = v_radio = v_status = v_diag = v_sd = NULL;
     c_panel = c_list = c_more = c_closing = NULL;
     c_open = false;
@@ -633,6 +788,7 @@ static bool on_event(int code)
 
 static bool on_back(void)
 {
+    if (compose_on_back()) return true;
     if (!c_open) return false;
     close_conv(true);
     return true;
