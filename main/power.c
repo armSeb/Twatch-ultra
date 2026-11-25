@@ -407,6 +407,7 @@ static void idle_gpio_setup(void)
         BOARD_MIC_CLK, BOARD_MIC_DAT,                           /* micro PDM, inutilisé */
         BOARD_I2S_BCLK, BOARD_I2S_WCLK, BOARD_I2S_DOUT,         /* ampli (BLDO2 coupé) */
         BOARD_RTC_INT,                                          /* alarme RTC, inutilisée */
+        GPIO_NUM_46,                                            /* reliée à rien (schéma V1.0) */
     };
     for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         gpio_reset_pin(pins[i]);

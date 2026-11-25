@@ -25,21 +25,23 @@ esp_err_t xl9555_init(void)
     if (i2c_reg_read(s_dev, REG_OUT0, b, 2) == ESP_OK) s_out = b[0] | (b[1] << 8);
     if (i2c_reg_read(s_dev, REG_CFG0, b, 2) == ESP_OK) s_cfg = b[0] | (b[1] << 8);
     ESP_LOGI("xl9555", "sorties 0x%04x, config 0x%04x", s_out, s_cfg);
-    /* Broches reliées à rien (schéma V1.0 : P00-P05, P11, P14-P17) : une
-     * entrée CMOS laissée en l'air peut flotter à mi-tension et faire
-     * consommer son étage d'entrée. Sorties au niveau haut, état stable. */
+    /* Le XL9555 garde registres de sortie et de direction tant que la
+     * batterie l'alimente : un firmware précédent (celui d'usine, une
+     * version de test) a pu laisser n'importe quoi. Tout est donc réécrit,
+     * broche par broche, d'après le schéma V1.0 :
+     *  - P12 SD_DET, seule entrée : le contact de détection la met à la
+     *    masse carte insérée. Laissée en sortie haute, c'était un
+     *    court-circuit de ~40 mA (0.2.50) ;
+     *  - P06 M_EN, P07 VCI_EN, P10 TP_RST, P13 LORA_SEL : sorties, au niveau
+     *    déjà présent (pas de coupure de l'écran ni du tactile ici), chaque
+     *    pilote fixe ensuite le sien ;
+     *  - P00-P05, P11, P14-P17, reliées à rien : sorties au niveau haut (une
+     *    entrée en l'air flotte à mi-tension et fait consommer son étage). */
     const uint16_t unused = 0x003F | (1u << 9) | 0xF000;
+    const uint16_t cfg = 1u << XIO_SD_DET;
+    if (s_cfg != cfg) ESP_LOGW("xl9555", "directions 0x%04x trouvées, remises à 0x%04x", s_cfg, cfg);
     s_out |= unused;
-    s_cfg &= (uint16_t)~unused;
-    /* SD_DET : toujours en entrée. Le XL9555 garde sa configuration tant
-     * que la batterie l'alimente (un firmware précédent a pu en faire une
-     * sortie) : en sortie haute, le contact de détection, qui met la ligne
-     * à la masse quand une carte est insérée, la court-circuite (~40 mA
-     * mesurés, carte aux contacts isolés). */
-    if (!(s_cfg & (1u << XIO_SD_DET)))
-        ESP_LOGW("xl9555", "SD_DET était configurée en sortie : remise en entrée");
-    s_cfg |= 1u << XIO_SD_DET;
-    if (write16(REG_OUT0, s_out) == ESP_OK) write16(REG_CFG0, s_cfg);
+    if (write16(REG_OUT0, s_out) == ESP_OK && write16(REG_CFG0, cfg) == ESP_OK) s_cfg = cfg;
     return ESP_OK;
 }
 

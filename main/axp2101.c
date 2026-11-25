@@ -121,6 +121,11 @@ esp_err_t axp_init(void)
     upd(REG_DC_ONOFF, 0x1E, 0x00);                     /* DCDC2..5 coupés, DCDC1 intact */
 
     upd(REG_VOFF, 0x07, 0x03);                         /* coupure système à 2,9 V */
+    /* entrée USB : seuil de tension 4,36 V (VINDPM, sous lequel l'AXP
+     * réduit le courant pris), courant d'entrée limité à 900 mA (charge
+     * 400 mA + montre en pleine activité, Wi-Fi compris) */
+    upd(0x15, 0x0F, 0x06);
+    upd(0x16, 0x07, 0x02);
     wr(REG_LOWBAT_WARN, (uint8_t)(((15 - 5) << 4) | 5)); /* alerte 15 %, arrêt 5 % */
 
     /* charge : 4,2 V, 400 mA (≤ 0,5 C, sous 500 mA pour l'échauffement),
