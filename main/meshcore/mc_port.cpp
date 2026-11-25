@@ -652,7 +652,9 @@ static bool dm_attempt(pend_t &p)
         s_mesh->resetPathTo(*c);
     }
     uint32_t ack = 0, est = 0;
+    s_mesh->twatchScopeBegin();
     int r = s_mesh->sendMessage(*c, p.ts, p.attempt, p.text, ack, est);
+    s_mesh->twatchScopeEnd();
     if (r == MSG_SEND_FAILED) { ESP_LOGW(TAG, "envoi : file radio pleine"); return false; }
     p.acks[p.attempt] = ack;
     p.sent_us = esp_timer_get_time();
@@ -668,7 +670,10 @@ static bool chan_send(pend_t &p)
     static ChannelDetails ch;
     if (find_channel(p.peer, ch) < 0) { ESP_LOGW(TAG, "envoi : canal inconnu"); return false; }
     NodePrefs *np = s_mesh->getNodePrefs();
-    if (!s_mesh->sendGroupMessage(p.ts, ch.channel, np->node_name, p.text, (int)strlen(p.text))) return false;
+    s_mesh->twatchScopeBegin();
+    bool ok = s_mesh->sendGroupMessage(p.ts, ch.channel, np->node_name, p.text, (int)strlen(p.text));
+    s_mesh->twatchScopeEnd();
+    if (!ok) return false;
     memcpy(p.hash, s_mesh->twatchLastFloodHash(), sizeof p.hash);
     p.sent_us = esp_timer_get_time();
     p.deadline_us = p.sent_us + RELAY_WAIT_MS * 1000LL;

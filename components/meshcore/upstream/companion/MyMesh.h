@@ -133,6 +133,10 @@ public:
   bool advert();
   // twatch : annonce envoyée depuis la montre (flood : relayée par le réseau)
   bool twatchAdvert(bool flood);
+  // twatch : les envois de la montre prennent la région par défaut du nœud,
+  // pas celle que l'app a réglée pour son dernier envoi (send_scope)
+  void twatchScopeBegin() { _tw_saved_scope = send_scope; memset(send_scope.key, 0, sizeof(send_scope.key)); }
+  void twatchScopeEnd() { send_scope = _tw_saved_scope; }
   // twatch : empreinte du dernier paquet envoyé en inondation
   const uint8_t *twatchLastFloodHash() const { return _tw_flood_hash; }
   void enterCLIRescue();
@@ -290,6 +294,7 @@ private:
   unsigned long dirty_contacts_expiry;
 
   TransportKey send_scope;
+  TransportKey _tw_saved_scope;   // twatch
 
   uint8_t cmd_frame[MAX_FRAME_SIZE + 1];
   uint8_t out_frame[MAX_FRAME_SIZE + 1];

@@ -130,6 +130,7 @@ EXT_RAM_BSS_ATTR static key_t s_keys[KEYS_MAX];
 static int s_nkeys, s_page, s_mode, s_shift;    /* shift : 0, 1 (une lettre), 2 (verrouillé) */
 static int s_press = -1;                        /* touche sous le doigt */
 static bool s_long;                             /* appui long déjà traité */
+static bool s_t9_down;                          /* touche T9 déjà prise à l'appui */
 static int s_t9_key = -1, s_t9_i, s_t9_bytes;   /* lettre T9 en cours (pas encore validée) */
 static uint32_t s_t9_tick;
 static int s_acc_row = -1, s_acc_hover = -1, s_acc_n;
@@ -270,13 +271,24 @@ static bool insert(const char *s)
 }
 
 /* ------------------------------------------------------------------ T9 */
+static void invalidate_key(int i);
+
+/* seule la touche T9 concernée est redessinée : tout le clavier prenait
+ * assez de temps pour qu'une seconde tape rapide passe inaperçue */
+static void invalidate_t9(int d)
+{
+    for (int i = 0; i < s_nkeys; i++)
+        if (s_keys[i].type == K_T9 && s_keys[i].arg == d) { invalidate_key(i); return; }
+}
+
 static void t9_commit(void)
 {
     if (s_t9_key < 0) return;
+    int old = s_t9_key;
     s_t9_key = -1;
     if (s_t9_tmr) lv_timer_pause(s_t9_tmr);
+    invalidate_t9(old);
     auto_shift();
-    kb_invalidate();
     refresh_text();
 }
 
@@ -307,7 +319,7 @@ static void t9_tap(int k)
     s_t9_bytes = s_len - before;
     s_t9_tick = lv_tick_get();
     if (s_t9_tmr && s_t9_key >= 0) lv_timer_resume(s_t9_tmr);
-    kb_invalidate();
+    invalidate_t9(k);
     refresh_text();
 }
 
@@ -689,7 +701,12 @@ static void kb_event_cb(lv_event_t *e)
     case LV_EVENT_PRESSED:
         s_long = false;
         set_press(hit(&p));
-        if (s_press >= 0 && s_keys[s_press].type == K_BKSP) {
+        if (s_press >= 0 && s_keys[s_press].type == K_T9 && s_keys[s_press].arg > 0) {
+            /* T9 : la lettre change dès que le doigt touche, pour suivre
+             * des tapes rapides ; pas de glissé sur ces grandes touches */
+            s_t9_down = true;
+            t9_tap(s_keys[s_press].arg);
+        } else if (s_press >= 0 && s_keys[s_press].type == K_BKSP) {
             t9_commit();
             del_last();
             auto_shift();
@@ -705,7 +722,7 @@ static void kb_event_cb(lv_event_t *e)
                 if (h >= s_acc_n) h = s_acc_n - 1;
             }
             acc_hover(h);
-        } else if (!s_long) {
+        } else if (!s_long && !s_t9_down) {
             set_press(hit(&p));
         }
         break;
@@ -716,9 +733,20 @@ static void kb_event_cb(lv_event_t *e)
             s_long = true;
             acc_open(s_press);
         } else if (s_keys[s_press].type == K_T9) {
-            s_long = true;                                /* le chiffre */
-            t9_commit();
-            insert(T9D[s_keys[s_press].arg]);
+            s_long = true;                                /* le chiffre, à la place de la lettre */
+            int d = s_keys[s_press].arg;
+            if (s_t9_down && s_t9_key == d) {
+                s_len -= s_t9_bytes;
+                s_txt[s_len] = 0;
+                s_t9_key = -1;
+                if (s_t9_tmr) lv_timer_pause(s_t9_tmr);
+                if (s_t9_shift == 1 && s_shift == 0) s_shift = 1;
+                invalidate_t9(d);
+            } else {
+                t9_commit();
+            }
+            insert(T9D[d]);
+            auto_shift();
             refresh_text();
             preview_show(-1);
         }
@@ -739,15 +767,17 @@ static void kb_event_cb(lv_event_t *e)
                 refresh_text();
             }
             acc_close();
-        } else if (!s_long && s_press >= 0 && s_keys[s_press].type != K_BKSP) {
+        } else if (!s_long && !s_t9_down && s_press >= 0 && s_keys[s_press].type != K_BKSP) {
             int k = s_press;
             set_press(-1);
             activate(k);
         }
         set_press(-1);
         preview_show(-1);
+        s_t9_down = false;
         break;
     case LV_EVENT_PRESS_LOST:
+        s_t9_down = false;
         acc_close();
         set_press(-1);
         break;

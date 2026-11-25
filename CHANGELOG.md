@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.53 — 2026-11-25
+
+- T9: a letter key acts as soon as the finger touches it, and only that key is redrawn (the
+  whole keyboard was redrawn on each tap, long enough for a quick second tap to be missed,
+  so b and c could not be reached). Long press still gives the digit, replacing the letter.
+- Write bar taller, slightly higher, with a larger touch area: its lower half did not react.
+- Messages sent from the watch use the node's default flood scope (region), not the scope the
+  iPhone app last set for one of its own sends.
+
 ## 0.2.52 — 2026-11-25
 
 Writing MeshCore messages from the watch:

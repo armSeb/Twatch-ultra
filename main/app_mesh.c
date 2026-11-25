@@ -45,7 +45,7 @@
 #define BUBBLES_MAX 200         /* objets LVGL bornés dans une conversation */
 #define SLIDE_MS   200
 #define TRACK_N    16           /* messages envoyés suivis dans la conversation ouverte */
-#define WRITE_H    S(40)        /* barre « Écrire » */
+#define WRITE_H    S(46)        /* barre « Écrire » */
 
 enum { TAB_CONTACTS, TAB_CHANNELS, TAB_RADIO, TAB_N };
 
@@ -434,7 +434,7 @@ static void open_conv(const mc_conv_t *cv)
     emoji_label_set_text(t, title);
 
     c_list = ui_container(c_panel);
-    lv_obj_set_size(c_list, UI_W, UI_H - S(42) - WRITE_H - S(4));
+    lv_obj_set_size(c_list, UI_W, UI_H - S(42) - WRITE_H - S(18));
     lv_obj_set_pos(c_list, 0, S(42));
     lv_obj_set_style_pad_hor(c_list, S(4), 0);
     lv_obj_set_style_pad_row(c_list, S(6), 0);
@@ -449,7 +449,10 @@ static void open_conv(const mc_conv_t *cv)
     lv_obj_t *wb = ui_button(c_panel, "", C_ACC, write_cb, NULL);
     lv_obj_set_size(wb, UI_W - S(60), WRITE_H);
     lv_obj_set_style_radius(wb, WRITE_H / 2, 0);
-    lv_obj_align(wb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_align(wb, LV_ALIGN_BOTTOM_MID, 0, -S(4));
+    /* le tactile prenait mal le bas de la barre : zone sensible élargie
+     * tout autour (la liste s'arrête au-dessus) */
+    lv_obj_set_ext_click_area(wb, S(14));
     char wt[48];
     snprintf(wt, sizeof wt, "%s  %s", SYM_PEN, _("Écrire"));
     lv_label_set_text(lv_obj_get_child(wb, 0), wt);
