@@ -1103,6 +1103,7 @@ static void mesh_task(void *arg)
                     !sx_tx_idle() || (s_rxq && uxQueueMessagesWaiting(s_rxq));
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(busy ? BUSY_TICK_MS : IDLE_TICK_MS));
     }
+    s_mesh->twatchFlushContacts();          /* chemins appris dans les 5 dernières secondes */
     if (s_mesh->isOfflineQueueDirty()) offq_save();
     mch_save_now();
     radio_driver.stop();

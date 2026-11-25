@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.56 — 2026-11-26
+
+- Contacts (and the paths learned for them) are saved when MeshCore stops, before an OTA
+  reboot or a restart: MeshCore writes them 5 s after a change, so a path learned just before
+  a reboot was lost.
+
 ## 0.2.55 — 2026-11-26
 
 - Region discovery only asks repeaters reachable directly: known contact path (reply path =

@@ -136,6 +136,9 @@ public:
   bool advert();
   // twatch : annonce envoyée depuis la montre (flood : relayée par le réseau)
   bool twatchAdvert(bool flood);
+  // twatch : écriture différée des contacts (chemins appris) faite tout de
+  // suite, avant un arrêt ou un redémarrage
+  void twatchFlushContacts() { if (dirty_contacts_expiry) { saveContacts(); dirty_contacts_expiry = 0; } }
   // twatch : les envois de la montre prennent la région par défaut du nœud,
   // pas celle que l'app a réglée pour son dernier envoi (send_scope)
   // (key NULL) ou la région choisie pour le canal (clé de 16 octets)
