@@ -78,7 +78,7 @@ static void amp_on(void)
 static esp_err_t i2s_open(int rate, i2s_chan_handle_t *out)
 {
     i2s_chan_handle_t tx = NULL;
-    i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);   /* I2S0 : micro PDM (recorder.c) */
     cc.auto_clear = true;                        /* tampon vide : silence, pas de bouclage */
     i2s_std_config_t sc = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(rate),

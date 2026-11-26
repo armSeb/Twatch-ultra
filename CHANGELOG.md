@@ -2,6 +2,19 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.62 — 2026-11-26
+
+- New **Recorder** app (*Magnéto*): records the PDM microphone to the SD card as WAV
+  (16-bit mono PCM, 32 kHz by default, 16 kHz "voice" option for twice the duration), in
+  `/sd/REC/YYYYMMDD-HHMMSS.WAV`. Recording keeps running with the screen off and when the app
+  is left; only the stop button ends it. Automatic gain (up to +36 dB) with a level meter,
+  80 Hz high-pass. Samples are buffered in PSRAM (8 s) and written in 64 KB sector-aligned
+  blocks; the WAV header is refreshed every 30 s so a crash or card removal keeps the audio.
+  List of recordings (newest first) with playback on the speaker (pause, ±10 s) and delete.
+- The speaker now uses I2S1: I2S0 is the only port with the PDM-to-PCM filter, needed by the
+  microphone. Beeps and notifications still sound during a recording.
+- Microphone icon added to the fonts.
+
 ## 0.2.61 — 2026-11-26
 
 - Fix boot loop when the Wi-Fi hotspot is on: the hotspot password was read from NVS (flash)
