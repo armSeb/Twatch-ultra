@@ -1,11 +1,13 @@
 /* mc_port.cpp — voir mc_port.h et target.h */
 #include "mc_port.h"
+#include "mc_region.h"
 #include "mc_hist.h"
 #include "mc_text.h"
 #include "target.h"
 #include <SPIFFS.h>
 #include <MyMesh.h>
 #include <new>
+#include <algorithm>
 #include <time.h>
 #include <sys/time.h>
 #include "esp_log.h"
@@ -424,6 +426,9 @@ public:
         mch_add(&m, false);
     }
     void onQueueSizeChanged(int n) override { }
+    void onACKRecv(uint32_t ack_crc) override;
+    void onFloodHeard(const mesh::Packet *pkt) override;
+    bool onWatchResponse(const ContactInfo &from, uint32_t tag, const uint8_t *data, uint8_t len) override;
 };
 
 /* ================================================================== mesh */
@@ -551,20 +556,536 @@ static void peers_snapshot(void)
     int n = 0, nc = s_mesh->getNumContacts() + MAX_ANON_CONTACTS;   /* index bruts : réservés en tête */
     for (int i = 0; i < nc && n < MCH_PEERS_MAX; i++) {
         if (!s_mesh->getContactByIdx(i, c) || (c.type != ADV_TYPE_CHAT && c.type != ADV_TYPE_ROOM)) continue;
+        p[n].pub = false;
+        p[n].hops = c.out_path_len == OUT_PATH_UNKNOWN ? MC_HOPS_FLOOD : (uint8_t)(c.out_path_len & 63);
         p[n].kind = MC_CONV_CONTACT;
         memcpy(p[n].peer, c.id.pub_key, MC_PEER_LEN);
         mc_copy_utf8(p[n].name, sizeof p[n].name, c.name, sizeof c.name);
         n++;
     }
     static const uint8_t zero[sizeof ch.channel.secret] = {};
+    /* clé du canal public de MeshCore (« izOH6cXN6mrJ5e26oRXNcg== ») */
+    static const uint8_t pub_key[16] = { 0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a,
+                                         0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd, 0x72 };
     for (int i = 0; i < MAX_GROUP_CHANNELS && n < MCH_PEERS_MAX; i++) {
         if (!s_mesh->getChannel(i, ch) || !ch.name[0] || !memcmp(ch.channel.secret, zero, sizeof zero)) continue;
+        p[n].pub = !memcmp(ch.channel.secret, pub_key, sizeof pub_key) &&
+                   !memcmp(ch.channel.secret + sizeof pub_key, zero, sizeof ch.channel.secret - sizeof pub_key);
         p[n].kind = MC_CONV_CHANNEL;
+        p[n].hops = MC_HOPS_NA;
         channel_peer(ch, p[n].peer);
         mc_copy_utf8(p[n].name, sizeof p[n].name, ch.name, sizeof ch.name);
         n++;
     }
     mch_peers_set(p, n);
+}
+
+
+/* ================================================================== envoi depuis la montre */
+/* Demandes de la tâche app, exécutées par la tâche mesh. Les envois en
+ * cours (accusé ou relais attendus) vivent dans s_pend, tâche mesh seule. */
+enum { REQ_TEXT, REQ_RESEND, REQ_ADVERT, REQ_DISCOVER };
+typedef struct {
+    uint8_t  op, kind;
+    uint8_t  peer[MC_PEER_LEN];
+    bool     flood;
+    uint32_t seq;
+    char     text[MC_TEXT_MAX + 1];
+} send_req_t;
+
+#define PEND_N         8
+#define TRIES_MAX      5
+#define RELAY_WAIT_MS  60000    /* canal : relais comptés une minute */
+#define CHAN_RETRY_MS  17000    /* canal : sans relais entendu, même paquet réémis */
+#define CHAN_LAST_MS   30000    /* canal : attente après la dernière émission */
+#define ACK_MARGIN_MS  2000     /* privé : marge sur le délai estimé par MeshCore */
+
+typedef struct {
+    bool     used;
+    uint8_t  kind;
+    uint8_t  attempt, tries;
+    uint8_t  relays;
+    uint8_t  peer[MC_PEER_LEN];
+    uint8_t  hash[MAX_HASH_SIZE];   /* canal : empreinte du paquet émis */
+    uint32_t seq, ts;
+    uint32_t acks[TRIES_MAX];       /* privé : accusé attendu de chaque tentative */
+    int64_t  sent_us, deadline_us;
+    int64_t  first_us;              /* canal : première émission */
+    char     text[MC_TEXT_MAX + 1];
+} pend_t;
+
+static QueueHandle_t s_cmdq;
+
+/* ================================================================== découverte des régions */
+/* Requête anonyme « régions » (ANON_REQ_TYPE_REGIONS) aux répéteurs
+ * joignables en direct : un répéteur ne répond qu'à une requête routée en
+ * direct, par le chemin retour qu'on lui donne. Chemin vers le répéteur :
+ *   - celui du contact (appris par un échange), retour = le même à l'envers ;
+ *   - sinon celui de sa dernière annonce entendue depuis le démarrage
+ *     (advert_paths : origine → nous), aller = à l'envers, retour = tel quel ;
+ *   - sinon : injoignable, pas interrogé (une requête à 0 saut ne touche que
+ *     les voisins : c'était l'erreur de la 0.2.54).
+ * Une requête toutes les DISC_GAP_MS, réponses attendues DISC_WAIT_MS après
+ * la dernière. Tâche mesh seule, sauf l'état (s_st_mux). */
+#define DISC_MAX      12
+#define DISC_GAP_MS   1500
+#define DISC_WAIT_MS  15000
+#define ANON_REQ_REGIONS 0x01
+
+typedef struct {
+    uint8_t  pub[PUB_KEY_SIZE];
+    uint8_t  out_len, ret_len;          /* encodage path_len (taille d'empreinte, sauts) */
+    uint8_t  out[MAX_PATH_SIZE], ret[MAX_PATH_SIZE];
+    uint32_t tag;
+} disc_t;
+
+EXT_RAM_BSS_ATTR static struct {
+    bool     running;
+    uint8_t  n, next;
+    disc_t   t[DISC_MAX];
+    int64_t  at_us;                     /* prochaine requête, ou fin */
+} s_disc;
+EXT_RAM_BSS_ATTR static mc_region_disc_t s_disc_st;
+
+/* chemin à l'envers (empreintes de 1 à 3 octets) */
+static void path_reverse(uint8_t *dst, const uint8_t *src, uint8_t path_len)
+{
+    uint8_t sz = (path_len >> 6) + 1, hops = path_len & 63;
+    for (int h = 0; h < hops; h++) memcpy(&dst[h * sz], &src[(hops - 1 - h) * sz], sz);
+}
+
+static bool path_ok(uint8_t path_len)
+{
+    return path_len != OUT_PATH_UNKNOWN && mesh::Packet::isValidPathLen(path_len) &&
+           (path_len & 63) * ((path_len >> 6) + 1) <= MAX_PATH_SIZE;
+}
+
+static void disc_status(void)
+{
+    portENTER_CRITICAL(&s_st_mux);
+    s_disc_st.running = s_disc.running;
+    portEXIT_CRITICAL(&s_st_mux);
+}
+
+static void disc_start(void)
+{
+    if (s_disc.running) return;
+    static ContactInfo c;
+    EXT_RAM_BSS_ATTR static AdvertPath heard[ADVERT_PATH_TABLE_SIZE];
+    int nh = s_mesh->getRecentlyHeard(heard, ADVERT_PATH_TABLE_SIZE);
+    /* chemin connu d'abord, le plus court, puis annonces entendues */
+    struct cand_t { uint32_t idx; int src; uint8_t hops; };     /* src : -1 contact, sinon heard[] */
+    EXT_RAM_BSS_ATTR static cand_t cand[MAX_CONTACTS];
+    int nc = 0, nrep = 0, total = s_mesh->getNumContacts() + MAX_ANON_CONTACTS;
+    for (int i = 0; i < total && nc < MAX_CONTACTS; i++) {
+        if (!s_mesh->getContactByIdx(i, c) || c.type != ADV_TYPE_REPEATER) continue;
+        nrep++;
+        if (path_ok(c.out_path_len)) { cand[nc++] = { (uint32_t)i, -1, (uint8_t)(c.out_path_len & 63) }; continue; }
+        for (int h = 0; h < nh; h++) {
+            if (!heard[h].recv_timestamp || memcmp(heard[h].pubkey_prefix, c.id.pub_key, sizeof heard[h].pubkey_prefix)) continue;
+            if (path_ok(heard[h].path_len)) cand[nc++] = { (uint32_t)i, h, (uint8_t)(heard[h].path_len & 63) };
+            break;
+        }
+    }
+    std::sort(cand, cand + nc, [](const cand_t &a, const cand_t &b) {
+        return (a.src < 0) != (b.src < 0) ? a.src < 0 : a.hops < b.hops;
+    });
+    memset(&s_disc, 0, sizeof s_disc);
+    for (int i = 0; i < nc && s_disc.n < DISC_MAX; i++) {
+        if (!s_mesh->getContactByIdx(cand[i].idx, c)) continue;
+        disc_t &t = s_disc.t[s_disc.n++];
+        memcpy(t.pub, c.id.pub_key, PUB_KEY_SIZE);
+        if (cand[i].src < 0) {
+            t.out_len = c.out_path_len;
+            memcpy(t.out, c.out_path, sizeof t.out);
+            t.ret_len = c.out_path_len;
+            path_reverse(t.ret, c.out_path, c.out_path_len);
+        } else {
+            const AdvertPath &a = heard[cand[i].src];
+            t.ret_len = a.path_len;
+            memcpy(t.ret, a.path, sizeof t.ret);
+            t.out_len = a.path_len;
+            path_reverse(t.out, a.path, a.path_len);
+        }
+    }
+    s_disc.running = s_disc.n > 0;
+    s_disc.at_us = esp_timer_get_time();
+    portENTER_CRITICAL(&s_st_mux);
+    memset(&s_disc_st, 0, sizeof s_disc_st);
+    s_disc_st.running = s_disc.running;
+    s_disc_st.ran = true;
+    s_disc_st.candidates = (uint8_t)(nrep > 255 ? 255 : nrep);
+    s_disc_st.reachable = s_disc.n;
+    portEXIT_CRITICAL(&s_st_mux);
+    ESP_LOGI(TAG, "régions : %d répéteur(s) connu(s), %u joignable(s) en direct", nrep, s_disc.n);
+}
+
+static void disc_send(int k)
+{
+    disc_t &d = s_disc.t[k];
+    ContactInfo *rc = s_mesh->lookupContactByPubKey(d.pub, PUB_KEY_SIZE);
+    if (!rc) return;
+    static ContactInfo t;
+    t = *rc;
+    t.out_path_len = d.out_len;
+    memcpy(t.out_path, d.out, sizeof t.out_path);
+    /* données : {type}{longueur du chemin retour}{chemin retour} */
+    uint8_t req[2 + MAX_PATH_SIZE];
+    req[0] = ANON_REQ_REGIONS;
+    req[1] = d.ret_len;
+    int len = 2 + (d.ret_len & 63) * ((d.ret_len >> 6) + 1);
+    memcpy(&req[2], d.ret, len - 2);
+    uint32_t tag = 0, est = 0;
+    int r = s_mesh->sendAnonReq(t, req, (uint8_t)len, tag, est);
+    if (r == MSG_SEND_FAILED) return;
+    d.tag = tag;
+    portENTER_CRITICAL(&s_st_mux);
+    s_disc_st.asked++;
+    portEXIT_CRITICAL(&s_st_mux);
+    ESP_LOGI(TAG, "régions : requête à « %s » (%u saut(s))", t.name, d.out_len & 63);
+}
+
+static void disc_tick(int64_t now)
+{
+    if (now < s_disc.at_us) return;
+    if (s_disc.next < s_disc.n) {
+        disc_send(s_disc.next++);
+        s_disc.at_us = now + (s_disc.next < s_disc.n ? DISC_GAP_MS : DISC_WAIT_MS) * 1000LL;
+        return;
+    }
+    s_disc.running = false;
+    disc_status();
+    ESP_LOGI(TAG, "régions : découverte terminée");
+}
+
+bool WatchListener::onWatchResponse(const ContactInfo &from, uint32_t tag, const uint8_t *data, uint8_t len)
+{
+    if (!s_disc.running || !tag) return false;
+    int k = -1;
+    for (int i = 0; i < s_disc.n; i++) if (s_disc.t[i].tag == tag) { k = i; break; }
+    if (k < 0) return false;
+    s_disc.t[k].tag = 0;
+    /* réponse : {étiquette}{heure du répéteur}{noms séparés par des virgules} */
+    int found = 0;
+    char nm[MC_REGION_NAME];
+    EXT_RAM_BSS_ATTR static char got[sizeof s_disc_st.names];
+    portENTER_CRITICAL(&s_st_mux);
+    memcpy(got, s_disc_st.names, sizeof got);
+    portEXIT_CRITICAL(&s_st_mux);
+    int n = 0;
+    for (int i = 8; i <= len; i++) {
+        if (i == len || data[i] == ',' || data[i] == 0) {
+            nm[n] = 0;
+            bool added = false;
+            if (n && strcmp(nm, "*")) {
+                if (mc_region_add(nm, &added) && added) found++;
+                const char *p = nm[0] == '#' ? nm + 1 : nm;
+                bool dup = false;                           /* liste des noms reçus, sans doublon */
+                for (const char *s = got; (s = strstr(s, p)); s++)
+                    if ((s == got || s[-1] == ' ') && (s[strlen(p)] == ',' || !s[strlen(p)])) { dup = true; break; }
+                if (!dup && strlen(got) + strlen(p) + 3 < sizeof got)
+                    snprintf(got + strlen(got), sizeof got - strlen(got), "%s%s", got[0] ? ", " : "", p);
+            }
+            n = 0;
+            if (i < len && data[i] == 0) break;
+        } else if (n < MC_REGION_NAME - 1) {
+            nm[n++] = (char)data[i];
+        }
+    }
+    portENTER_CRITICAL(&s_st_mux);
+    s_disc_st.replied++;
+    s_disc_st.found = (uint8_t)(s_disc_st.found + found);
+    memcpy(s_disc_st.names, got, sizeof got);
+    portEXIT_CRITICAL(&s_st_mux);
+    ESP_LOGI(TAG, "régions : réponse de « %s » : « %.*s » (%d nouvelle(s))", from.name, len > 8 ? len - 8 : 0,
+             (const char *)data + 8, found);
+    return true;
+}
+
+extern "C" void mc_region_disc_status(mc_region_disc_t *out)
+{
+    portENTER_CRITICAL(&s_st_mux);
+    *out = s_disc_st;
+    portEXIT_CRITICAL(&s_st_mux);
+}
+EXT_RAM_BSS_ATTR static pend_t s_pend[PEND_N];
+static int s_npend_chan;                /* envois de canal qui attendent des relais */
+
+static uint8_t tries_setting(void)
+{
+    uint8_t t = settings_get()->mesh_tries;
+    return t < 1 ? 1 : t > TRIES_MAX ? TRIES_MAX : t;
+}
+
+static int find_channel(const uint8_t peer[MC_PEER_LEN], ChannelDetails &ch)
+{
+    uint8_t p[MC_PEER_LEN];
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+        if (!s_mesh->getChannel(i, ch) || !ch.name[0]) continue;
+        mc_channel_peer(ch.channel.secret, sizeof ch.channel.secret, p);
+        if (!memcmp(p, peer, MC_PEER_LEN)) return i;
+    }
+    return -1;
+}
+
+static void pend_state(pend_t &p, uint8_t flags, int8_t rtt)
+{
+    /* canal : relais entendus, ou la tentative en cours tant qu'aucun */
+    uint8_t hops = p.kind == MC_CONV_CHANNEL && (flags & MC_F_ACK) ? p.relays : p.attempt;
+    mch_set_send_state(p.seq, flags, hops, rtt);
+}
+
+static void pend_fail(pend_t &p)
+{
+    pend_state(p, MC_F_FAIL, 0);
+    if (p.kind == MC_CONV_CHANNEL && s_npend_chan > 0) s_npend_chan--;
+    p.used = false;
+}
+
+/* une tentative (privé) ; false : impossible, l'envoi est en échec */
+static bool dm_attempt(pend_t &p)
+{
+    ContactInfo *c = s_mesh->lookupContactByPubKey(p.peer, MC_PEER_LEN);
+    if (!c) { ESP_LOGW(TAG, "envoi : contact inconnu"); return false; }
+    /* dernière tentative, chemin direct resté muet : on repart en inondation
+     * (l'app iPhone fait de même) */
+    if (p.attempt > 0 && p.attempt + 1 == p.tries && c->out_path_len != OUT_PATH_UNKNOWN) {
+        ESP_LOGI(TAG, "envoi : chemin direct sans réponse, inondation");
+        s_mesh->resetPathTo(*c);
+    }
+    uint32_t ack = 0, est = 0;
+    s_mesh->twatchScopeBegin();
+    int r = s_mesh->sendMessage(*c, p.ts, p.attempt, p.text, ack, est);
+    s_mesh->twatchScopeEnd();
+    if (r == MSG_SEND_FAILED) { ESP_LOGW(TAG, "envoi : file radio pleine"); return false; }
+    p.acks[p.attempt] = ack;
+    p.sent_us = esp_timer_get_time();
+    p.deadline_us = p.sent_us + (int64_t)(est + ACK_MARGIN_MS) * 1000;
+    ESP_LOGI(TAG, "privé : tentative %u/%u (%s), accusé attendu sous %lu ms", p.attempt + 1, p.tries,
+             r == MSG_SEND_SENT_FLOOD ? "inondation" : "direct", (unsigned long)est);
+    pend_state(p, MC_F_PEND, 0);
+    return true;
+}
+
+static bool chan_send(pend_t &p)
+{
+    static ChannelDetails ch;
+    if (find_channel(p.peer, ch) < 0) { ESP_LOGW(TAG, "envoi : canal inconnu"); return false; }
+    NodePrefs *np = s_mesh->getNodePrefs();
+    uint8_t key[16];
+    bool reg = mc_region_key_of(p.peer, key);          /* région choisie pour ce canal */
+    s_mesh->twatchScopeBegin(reg ? key : NULL);
+    bool ok = s_mesh->sendGroupMessage(p.ts, ch.channel, np->node_name, p.text, (int)strlen(p.text));
+    s_mesh->twatchScopeEnd();
+    if (!ok) return false;
+    /* même heure, même texte, même région : la réémission est le même
+     * paquet (même empreinte), ignorée comme doublon par ceux qui l'ont */
+    memcpy(p.hash, s_mesh->twatchLastFloodHash(), sizeof p.hash);
+    p.sent_us = esp_timer_get_time();
+    if (p.attempt == 0) {
+        p.first_us = p.sent_us;
+        p.relays = 0;
+        s_npend_chan++;
+    }
+    p.deadline_us = p.sent_us + (p.attempt + 1 < p.tries ? CHAN_RETRY_MS : CHAN_LAST_MS) * 1000LL;
+    ESP_LOGI(TAG, "canal : émission %u/%u", p.attempt + 1, p.tries);
+    pend_state(p, MC_F_PEND, 0);
+    return true;
+}
+
+static pend_t *pend_alloc(void)
+{
+    for (int i = 0; i < PEND_N; i++) if (!s_pend[i].used) return &s_pend[i];
+    return NULL;
+}
+
+static void pend_start(pend_t *p)
+{
+    p->used = true;
+    p->attempt = 0;
+    p->tries = tries_setting();
+    memset(p->acks, 0, sizeof p->acks);
+    bool ok = p->kind == MC_CONV_CHANNEL ? chan_send(*p) : dm_attempt(*p);
+    if (!ok) {
+        pend_state(*p, MC_F_FAIL, 0);
+        p->used = false;
+    }
+}
+
+static void do_request(const send_req_t &r)
+{
+    static mc_msg_t m;
+    if (r.op == REQ_ADVERT) {
+        bool ok = s_mesh->twatchAdvert(r.flood);
+        ESP_LOGI(TAG, "annonce %s %s", r.flood ? "flood" : "0 saut", ok ? "envoyée" : "impossible");
+        return;
+    }
+    if (r.op == REQ_DISCOVER) { disc_start(); return; }
+    pend_t *p = pend_alloc();
+    if (r.op == REQ_RESEND) {
+        if (!mch_get(r.seq, &m) || (m.flags & (MC_F_WATCH | MC_F_FAIL)) != (MC_F_WATCH | MC_F_FAIL)) return;
+        for (int i = 0; i < PEND_N; i++) if (s_pend[i].used && s_pend[i].seq == r.seq) return;
+        if (!p) return;
+        memset(p, 0, sizeof *p);
+        p->seq = m.seq;
+        p->kind = m.kind;
+        memcpy(p->peer, m.peer, MC_PEER_LEN);
+        memcpy(p->text, m.text, sizeof p->text);
+        /* nouvel horodatage : même paquet sinon, ignoré comme doublon */
+        p->ts = s_mesh->getRTCClock()->getCurrentTimeUnique();
+        pend_start(p);
+        return;
+    }
+    /* nouveau message : dans l'historique d'abord (la conversation l'affiche
+     * tout de suite), puis émis */
+    memset(&m, 0, sizeof m);
+    m.kind = r.kind;
+    m.ts = s_mesh->getRTCClock()->getCurrentTimeUnique();
+    m.flags = MC_F_OUT | MC_F_READ | MC_F_WATCH | (p ? MC_F_PEND : MC_F_FAIL);
+    m.hops = 0;
+    memcpy(m.peer, r.peer, MC_PEER_LEN);
+    if (r.kind == MC_CONV_CONTACT) {
+        ContactInfo *c = s_mesh->lookupContactByPubKey(r.peer, MC_PEER_LEN);
+        if (c) mc_copy_utf8(m.from, sizeof m.from, c->name, sizeof c->name);
+    } else {
+        static ChannelDetails ch;
+        if (find_channel(r.peer, ch) >= 0) mc_copy_utf8(m.from, sizeof m.from, ch.name, sizeof ch.name);
+    }
+    mc_copy_utf8(m.text, sizeof m.text, r.text, sizeof r.text);
+    mch_add(&m, false);
+    if (!p) { ESP_LOGW(TAG, "envoi : trop d'envois en cours"); return; }
+    memset(p, 0, sizeof *p);
+    p->seq = m.seq;
+    p->kind = m.kind;
+    p->ts = m.ts;
+    memcpy(p->peer, m.peer, MC_PEER_LEN);
+    memcpy(p->text, m.text, sizeof p->text);
+    pend_start(p);
+}
+
+/* tâche mesh, à chaque tour */
+static void pend_tick(int64_t now)
+{
+    if (s_cmdq) {
+        EXT_RAM_BSS_ATTR static send_req_t r;
+        while (xQueueReceive(s_cmdq, &r, 0) == pdTRUE) do_request(r);
+    }
+    if (s_disc.running) disc_tick(now);
+    for (int i = 0; i < PEND_N; i++) {
+        pend_t &p = s_pend[i];
+        if (!p.used || now < p.deadline_us) continue;
+        if (p.kind == MC_CONV_CHANNEL) {
+            if (p.relays) {
+                if (s_npend_chan > 0) s_npend_chan--;
+                p.used = false;                 /* état ACK déjà posé */
+            } else if (p.attempt + 1 < p.tries) {
+                p.attempt++;                    /* aucun relais : même paquet, encore */
+                if (!chan_send(p)) pend_fail(p);
+            } else {
+                pend_fail(p);
+            }
+            continue;
+        }
+        if (p.attempt + 1 < p.tries) {
+            p.attempt++;
+            if (!dm_attempt(p)) pend_fail(p);
+        } else {
+            ESP_LOGI(TAG, "privé : pas d'accusé après %u tentative(s)", p.tries);
+            pend_fail(p);
+        }
+    }
+}
+
+void WatchListener::onACKRecv(uint32_t ack_crc)
+{
+    int64_t now = esp_timer_get_time();
+    for (int i = 0; i < PEND_N; i++) {
+        pend_t &p = s_pend[i];
+        if (!p.used || p.kind != MC_CONV_CONTACT) continue;
+        for (int a = 0; a <= p.attempt && a < TRIES_MAX; a++) {
+            if (!p.acks[a] || p.acks[a] != ack_crc) continue;
+            int64_t rtt = (now - p.sent_us) / 100000;           /* 1/10 s */
+            pend_state(p, MC_F_ACK, (int8_t)(rtt > 127 ? 127 : rtt < 1 ? 1 : rtt));
+            ESP_LOGI(TAG, "privé : reçu (tentative %u)", a + 1);
+            p.used = false;
+            return;
+        }
+    }
+}
+
+void WatchListener::onFloodHeard(const mesh::Packet *pkt)
+{
+    if (!s_npend_chan || pkt->getPayloadType() != PAYLOAD_TYPE_GRP_TXT) return;
+    uint8_t h[MAX_HASH_SIZE];
+    pkt->calculatePacketHash(h);
+    for (int i = 0; i < PEND_N; i++) {
+        pend_t &p = s_pend[i];
+        if (!p.used || p.kind != MC_CONV_CHANNEL || memcmp(p.hash, h, sizeof h)) continue;
+        if (p.relays < 250) p.relays++;
+        if (p.relays == 1) p.deadline_us = p.first_us + RELAY_WAIT_MS * 1000LL;   /* plus de réémission : on compte */
+        pend_state(p, MC_F_ACK, 0);
+        ESP_LOGI(TAG, "canal : relais entendu (%u)", p.relays);
+        return;
+    }
+}
+
+static bool post_req(const send_req_t &r)
+{
+    if (!s_run || !s_cmdq) return false;
+    if (xQueueSend(s_cmdq, &r, 0) != pdTRUE) return false;
+    s_busy_until = esp_timer_get_time() + BUSY_HOLD_MS * 1000LL;
+    wake_task();
+    return true;
+}
+
+extern "C" int mc_text_max(uint8_t kind)
+{
+    if (kind != MC_CONV_CHANNEL) return MAX_TEXT_LEN - 2;      /* octet de tentative au-delà de 3 */
+    mc_status_t st;
+    mc_get_status(&st);
+    int n = MAX_TEXT_LEN - (int)strlen(st.name) - 2;           /* « nom: » */
+    return n < 0 ? 0 : n > MC_TEXT_MAX ? MC_TEXT_MAX : n;
+}
+
+extern "C" bool mc_send_text(uint8_t kind, const uint8_t peer[MC_PEER_LEN], const char *text)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;       /* tâche app seule */
+    if (!text || !text[0] || (int)strlen(text) > mc_text_max(kind)) return false;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_TEXT;
+    r.kind = kind == MC_CONV_CHANNEL ? MC_CONV_CHANNEL : MC_CONV_CONTACT;
+    memcpy(r.peer, peer, MC_PEER_LEN);
+    mc_copy_utf8(r.text, sizeof r.text, text, SIZE_MAX);
+    return post_req(r);
+}
+
+extern "C" bool mc_resend(uint32_t seq)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_RESEND;
+    r.seq = seq;
+    return post_req(r);
+}
+
+extern "C" bool mc_region_discover(void)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;
+    mc_region_disc_t st;
+    mc_region_disc_status(&st);
+    if (st.running) return false;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_DISCOVER;
+    return post_req(r);
+}
+
+extern "C" bool mc_send_advert(bool flood)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_ADVERT;
+    r.flood = flood;
+    return post_req(r);
 }
 
 static void mesh_task(void *arg)
@@ -583,6 +1104,7 @@ static void mesh_task(void *arg)
         rtc_clock.tick();
 
         int64_t now = esp_timer_get_time();
+        pend_tick(now);
         if (s_mesh->isOfflineQueueDirty()) {
             if (!s_offq_dirty_at) s_offq_dirty_at = now;
             /* l'app vide la file : on attend la fin de la synchro */
@@ -593,9 +1115,11 @@ static void mesh_task(void *arg)
         update_status();
 
         bool busy = now < s_busy_until || s_mesh->hasPendingWork() || s_ble->pending() ||
+                    (s_cmdq && uxQueueMessagesWaiting(s_cmdq)) ||
                     !sx_tx_idle() || (s_rxq && uxQueueMessagesWaiting(s_rxq));
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(busy ? BUSY_TICK_MS : IDLE_TICK_MS));
     }
+    s_mesh->twatchFlushContacts();          /* chemins appris dans les 5 dernières secondes */
     if (s_mesh->isOfflineQueueDirty()) offq_save();
     mch_save_now();
     radio_driver.stop();
@@ -613,11 +1137,13 @@ extern "C" esp_err_t mc_start(void)
          * global (petits blocs en interne) est rétabli juste après. */
         heap_caps_malloc_extmem_enable(16);
         mch_init();
+        mc_region_init();                   /* verrou créé ici, avant la tâche mesh */
         s_rxq = xQueueCreate(RXQ_LEN, sizeof(rxpkt_t));
         s_ble_rxq = xQueueCreate(6, sizeof(frame_t));
         s_tcp_rxq = xQueueCreate(6, sizeof(frame_t));
+        s_cmdq = xQueueCreate(4, sizeof(send_req_t));
         s_ble = new (std::nothrow) Companion();
-        if (!s_rxq || !s_ble_rxq || !s_tcp_rxq || !s_ble) {
+        if (!s_rxq || !s_ble_rxq || !s_tcp_rxq || !s_cmdq || !s_ble) {
             heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
             return ESP_ERR_NO_MEM;
         }

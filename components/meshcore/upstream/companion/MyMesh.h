@@ -111,6 +111,12 @@ public:
       virtual void onOfflineFrameSynced(const uint8_t *frame, int len) { }
       virtual void onAppMessageSent(const ContactInfo *to, const ChannelDetails *ch, uint32_t timestamp,
                                     const char *text, int len) { }
+      // twatch : paquet en inondation entendu (avant le filtre des doublons) :
+      // la montre y reconnaît le relais de ses propres messages de canal
+      virtual void onFloodHeard(const mesh::Packet *pkt) { }
+      // twatch : réponse à une requête de la montre (étiquette reconnue :
+      // true, elle n'est pas transmise à l'app)
+      virtual bool onWatchResponse(const ContactInfo &from, uint32_t tag, const uint8_t *data, uint8_t len) { return false; }
       virtual ~Listener() { }
   };
 
@@ -128,6 +134,22 @@ public:
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
+  // twatch : annonce envoyée depuis la montre (flood : relayée par le réseau)
+  bool twatchAdvert(bool flood);
+  // twatch : écriture différée des contacts (chemins appris) faite tout de
+  // suite, avant un arrêt ou un redémarrage
+  void twatchFlushContacts() { if (dirty_contacts_expiry) { saveContacts(); dirty_contacts_expiry = 0; } }
+  // twatch : les envois de la montre prennent la région par défaut du nœud,
+  // pas celle que l'app a réglée pour son dernier envoi (send_scope)
+  // (key NULL) ou la région choisie pour le canal (clé de 16 octets)
+  void twatchScopeBegin(const uint8_t *key = NULL) {
+    _tw_saved_scope = send_scope;
+    if (key) memcpy(send_scope.key, key, sizeof(send_scope.key));
+    else memset(send_scope.key, 0, sizeof(send_scope.key));
+  }
+  void twatchScopeEnd() { send_scope = _tw_saved_scope; }
+  // twatch : empreinte du dernier paquet envoyé en inondation
+  const uint8_t *twatchLastFloodHash() const { return _tw_flood_hash; }
   void enterCLIRescue();
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
@@ -266,6 +288,7 @@ private:
   uint32_t pending_req;   // pending _BINARY_REQ
   BaseSerialInterface *_serial;
   Listener* _listener;
+  uint8_t _tw_flood_hash[MAX_HASH_SIZE];   // twatch
 
   ContactsIterator _iter;
   uint32_t _iter_filter_since;
@@ -282,6 +305,7 @@ private:
   unsigned long dirty_contacts_expiry;
 
   TransportKey send_scope;
+  TransportKey _tw_saved_scope;   // twatch
 
   uint8_t cmd_frame[MAX_FRAME_SIZE + 1];
   uint8_t out_frame[MAX_FRAME_SIZE + 1];

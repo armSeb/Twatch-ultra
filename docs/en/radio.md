@@ -30,6 +30,7 @@ supported.
 | Top bar, *Radio · i/n* | **stations** list; last row: *Wi-Fi and radios* (setup) |
 | Top bar, speaker | **Sound** sheet: volume, tone |
 | ◀◀ / ▶▶ | previous / next station |
+| **Turn on Wi-Fi** | shown on entry when Wi-Fi is not already on as a client: turns it on as a client for the listening session ([details](wifi.md#internet-apps)) |
 | ■ / ▶ | stop / resume listening (Wi-Fi off when stopped) |
 | Error message | tap: retry now |
 | Side button | screen off, **playback continues**; press again to come back |

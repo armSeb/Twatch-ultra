@@ -124,8 +124,12 @@ dans la liste ; les appels sonnent toujours. Une lune s'affiche sur le cadran.
 - **Le refermer** : glisser ↑ ou →, ou appui court sur le bouton. On retrouve l'app telle
   qu'on l'a laissée : la radio et WebRX continuent de jouer pendant qu'on règle le volume.
   Seule exception, une partie d'*Envol* en cours revient à l'écran titre.
-- **Wi-Fi** : appui court = marche / arrêt (la tuile affiche le réseau), appui long =
-  réglages Wi-Fi. Les **réglages** sont sous la roue dentée, en haut à droite.
+- **Wi-Fi** : un toucher ouvre le choix **Coupé / Client / Point d'accès** (trois gros
+  boutons, l'état en dessous : réseau et adresse, ou nom et mot de passe du point d'accès).
+  La tuile affiche le réseau. Appui long, ou la roue dentée du choix = réglages Wi-Fi.
+  Les **réglages** de la montre sont sous la roue dentée, en haut à droite.
+- **MeshCore** (pilule pleine largeur) : un toucher allume ou coupe MeshCore ; allumée, elle
+  montre le nombre de messages non lus. Appui long = ouvre l'app MeshCore.
 - **Lecture**, **Réglages** et **Lampe** quittent l'app d'où l'on vient (l'écoute radio
   s'arrête), comme le retour habituel.
 - **Volume général** (− / +, par pas de 10 %) : il s'applique à tous les sons de la montre,

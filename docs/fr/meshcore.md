@@ -30,8 +30,9 @@ Préréglage par défaut : **EU/UK Narrow**, 869,618 MHz, bande de 62,5 kHz, SF8
 se règlent **depuis l'app MeshCore** et sont enregistrés sur la montre ; la montre les
 affiche sans les modifier.
 
-**Antenne** : *Réglages › MeshCore › Antenne externe* bascule entre l'antenne intégrée
-(coupé) et une antenne sur le connecteur USB-C (activé). Effet immédiat.
+**Antenne** : en haut de l'onglet **Radio** de l'app MeshCore (*Intégrée* / *Externe*), ou
+*Réglages › MeshCore › Antenne externe*. Externe : antenne sur le connecteur USB-C. Effet
+immédiat.
 
 ## L'app MeshCore de la montre
 
@@ -40,21 +41,89 @@ L'app **MeshCore** (la première de la liste) a trois onglets :
 - **Contacts** : les contacts de discussion et les salons, plus les conversations dont le
   contact a été supprimé depuis ;
 - **Canaux** : les canaux réglés dans l'app iPhone ;
-- **Radio** : nom du nœud, fréquence, SF et puissance, état de l'app iPhone (connectée, à
+- **Radio** : boutons **Annonce flood** (relayée par tout le réseau) et **Annonce locale**
+  (0 saut), nom du nœud, fréquence, SF et puissance, état de l'app iPhone (connectée, à
   jour, ou nombre de messages qui l'attendent), compteurs radio (`TX` avec les ratés, `RX`
   avec les abîmés, bruit de fond) et état de la carte SD.
 
-Les listes mettent en tête les conversations qui ont des **non lus**, puis suivent l'ordre
+Les listes mettent en tête les conversations qui ont des **non lus**, puis le canal
+**Public** (le canal de MeshCore à la clé connue de tous), puis suivent l'ordre
 **alphabétique** (émojis et ponctuation en début de nom ignorés, sans majuscules ni accents).
 Chaque ligne montre le dernier message, son heure et une pastille avec le nombre de non lus ;
 le titre des onglets compte aussi les non lus. Au-delà de 40 lignes, *Afficher plus* charge
 la suite.
+
+Pour un contact, la ligne montre aussi son **chemin**, comme l'app iPhone : *direct*,
+*2 saut(s)*, ou *flood* quand aucun chemin n'est connu. **Rechercher…**, en haut des onglets
+Contacts et Canaux, ouvre le clavier : la liste ne garde que les noms qui contiennent le texte
+tapé (sans majuscules ni accents). Toucher le filtre l'efface.
 
 Toucher une ligne fait **glisser la conversation** : bulles, les plus anciennes en haut, nom
 de l'expéditeur sur les canaux, messages envoyés depuis l'iPhone à droite, repère *Non lus*.
 *Messages plus anciens* remonte dans l'historique (montre, puis carte SD). Retour : la flèche,
 un glissé vers la droite ou le bouton. Émojis et tout texte UTF-8 s'affichent comme sur le
 téléphone.
+
+### Écrire depuis la montre
+
+En bas de chaque conversation, **Écrire** ouvre le clavier en plein écran. Il marche avec
+tout contact ou canal, même sans message.
+
+![Clavier AZERTY avec les accents d'un appui long, et clavier T9](../img/meshcore-compose.png)
+
+- **Clavier complet** (AZERTY ou QWERTY, *Réglages › MeshCore*) : la touche retenue est celle
+  sous le doigt **au lâcher**, montrée en grand au-dessus ; on peut donc glisser pour
+  corriger. **Appui long** sur e, a, c, i, o, u, y, n, ' ou . : les accents (é è ê ë…),
+  glisser dessus puis lâcher. Majuscule automatique en début de phrase ; ⇧ deux fois :
+  verrouillage. *123* : chiffres et symboles.
+- **T9** : touches géantes. Toucher une touche ouvre ses caractères en grand par-dessus le
+  clavier (2 : a b c 2 à â ç) : toucher celui qu'on veut. ‹ ou un toucher à côté referme.
+  Appui long sur la touche : le chiffre directement.
+- Le bouton en haut à droite passe de l'un à l'autre (**T9** / **ABC**) ; le dernier choisi
+  revient la fois suivante.
+- 🙂 : émojis courants. 💬 : **réponses rapides** (« OK 👍 », « J'arrive », « Où es-tu ? »…).
+- Le compteur montre les octets utilisés (158 en privé ; sur un canal, le nom du nœud en
+  prend une partie). Le brouillon reste si on ferme sans envoyer.
+
+**État de l'envoi**, sous chaque message écrit sur la montre, comme dans l'app iPhone :
+
+| | Privé | Canal |
+|---|---|---|
+| en cours | *Envoi… 2/3* (tentative) | *Envoyé, en attente de relais* |
+| réussi | *✓ Livré · 1,8 s* (accusé du destinataire, aller-retour) | *✓ Relayé ×3* (répétitions entendues) |
+| raté | *✗ Échec* | *Aucun relais entendu* |
+
+En privé, la montre **réessaie** tant que le destinataire n'a pas confirmé, jusqu'au nombre
+de *Tentatives* des réglages (3 par défaut, comme l'app iPhone) ; la dernière repart en
+inondation si le chemin direct reste muet. Sur un **canal**, si aucun relais n'est entendu
+au bout de 17 s, la montre réémet **le même paquet** (*Pas de relais, renvoi 2/3*), jusqu'au
+même nombre de *Tentatives* : ceux qui l'ont déjà reçu l'ignorent, donc pas de doublon. Les
+essais continuent **app fermée et écran éteint**. Toucher un message en échec le renvoie.
+
+L'app iPhone ne voit pas les messages écrits sur la montre : le protocole compagnon n'a pas
+de trame pour ça. Ils restent dans l'historique de la montre et sur la carte SD (avec leur
+état).
+
+### Régions
+
+Une région (*scope*) limite l'inondation d'un message aux répéteurs qui la connaissent. Le
+nœud ne garde que sa région **par défaut** ; la liste des régions et le choix par canal de
+l'app iPhone restent dans l'app. La montre a donc les siens :
+
+![Liste des régions, région d'un canal dans l'en-tête, choix de la région](../img/meshcore-regions.png)
+
+- **Onglet Radio › Régions** : la liste. **Ajouter une région** ouvre le clavier (sans
+  majuscule automatique ; le nom s'écrit sans #, comme « bzh »). La corbeille la retire.
+- **Découvrir** demande leurs régions aux répéteurs des contacts joignables en direct : chemin
+  connu (après un échange avec lui), ou chemin de sa dernière annonce entendue depuis le
+  démarrage de la montre. 12 au plus, un toutes les 1,5 s. Les noms reçus entrent dans la
+  liste et s'affichent sous le bouton. Un répéteur ne répond qu'en direct et limite ces
+  requêtes.
+- Dans un **canal**, le bouton en haut à droite montre la région de ses envois
+  (*Région* : celle par défaut du nœud). Le toucher pour la choisir, ou en ajouter une.
+
+La clé d'une région est calculée comme sur les répéteurs (SHA-256 de « #nom »). Les régions
+privées ($) ne sont pas gérées. Les messages privés gardent la région par défaut.
 
 ### Lu et non lu
 
@@ -129,5 +198,5 @@ alimentées tirent le bus vers le bas et la radio ne répond plus (détails dans
 
 ## Pas encore
 
-Alertes de message (bandeau et vibration), réponse depuis la montre, réception basse
-consommation, et liaison TCP pour les clients sur ordinateur.
+Alertes de message (bandeau et vibration), saisie prédictive en T9, réception basse
+consommation.

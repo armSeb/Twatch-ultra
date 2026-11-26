@@ -20,6 +20,7 @@ static settings_t s_set = {
     .wifi_pwr = 3,
     .volume = 100,            /* 100 % = niveaux d'avant le réglage */
     .wifi_lowbatt = true,
+    .mesh_tries = 3,
 };
 
 void settings_load(void)
@@ -52,9 +53,13 @@ void settings_load(void)
     if (nvs_get_u8(h, "wnet", &u8) == ESP_OK && u8 <= WRX_NETS) s_set.wifi_net = u8;
     if (nvs_get_u8(h, "wlow", &u8) == ESP_OK) s_set.wifi_lowbatt = u8;
     if (nvs_get_u8(h, "wnob", &u8) == ESP_OK) s_set.wifi_noble = u8;
+    if (nvs_get_u8(h, "wap", &u8) == ESP_OK) s_set.wifi_ap = u8;
     if (nvs_get_u8(h, "mtcp", &u8) == ESP_OK) s_set.mesh_tcp = u8;
     if (nvs_get_u8(h, "web", &u8) == ESP_OK) s_set.web_on = u8;
     if (nvs_get_u8(h, "websd", &u8) == ESP_OK) s_set.web_sd = u8;
+    if (nvs_get_u8(h, "mtry", &u8) == ESP_OK && u8 >= 1 && u8 <= 5) s_set.mesh_tries = u8;
+    if (nvs_get_u8(h, "kbm", &u8) == ESP_OK && u8 <= 1) s_set.kb_mode = u8;
+    if (nvs_get_u8(h, "kbl", &u8) == ESP_OK && u8 <= 1) s_set.kb_layout = u8;
     nvs_close(h);
     ESP_LOGI(TAG, "lum=%u veille=%us vib=%d bt=%d tz=%+d min", s_set.brightness,
              s_set.screen_timeout_s, s_set.vibrate, s_set.ble_enabled, s_set.tz_offset_min);
@@ -89,9 +94,13 @@ void settings_save(void)
     nvs_set_u8(h, "wnet", s_set.wifi_net);
     nvs_set_u8(h, "wlow", s_set.wifi_lowbatt);
     nvs_set_u8(h, "wnob", s_set.wifi_noble);
+    nvs_set_u8(h, "wap", s_set.wifi_ap);
     nvs_set_u8(h, "mtcp", s_set.mesh_tcp);
     nvs_set_u8(h, "web", s_set.web_on);
     nvs_set_u8(h, "websd", s_set.web_sd);
+    nvs_set_u8(h, "mtry", s_set.mesh_tries);
+    nvs_set_u8(h, "kbm", s_set.kb_mode);
+    nvs_set_u8(h, "kbl", s_set.kb_layout);
     nvs_commit(h);
     nvs_close(h);
 }

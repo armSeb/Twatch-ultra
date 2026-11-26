@@ -61,6 +61,14 @@ enum { MC_CONV_CONTACT = 0, MC_CONV_CHANNEL = 1 };
 #define MC_F_OUT   0x02           /* envoyé par nous (depuis l'app) */
 #define MC_F_APP   0x04           /* récupéré par l'app */
 #define MC_F_LEGACY 0x08          /* repris de l'historique 0.2.13 : conversation retrouvée par son nom */
+/* envoyés depuis la montre (MC_F_OUT) : état de l'envoi
+ *   privé : PEND (tentative hops+1 en cours) → ACK (reçu) ou FAIL (pas d'accusé)
+ *   canal : PEND (hops = émission en cours, réémise sans relais) → ACK (hops = relais entendus) ou
+ *           FAIL (aucun relais entendu : peut-être personne à portée) */
+#define MC_F_PEND  0x10
+#define MC_F_ACK   0x20
+#define MC_F_FAIL  0x40
+#define MC_F_WATCH 0x80           /* écrit sur la montre */
 
 typedef struct mc_msg_s {
     uint32_t seq;                 /* croissant, jamais réutilisé */
@@ -68,8 +76,8 @@ typedef struct mc_msg_s {
     uint32_t qkey;                /* empreinte de la trame donnée à l'app (0 : aucune) */
     uint8_t  kind;                /* MC_CONV_* */
     uint8_t  flags;               /* MC_F_* */
-    int8_t   snr_q4;
-    uint8_t  hops;                /* 0xFF : direct */
+    int8_t   snr_q4;              /* envoyé (privé, reçu) : aller-retour en 1/10 s, 127 max */
+    uint8_t  hops;                /* 0xFF : direct ; envoyé : tentative (privé) ou relais entendus (canal) */
     uint8_t  peer[MC_PEER_LEN];   /* contact : début de sa clé ; canal : empreinte du secret */
     char     from[MC_NAME_MAX];   /* nom du contact ou du canal */
     char     text[MC_TEXT_MAX + 1];   /* UTF-8 ; « nom: texte » sur un canal */
@@ -100,6 +108,7 @@ typedef struct {
     uint16_t unread;
     uint32_t last_ts;             /* 0 : aucun message dans l'anneau */
     bool     last_out;            /* le dernier message est de nous */
+    uint8_t  hops;                /* contact : sauts du chemin, MC_HOPS_FLOOD inconnu, MC_HOPS_NA sans contact */
     char     last[64];            /* aperçu du dernier message */
 } mc_conv_t;
 /* Liste triée : non lus d'abord, puis ordre alphabétique (émojis et
@@ -107,6 +116,8 @@ typedef struct {
  * salons ; plus ceux de l'historique supprimés depuis. Renvoie le nombre total
  * (peut dépasser max). La liste des contacts et canaux est recopiée par la
  * tâche mesh après mc_conv_refresh() (rappel mc_set_msg_cb avec NULL). */
+#define MC_HOPS_FLOOD 0xFF
+#define MC_HOPS_NA    0xFE
 int  mc_conv_list(uint8_t kind, mc_conv_t *out, int max);
 void mc_conv_refresh(void);
 int  mc_unread_total(uint8_t kind);
@@ -114,6 +125,23 @@ void mc_conv_mark_read(uint8_t kind, const uint8_t peer[MC_PEER_LEN]);
 /* messages d'une conversation, du plus récent au plus ancien, de seq
  * < before (UINT32_MAX : les derniers) : d'abord l'anneau, puis la carte SD */
 int  mc_conv_messages(uint8_t kind, const uint8_t peer[MC_PEER_LEN], uint32_t before, mc_msg_t *out, int max);
+
+/* ---- envoi depuis la montre (tâche app) ----
+ * Le message part dans la tâche mesh, entre dans l'historique (MC_F_WATCH)
+ * et son état se met à jour (rappel mc_set_msg_cb avec NULL).
+ *   privé : comme l'app iPhone, jusqu'à settings.mesh_tries tentatives,
+ *           chacune attend son accusé ; la dernière repart en inondation si
+ *           le chemin direct ne répond pas ;
+ *   canal : sans relais entendu au bout de 17 s, le même paquet (même
+ *           empreinte, donc pas de doublon chez ceux qui l'ont) est réémis,
+ *           jusqu'à settings.mesh_tries émissions ; chaque relais est compté.
+ * L'app MeshCore ne voit pas ces messages : le protocole compagnon n'a pas
+ * de trame « message envoyé par l'appareil ». */
+int  mc_text_max(uint8_t kind);           /* octets permis (canal : « nom: » compris) */
+bool mc_send_text(uint8_t kind, const uint8_t peer[MC_PEER_LEN], const char *text);
+bool mc_resend(uint32_t seq);             /* message en échec : nouvelle série d'essais */
+bool mc_send_advert(bool flood);          /* annonce de la montre (flood : tout le réseau) */
+bool mc_msg_get(uint32_t seq, mc_msg_t *out);   /* message de l'anneau par son numéro */
 
 /* état courant (diagnostic, écran Réglages) */
 typedef struct {

@@ -84,6 +84,7 @@ static uint32_t b_hash;
 static void banner_hide(bool anim);
 static lv_obj_t *m_sw_nwake, *m_sw_tap, *m_sw_steps, *m_sw_wrist, *m_sw_mesh, *m_sw_ant;
 static lv_obj_t *m_bm_wsens, *m_sw_glance, *m_bm_gpct, *m_bm_gdur, *m_bm_wpwr;
+static lv_obj_t *m_bm_mtry, *m_bm_kbl, *m_bm_kbm, *m_bm_wmode;
 static const uint8_t GPCT_VALUES[] = { 10, 25, 50 };
 static const uint8_t GDUR_VALUES[] = { 3, 4, 6 };
 static lv_obj_t *m_slider, *m_sw_vib, *m_sw_bt, *m_bm_tmo, *m_bm_face, *m_bm_lang, *m_toast;
@@ -333,6 +334,8 @@ static void ensure_screen(scr_id_t id)
 }
 
 static void quick_refresh(void);
+static void q_sheet_close(void);
+static bool q_sheet_open(void);
 
 static scr_id_t s_next = SCR_WATCH;                /* écran en cours d'ouverture (show) */
 
@@ -345,7 +348,7 @@ static void show(scr_id_t id, lv_screen_load_anim_t anim)
     s_next = id;
     if (s_cur == SCR_APP && id != SCR_APP && s_app_cur && s_app_cur->on_hide) s_app_cur->on_hide();
     if (id == SCR_APP && s_cur != SCR_APP && s_app_cur && s_app_cur->on_show) s_app_cur->on_show();
-    if (id == SCR_QUICK) quick_refresh();
+    if (id == SCR_QUICK) { if (s_cur != SCR_QUICK) q_sheet_close(); quick_refresh(); }
     if (id == SCR_LIST && l_dirty) list_rebuild();
     if (id == SCR_POWER) { power_refresh(); lv_timer_resume(p_timer); }
     else lv_timer_pause(p_timer);
@@ -390,6 +393,7 @@ static void gesture_cb(lv_event_t *e)
         break;
     case SCR_QUICK:            /* refermé vers l'écran d'où on l'a tiré */
         if (dir == LV_DIR_TOP) show(menu_parent(SCR_QUICK), LV_SCR_LOAD_ANIM_MOVE_TOP);
+        else if (dir == LV_DIR_RIGHT && q_sheet_open()) q_sheet_close();   /* feuille Wi-Fi : retour */
         else if (dir == LV_DIR_RIGHT) show(menu_parent(SCR_QUICK), LV_SCR_LOAD_ANIM_MOVE_RIGHT);
         else handled = false;
         break;
@@ -862,6 +866,16 @@ static void menu_wsens_cb(lv_event_t *ev)
     settings_save();
 }
 
+/* client / point d'accès : retenu ; s'applique tout de suite si le Wi-Fi est allumé */
+static void menu_wmode_cb(lv_event_t *ev)
+{
+    uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_wmode);
+    if (i > 1) return;
+    if (wifi_user_on()) wifi_user_mode(true, i == 1);
+    else { settings_get()->wifi_ap = i == 1; settings_save(); }
+    menu_wifi_refresh();
+}
+
 static void menu_wpwr_cb(lv_event_t *ev)
 {
     uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_wpwr);
@@ -869,6 +883,30 @@ static void menu_wpwr_cb(lv_event_t *ev)
     settings_get()->wifi_pwr = (uint8_t)i;
     settings_save();
     wifi_apply_power();                     /* tout de suite si le Wi-Fi tourne */
+}
+
+static void menu_mtry_cb(lv_event_t *ev)
+{
+    uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_mtry);
+    if (i > 4) return;
+    settings_get()->mesh_tries = (uint8_t)(i + 1);
+    settings_save();
+}
+
+static void menu_kbl_cb(lv_event_t *ev)
+{
+    uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_kbl);
+    if (i > 1) return;
+    settings_get()->kb_layout = (uint8_t)i;
+    settings_save();
+}
+
+static void menu_kbm_cb(lv_event_t *ev)
+{
+    uint32_t i = lv_buttonmatrix_get_selected_button(m_bm_kbm);
+    if (i > 1) return;
+    settings_get()->kb_mode = (uint8_t)i;
+    settings_save();
 }
 
 static void menu_glance_cb(lv_event_t *ev)
@@ -1020,7 +1058,8 @@ static void wifi_status_text(char *b, size_t n)
         snprintf(b, n, "%s%s%s", ws.msg ? _(ws.msg) : _("Connexion…"), ws.detail[0] ? "\n" : "", ws.detail);
         break;
     case WIFI_CONNECTED:
-        if (ws.rssi) snprintf(b, n, _("Connecté à %s\n%s · %d dBm"), ws.ssid, ws.ip, ws.rssi);
+        if (ws.ap) snprintf(b, n, _("Point d'accès « %s »\nMot de passe %s · %u connecté(s)"), ws.ssid, wifi_ap_password(), ws.ap_clients);
+        else if (ws.rssi) snprintf(b, n, _("Connecté à %s\n%s · %d dBm"), ws.ssid, ws.ip, ws.rssi);
         else snprintf(b, n, _("Connecté à %s\n%s"), ws.ssid, ws.ip);
         break;
     case WIFI_FAILED: {
@@ -1046,6 +1085,7 @@ static void menu_wifi_refresh(void)
     lv_label_set_text(m_wifi_info, b);
     lv_obj_set_style_text_color(m_wifi_info, ws.state == WIFI_CONNECTED ? C_OK : ws.state == WIFI_FAILED ? C_WARN : C_DIM, 0);
     lv_obj_set_state(m_sw_wifi, LV_STATE_CHECKED, wifi_user_on());
+    if (m_bm_wmode) lv_buttonmatrix_set_button_ctrl(m_bm_wmode, wifi_ap_mode() ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
     if (ws.state == WIFI_FAILED) lv_obj_remove_flag(m_wifi_retry, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(m_wifi_retry, LV_OBJ_FLAG_HIDDEN);
 }
@@ -1482,6 +1522,45 @@ static lv_obj_t *mk_segmented(lv_obj_t *col, const char *const *map, lv_event_cb
 
 lv_obj_t *ui_segmented(lv_obj_t *p, const char *const *map, lv_event_cb_t cb) { return mk_segmented(p, map, cb); }
 
+bool ui_wifi_needed(void) { return !wifi_user_on() || wifi_ap_mode(); }
+
+lv_obj_t *ui_wifi_gate(lv_obj_t *scr, int top, lv_color_t accent, lv_event_cb_t cb)
+{
+    lv_obj_t *g = lv_obj_create(scr);
+    lv_obj_remove_style_all(g);
+    lv_obj_set_size(g, UI_W, UI_H - top);
+    lv_obj_set_pos(g, 0, top);
+    lv_obj_set_style_bg_color(g, C_BG, 0);
+    lv_obj_set_style_bg_opa(g, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(g, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
+    bubble(g);
+    lv_obj_t *ic = mk_label(g, &font_title, accent, SYM_WIFI);      /* enfant 0 */
+    lv_obj_align(ic, LV_ALIGN_TOP_MID, 0, S(10));
+    lv_obj_t *t = mk_label(g, &font_text, C_FG, "");                /* enfant 1 */
+    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(t, S(216));
+    lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, S(42));
+    lv_obj_t *b = mk_button(g, "", lv_color_hex(0x16A34A), cb, NULL);   /* enfant 2 */
+    lv_obj_set_size(b, S(208), S(52));
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -S(14));
+    lv_obj_set_style_text_font(lv_obj_get_child(b, 0), &font_title, 0);
+    return g;
+}
+
+void ui_wifi_gate_show(lv_obj_t *g)
+{
+    if (!g) return;
+    bool ap = wifi_user_on() && wifi_ap_mode();
+    lv_label_set_text(lv_obj_get_child(g, 1),
+                      ap ? _("Le Wi-Fi est en point d'accès.\nIl passe en client le temps de l'écoute.")
+                         : _("Le Wi-Fi est coupé.\nIl s'allume en client le temps de l'écoute."));
+    lv_label_set_text(lv_obj_get_child(lv_obj_get_child(g, 2), 0), ap ? _("Passer en client") : _("Activer le Wi-Fi"));
+    lv_obj_remove_flag(g, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(g);
+}
+
 static void menu_bt_refresh(void)
 {
     ble_info_t bi;
@@ -1798,6 +1877,9 @@ static void build_menu(void)
     /* ---- Wi-Fi ---- */
     col = mk_page(SCR_SET_WIFI, _("Wi-Fi"));
     m_sw_wifi = mk_switch_row(col, _("Wi-Fi"), _("Aussi au centre de contrôle"), menu_wifi_cb);
+    static const char *wmode_map[3];
+    wmode_map[0] = _("Client"); wmode_map[1] = _("Point d'accès"); wmode_map[2] = "";
+    m_bm_wmode = mk_segmented(col, wmode_map, menu_wmode_cb);
     m_wifi_info = mk_label(col, &font_small, C_DIM, "");
     lv_label_set_long_mode(m_wifi_info, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(m_wifi_info, lv_pct(100));
@@ -1838,6 +1920,19 @@ static void build_menu(void)
                              _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
     lv_label_set_long_mode(mn2, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(mn2, lv_pct(100));
+    mk_section(col, _("MESSAGES PRIVÉS : TENTATIVES"));
+    static const char *const mtry_map[] = { "1", "2", "3", "4", "5", "" };
+    m_bm_mtry = mk_segmented(col, mtry_map, menu_mtry_cb);
+    lv_obj_t *mtn = mk_label(col, &font_small, C_DIM,
+                             _("Envois depuis la montre : nouvel essai tant que le destinataire n'a pas confirmé. Le dernier repart en inondation."));
+    lv_label_set_long_mode(mtn, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(mtn, lv_pct(100));
+    mk_section(col, _("CLAVIER"));
+    static const char *const kbl_map[] = { "AZERTY", "QWERTY", "" };
+    m_bm_kbl = mk_segmented(col, kbl_map, menu_kbl_cb);
+    static const char *kbm_map[3];
+    kbm_map[0] = _("Complet"); kbm_map[1] = "T9"; kbm_map[2] = "";
+    m_bm_kbm = mk_segmented(col, kbm_map, menu_kbm_cb);
     m_sw_mtcp = mk_switch_row(col, _("Serveur TCP"), _("App ou meshterm par le Wi-Fi"), menu_mtcp_cb);
     m_mtcp_info = mk_label(col, &font_small, C_DIM, "");
     lv_label_set_long_mode(m_mtcp_info, LV_LABEL_LONG_WRAP);
@@ -2173,7 +2268,12 @@ static void menu_sync_from_settings(void)
     lv_obj_set_state(m_sw_wrist, LV_STATE_CHECKED, st->wrist_wake);
     lv_obj_set_state(m_sw_mesh, LV_STATE_CHECKED, st->meshcore);
     lv_obj_set_state(m_sw_ant, LV_STATE_CHECKED, st->lora_ext_ant);
+    lv_buttonmatrix_set_button_ctrl(m_bm_wmode, st->wifi_ap ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_buttonmatrix_set_button_ctrl(m_bm_wpwr, st->wifi_pwr <= 3 ? st->wifi_pwr : 3, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(m_bm_mtry, st->mesh_tries >= 1 && st->mesh_tries <= 5 ? st->mesh_tries - 1 : 2,
+                                    LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(m_bm_kbl, st->kb_layout ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(m_bm_kbm, st->kb_mode ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_buttonmatrix_set_button_ctrl(m_bm_wsens, st->wrist_sens <= 2 ? st->wrist_sens : 1, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_obj_set_state(m_sw_glance, LV_STATE_CHECKED, st->glance);
     for (size_t i = 0; i < sizeof(GPCT_VALUES); i++)
@@ -2871,6 +2971,8 @@ static void release_launcher(void)
 /* ------------------------------------------------------------------ */
 enum { Q_BT, Q_WIFI, Q_DND, Q_SILENT, Q_LAMP, Q_MEDIA, Q_N };
 static lv_obj_t *q_tile[Q_N], *q_wifi_lbl;
+static lv_obj_t *q_mesh, *q_mesh_st;                 /* MeshCore : marche / arrêt */
+static lv_obj_t *q_sheet, *q_sh_opt[3], *q_sh_info;  /* Wi-Fi : coupé / client / point d'accès */
 static lv_obj_t *q_vol, *q_vol_lbl;
 
 #define VOL_STEP 10
@@ -2881,6 +2983,8 @@ static const app_t *find_app(const char *name)
         if (!strcmp(g_apps[i]->name, name)) return g_apps[i];
     return NULL;
 }
+
+static void q_sheet_refresh(void);
 
 static void q_set_tile(int i, bool on)
 {
@@ -2904,10 +3008,20 @@ static void quick_refresh(void)
     if (q_wifi_lbl) {
         wifi_status_t ws;
         wifi_get_status(&ws);
-        lv_label_set_text(q_wifi_lbl, ws.state == WIFI_CONNECTED ? ws.ssid :
+        lv_label_set_text(q_wifi_lbl, ws.ap ? _("Point d'accès") :
+                                      ws.state == WIFI_CONNECTED ? ws.ssid :
                                       ws.state == WIFI_CONNECTING ? _("Connexion…") :
                                       ws.state == WIFI_FAILED ? _("Pas de réseau") : "Wi-Fi");
     }
+    if (q_mesh) {
+        bool on = mc_running();
+        lv_obj_set_style_bg_color(q_mesh, on ? C_ACC : C_CARD, 0);
+        int u = on ? mc_unread_total(MC_CONV_CONTACT) + mc_unread_total(MC_CONV_CHANNEL) : 0;
+        if (!on) lv_label_set_text(q_mesh_st, _("Coupé"));
+        else if (u) lv_label_set_text_fmt(q_mesh_st, "%d  " LV_SYMBOL_ENVELOPE, u);   /* messages non lus */
+        else lv_label_set_text(q_mesh_st, _("Actif"));
+    }
+    q_sheet_refresh();
     q_set_tile(Q_DND, st->dnd);
     q_set_tile(Q_SILENT, st->silent);
     lv_bar_set_value(q_bri, st->brightness, LV_ANIM_OFF);
@@ -2978,7 +3092,109 @@ static void quick_tile_cb(lv_event_t *ev)
     quick_refresh();
 }
 
-/* Wi-Fi : appui court = marche / arrêt, appui long = réglages Wi-Fi */
+/* Wi-Fi : appui court = choix coupé / client / point d'accès, appui long =
+ * réglages Wi-Fi. Le choix se fait sur une feuille posée sur le centre de
+ * contrôle (trois gros boutons), qui montre aussi l'état et, en point
+ * d'accès, le nom et le mot de passe à taper sur le téléphone. */
+static void q_sheet_close(void)
+{
+    if (q_sheet) lv_obj_add_flag(q_sheet, LV_OBJ_FLAG_HIDDEN);
+}
+
+static bool q_sheet_open(void) { return q_sheet && !lv_obj_has_flag(q_sheet, LV_OBJ_FLAG_HIDDEN); }
+
+static void q_sheet_refresh(void)
+{
+    if (!q_sheet_open()) return;
+    wifi_status_t ws;
+    wifi_get_status(&ws);
+    bool on = wifi_user_on(), ap = wifi_ap_mode();
+    int cur = !on ? 0 : ap ? 2 : 1;
+    for (int i = 0; i < 3; i++)
+        lv_obj_set_style_bg_color(q_sh_opt[i], i == cur ? C_ACC : C_CARD, 0);
+    char b[160];
+    if (!on && !(ws.holders & WIFI_HOLD_CONNECT)) b[0] = 0;
+    else if (ws.ap) snprintf(b, sizeof b, _("Réseau %s\nMot de passe %s\nhttp://%s/\n%u appareil(s) connecté(s)"),
+                             ws.ssid, wifi_ap_password(), ws.ip, ws.ap_clients);
+    else {
+        wifi_status_text(b, sizeof b);
+        if (on && ap) {                                 /* une app tient le Wi-Fi en client */
+            size_t k = strlen(b);
+            snprintf(b + k, sizeof b - k, "%s", _("\nPoint d'accès après l'app"));
+        }
+    }
+    lv_label_set_text(q_sh_info, b);
+    lv_obj_set_style_text_color(q_sh_info, ws.state == WIFI_FAILED ? C_WARN : ws.ap ? C_FG : C_DIM, 0);
+}
+
+static void q_sheet_pick_cb(lv_event_t *ev)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(ev);
+    bool was_on = wifi_user_on(), was_ap = wifi_ap_mode();
+    if (i == 0) {
+        wifi_user_set(false);
+        if (was_on) toast(_("Wi-Fi coupé"));
+        q_sheet_close();
+    } else if (!wifi_user_mode(true, i == 2)) {
+        toast(_("Wi-Fi indisponible : mémoire insuffisante"));
+    } else if (!was_on || was_ap != (i == 2)) {
+        toast(i == 2 ? _("Point d'accès activé") : _("Wi-Fi client activé"));
+    }
+    /* point d'accès : la feuille reste ouverte pour lire le mot de passe */
+    if (i == 1) q_sheet_close();
+    quick_refresh();
+}
+
+static void q_sheet_back_cb(lv_event_t *ev) { q_sheet_close(); }
+
+static void q_sheet_set_cb(lv_event_t *ev)
+{
+    q_sheet_close();
+    quick_detach();
+    nav_open(SCR_SET_WIFI, LV_SCR_LOAD_ANIM_MOVE_LEFT);
+}
+
+static void q_build_sheet(lv_obj_t *s)
+{
+    lv_obj_t *o = q_sheet = lv_obj_create(s);
+    lv_obj_set_size(o, UI_W, UI_H);
+    lv_obj_set_pos(o, 0, 0);
+    lv_obj_set_style_bg_color(o, C_BG, 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_radius(o, 0, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    bubble(o);
+
+    lv_obj_t *bk = mk_button(o, LV_SYMBOL_LEFT, C_CARD, q_sheet_back_cb, NULL);
+    lv_obj_set_size(bk, S(44), S(30));
+    lv_obj_set_pos(bk, S(12), 0);
+    lv_obj_set_ext_click_area(bk, S(6));
+    lv_obj_t *t = mk_label(o, &font_title, C_FG, "Wi-Fi");
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_t *g = mk_button(o, LV_SYMBOL_SETTINGS, C_CARD, q_sheet_set_cb, NULL);
+    lv_obj_set_size(g, S(44), S(30));
+    lv_obj_set_pos(g, S(172), 0);
+    lv_obj_set_ext_click_area(g, S(6));
+
+    static const char *const ic[3] = { LV_SYMBOL_CLOSE, SYM_WIFI, SYM_TOWER };
+    const char *tx[3] = { _("Coupé"), _("Client"), _("Point d'accès") };
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *b = q_sh_opt[i] = mk_button(o, with_sym(ic[i], tx[i]), C_CARD, q_sheet_pick_cb, (void *)(intptr_t)i);
+        lv_obj_set_size(b, S(216), S(44));
+        lv_obj_set_pos(b, S(12), S(38) + i * S(50));
+        lv_obj_set_style_bg_color(b, C_OFF, LV_STATE_PRESSED);
+        lv_obj_align(lv_obj_get_child(b, 0), LV_ALIGN_LEFT_MID, S(8), 0);
+    }
+    q_sh_info = mk_label(o, &font_text, C_DIM, "");
+    lv_obj_set_width(q_sh_info, S(216));
+    lv_label_set_long_mode(q_sh_info, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(q_sh_info, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(q_sh_info, S(12), S(190));
+}
+
 static void quick_wifi_cb(lv_event_t *ev)
 {
     if (lv_event_get_code(ev) == LV_EVENT_LONG_PRESSED) {
@@ -2986,9 +3202,36 @@ static void quick_wifi_cb(lv_event_t *ev)
         nav_open(SCR_SET_WIFI, LV_SCR_LOAD_ANIM_MOVE_LEFT);
         return;
     }
-    bool on = !wifi_user_on();
-    if (!wifi_user_set(on)) toast(_("Wi-Fi indisponible : mémoire insuffisante"));
-    else toast(on ? _("Wi-Fi activé") : _("Wi-Fi coupé"));
+    if (!q_sheet) return;
+    lv_obj_remove_flag(q_sheet, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(q_sheet);
+    q_sheet_refresh();
+}
+
+/* MeshCore : appui court = marche / arrêt, appui long = ouvre l'app */
+static void quick_mesh_cb(lv_event_t *ev)
+{
+    if (lv_event_get_code(ev) == LV_EVENT_LONG_PRESSED) {
+        const app_t *a = find_app("MeshCore");
+        if (!a) return;
+        quick_detach();
+        scr_id_t back = menu_parent(SCR_QUICK);
+        app_open(a);
+        s_origin[SCR_APP] = back;
+        return;
+    }
+    settings_t *st = settings_get();
+    bool on = !mc_running();
+    st->meshcore = on;
+    if (on && mc_start() != ESP_OK) {
+        st->meshcore = false;
+        toast(_("Radio LoRa indisponible"));
+    } else if (on) toast(_("MeshCore activé"));
+    else { mc_stop(); toast(_("MeshCore coupé")); }
+    settings_save();
+    netsvc_update();                        /* serveur TCP MeshCore */
+    if (m_sw_mesh) lv_obj_set_state(m_sw_mesh, LV_STATE_CHECKED, st->meshcore);
+    watch_refresh_status();
     quick_refresh();
 }
 
@@ -3048,22 +3291,22 @@ static lv_obj_t *q_mk_tile(lv_obj_t *p, int i, const char *icon, const char *txt
     return t;
 }
 
-/* rangée « titre / − [barre] + » (gros boutons, faciles au doigt) */
+/* rangée « − [titre / barre] + » (gros boutons, faciles au doigt) */
 static lv_obj_t *q_mk_level(lv_obj_t *s, int y, lv_event_cb_t cb, int step, int lo, int hi, lv_obj_t **title)
 {
     *title = mk_label(s, &font_small, C_DIM, "");
-    lv_obj_align(*title, LV_ALIGN_TOP_MID, 0, y);
+    lv_obj_align(*title, LV_ALIGN_TOP_MID, 0, y + S(2));
     lv_obj_t *mn = mk_button(s, "-", C_CARD, cb, (void *)(intptr_t)-step);
     lv_obj_set_style_text_font(lv_obj_get_child(mn, 0), &font_title, 0);
     lv_obj_set_size(mn, S(48), S(38));
-    lv_obj_set_pos(mn, S(12), y + S(14));
+    lv_obj_set_pos(mn, S(12), y);
     lv_obj_t *pl = mk_button(s, "+", C_CARD, cb, (void *)(intptr_t)step);
     lv_obj_set_style_text_font(lv_obj_get_child(pl, 0), &font_title, 0);
     lv_obj_set_size(pl, S(48), S(38));
-    lv_obj_set_pos(pl, S(180), y + S(14));
+    lv_obj_set_pos(pl, S(180), y);
     lv_obj_t *bar = lv_bar_create(s);
     lv_obj_set_size(bar, S(100), S(10));
-    lv_obj_set_pos(bar, S(70), y + S(28));
+    lv_obj_set_pos(bar, S(70), y + S(26));
     lv_bar_set_range(bar, lo, hi);
     lv_obj_set_style_bg_color(bar, C_OFF, LV_PART_MAIN);
     lv_obj_set_style_bg_color(bar, C_FG, LV_PART_INDICATOR);
@@ -3096,10 +3339,30 @@ static void build_quick(void)
     q_mk_tile(s, Q_LAMP, SYM_BULB, _("Lampe"), S(86), S(94));
     q_mk_tile(s, Q_MEDIA, LV_SYMBOL_AUDIO, _("Lecture"), S(160), S(94));
 
+    /* MeshCore : pilule pleine largeur (l'état se lit d'un coup d'œil) */
+    lv_obj_t *m = q_mesh = lv_obj_create(s);
+    lv_obj_set_size(m, S(216), S(40));
+    lv_obj_set_pos(m, S(12), S(164));
+    lv_obj_set_style_radius(m, S(20), 0);
+    lv_obj_set_style_border_width(m, 0, 0);
+    lv_obj_set_style_bg_color(m, C_CARD, 0);
+    lv_obj_set_style_bg_opa(m, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(m, C_OFF, LV_STATE_PRESSED);
+    lv_obj_set_style_pad_all(m, 0, 0);
+    lv_obj_remove_flag(m, LV_OBJ_FLAG_SCROLLABLE);
+    bubble(m);
+    lv_obj_add_event_cb(m, quick_mesh_cb, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(m, quick_mesh_cb, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_t *l = mk_label(m, &font_text, C_FG, with_sym(SYM_COMMENTS, "MeshCore"));
+    lv_obj_align(l, LV_ALIGN_LEFT_MID, S(12), 0);
+    q_mesh_st = mk_label(m, &font_text, C_FG, "");
+    lv_obj_align(q_mesh_st, LV_ALIGN_RIGHT_MID, -S(14), 0);
+
     lv_obj_t *t;
-    q_bri = q_mk_level(s, S(164), quick_bri_cb, 49, 10, 255, &t);
+    q_bri = q_mk_level(s, S(210), quick_bri_cb, 49, 10, 255, &t);
     lv_label_set_text(t, _("Luminosité"));
-    q_vol = q_mk_level(s, S(222), quick_vol_cb, VOL_STEP, 0, 100, &q_vol_lbl);
+    q_vol = q_mk_level(s, S(255), quick_vol_cb, VOL_STEP, 0, 100, &q_vol_lbl);
+    q_build_sheet(s);
 }
 
 static void release_quick(void)
@@ -3108,6 +3371,8 @@ static void release_quick(void)
     scr_delete(s_scr[SCR_QUICK]);
     s_scr[SCR_QUICK] = NULL;
     q_info = q_bri = q_vol = q_vol_lbl = q_wifi_lbl = NULL;
+    q_mesh = q_mesh_st = q_sheet = q_sh_info = NULL;
+    memset(q_sh_opt, 0, sizeof(q_sh_opt));
     memset(q_tile, 0, sizeof(q_tile));
 }
 
@@ -3345,7 +3610,7 @@ static void release_menu(void)
     /* plus aucun pointeur vers des objets détruits */
     m_slider = m_sw_vib = m_sw_bt = m_sw_tap = m_sw_nwake = m_bm_tmo = m_bm_face = m_bm_lang = NULL;
     m_sw_steps = m_sw_wrist = m_sw_mesh = m_sw_ant = NULL;
-    m_bm_wsens = m_sw_glance = m_bm_gpct = m_bm_gdur = m_bm_wpwr = NULL;
+    m_bm_wsens = m_sw_glance = m_bm_gpct = m_bm_gdur = m_bm_wpwr = m_bm_wmode = NULL;
     m_bt_info = m_confirm = m_sd_info = m_sd_btn = m_sd_share = NULL;
     m_sw_wifi = m_wifi_info = m_wifi_nets = m_wifi_retry = m_sw_wlow = m_sw_wnob = NULL;
     m_sw_mtcp = m_mtcp_info = NULL;
@@ -3396,6 +3661,7 @@ void ui_release_idle(void)
  * elle), sinon retour au cadran */
 void ui_go_home_or_app(void)
 {
+    q_sheet_close();
     if (s_cur == SCR_APP) return;
     if (s_cur == SCR_QUICK && menu_parent(SCR_QUICK) == SCR_APP && s_scr[SCR_APP] && s_app_cur) {
         show(SCR_APP, LV_SCR_LOAD_ANIM_NONE);         /* centre de contrôle tiré depuis l'app */
@@ -3411,6 +3677,7 @@ void ui_go_home_or_app(void)
 
 void ui_go_home(void)
 {
+    if (s_cur == SCR_QUICK && q_sheet_open()) { q_sheet_close(); return; }   /* feuille Wi-Fi */
     /* bouton sur le centre de contrôle : le referme, comme le geste */
     if (s_cur == SCR_QUICK && menu_parent(SCR_QUICK) != SCR_WATCH) {
         show(menu_parent(SCR_QUICK), LV_SCR_LOAD_ANIM_MOVE_TOP);
@@ -3615,6 +3882,7 @@ void ui_apply_settings(const settings_t *n)
     *st = *n;
     st->wifi_net = o.wifi_net;                          /* via wifi_set_pick, plus bas */
     st->wifi_on = o.wifi_on;                            /* jamais par le web (on s'y connecte) */
+    st->wifi_ap = o.wifi_ap;
     st->web_on = o.web_on;
     if (n->brightness != o.brightness) display_set_brightness(n->brightness);
     if (n->tap_wake != o.tap_wake) display_tap_enable(n->tap_wake);

@@ -28,8 +28,9 @@ Default preset: **EU/UK Narrow**, 869.618 MHz, 62.5 kHz bandwidth, SF8, CR 4/8, 
 radio parameter (frequency, bandwidth, spreading factor, coding rate, power) is set **from the
 MeshCore app** and saved on the watch; the watch shows them but does not edit them.
 
-**Antenna**: *Settings › MeshCore › External antenna* switches between the built-in antenna
-(off) and an antenna on the USB-C connector (on). It applies immediately.
+**Antenna**: at the top of the **Radio** tab of the MeshCore app (*Built-in* / *External*),
+or *Settings › MeshCore › External antenna*. External: antenna on the USB-C connector. It
+applies immediately.
 
 ## The MeshCore app on the watch
 
@@ -37,19 +38,85 @@ The **MeshCore** app (first in the app list) has three tabs:
 
 - **Contacts**: chat contacts and rooms, plus conversations whose contact was deleted since;
 - **Channels**: the channels set up in the iPhone app;
-- **Radio**: node name, frequency, SF and power, iPhone app state (connected, up to date, or
+- **Radio**: **Flood advert** (repeated across the network) and **Zero-hop advert** buttons,
+  node name, frequency, SF and power, iPhone app state (connected, up to date, or
   number of messages waiting for it), radio counters (`TX` with failures, `RX` with damaged
   packets, noise floor) and SD card state.
 
-Lists put conversations with **unread** messages first, then follow **alphabetical** order
+Lists put conversations with **unread** messages first, then the **Public** channel (MeshCore's
+channel with the well-known key), then follow **alphabetical** order
 (leading emoji and punctuation ignored, case and accents ignored). Each row shows the last
 message, its time and a badge with the unread count; tab titles count unread messages too.
 Past 40 rows, *Show more* loads the rest.
+
+For a contact, the row also shows its **path**, like the iPhone app: *direct*, *2 hop(s)*,
+or *flood* when no path is known. **Search…**, at the top of the Contacts and Channels tabs,
+opens the keyboard: the list keeps only names containing the typed text (case and accents
+ignored). Tap the filter to clear it.
 
 Touching a row **slides the conversation in**: bubbles, oldest at the top, sender name on
 channels, messages sent from the iPhone on the right, an *Unread* marker. *Older messages*
 goes further back (watch, then SD card). Back: the arrow, a swipe right or the button. Emoji
 and any UTF-8 text display as on the phone.
+
+### Writing from the watch
+
+At the bottom of every conversation, **Write** opens the full-screen keyboard. It works with
+any contact or channel, even without messages.
+
+![AZERTY keyboard with long-press accents, and T9 keyboard](../img/meshcore-compose.png)
+
+- **Full keyboard** (AZERTY or QWERTY, *Settings › MeshCore*): the key that counts is the one
+  under the finger **on release**, shown large above it, so you can slide to correct.
+  **Long press** on e, a, c, i, o, u, y, n, ' or .: accents (é è ê ë…), slide onto one and
+  release. Automatic capital at the start of a sentence; ⇧ twice: caps lock. *123*: digits and
+  symbols.
+- **T9**: huge keys. Tapping a key opens its characters in large over the keyboard (2: a b c
+  2 à â ç): tap the one you want. ‹ or a tap beside them closes it. Long press on the key:
+  the digit directly.
+- The top-right button switches between them (**T9** / **ABC**); the last one used comes back
+  next time.
+- 🙂: common emoji. 💬: **quick replies** ("OK 👍", "On my way", "Where are you?"…).
+- The counter shows bytes used (158 for a direct message; on a channel the node name takes
+  part of it). The draft is kept if you close without sending.
+
+**Delivery state**, under every message written on the watch, as in the iPhone app:
+
+| | Direct | Channel |
+|---|---|---|
+| in progress | *Sending… 2/3* (attempt) | *Sent, waiting for repeats* |
+| success | *✓ Delivered · 1.8 s* (recipient's ack, round trip) | *✓ Heard 3 repeat(s)* |
+| failed | *✗ Failed* | *No repeat heard* |
+
+For direct messages the watch **retries** until the recipient confirms, up to the *Attempts*
+setting (3 by default, like the iPhone app); the last attempt floods if the direct path stays
+silent. On a **channel**, if no repeat is heard after 17 s, the watch sends **the same
+packet** again (*No repeat, resend 2/3*), up to the same *Attempts*: nodes that already have it
+ignore it, so there is no duplicate. Retries go on **with the app closed and the screen off**.
+Touching a failed message resends it.
+
+The iPhone app does not see messages written on the watch: the companion protocol has no
+frame for that. They stay in the watch history and on the SD card (with their state).
+
+### Regions
+
+A region (*scope*) limits a message's flood to the repeaters that know it. The node only
+keeps its **default** region; the iPhone app's region list and per-channel choice stay in
+the app. So the watch has its own:
+
+![Region list, channel region in the header, region picker](../img/meshcore-regions.png)
+
+- **Radio tab › Regions**: the list. **Add a region** opens the keyboard (no automatic
+  capital; type the name without #, e.g. "bzh"). The bin removes it.
+- **Discover** asks repeaters among the contacts that are reachable directly for their
+  regions: known path (after an exchange with it), or the path of its last advert heard since
+  the watch started. At most 12, one every 1.5 s. Names received join the list and are shown
+  under the button. A repeater only answers direct requests and rate-limits them.
+- In a **channel**, the button at the top right shows the region of its sends (*Region*:
+  the node's default). Tap it to pick one, or add one.
+
+A region's key is computed as on repeaters (SHA-256 of "#name"). Private regions ($) are not
+handled. Direct messages keep the default region.
 
 ### Read and unread
 
@@ -120,5 +187,4 @@ down and the radio does not answer (details in [hardware notes](hardware.md)).
 
 ## Not yet
 
-Message alerts (banner and vibration), replying from the watch, low-power receive, and a
-TCP link for desktop clients.
+Message alerts (banner and vibration), predictive T9 input, low-power receive.

@@ -117,8 +117,12 @@ calls still ring. A moon shows on the watch face.
 - **Close it**: swipe ↑ or →, or a short press on the button. The app is back as you left
   it: Radio and WebRX keep playing while you change the volume. One exception: a *Soar*
   game in progress goes back to the title screen.
-- **Wi-Fi**: short tap = on / off (the tile shows the network), long press = Wi-Fi settings.
-  **Settings** are under the gear, top right.
+- **Wi-Fi**: a tap opens the **Off / Client / Hotspot** choice (three large buttons, state
+  below: network and address, or the hotspot's name and password). The tile shows the
+  network. Long press, or the gear of the choice = Wi-Fi settings. The watch **settings** are
+  under the gear, top right.
+- **MeshCore** (full-width pill): a tap turns MeshCore on or off; when on it shows the number
+  of unread messages. Long press = opens the MeshCore app.
 - **Now playing**, **Settings** and **Torch** quit the app you came from (radio listening
   stops), like the usual back gesture.
 - **Global volume** (− / +, steps of 10 %) applies to every sound of the watch: beeps,

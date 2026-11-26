@@ -36,6 +36,7 @@ autorités publiques habituelles (Let's Encrypt, etc.) ; un certificat auto-sign
 | Nom sous la fréquence | **signets** de la bande (ceux du serveur) |
 | Pastille du mode | modes **du serveur**, avec leur bande passante (modes ajoutés compris) |
 | Waterfall | toucher : écouter là (accroche un signet proche) ; zoom ×1 / ×4 / ×16 dans le coin |
+| **Activer le Wi-Fi** | affiché en entrant si le Wi-Fi n'est pas déjà allumé en client : l'allume en client le temps de l'écoute ([détails](wifi.md#apps-internet)) |
 | ■ / ▶ | arrêter / reprendre l'écoute (Wi-Fi coupé à l'arrêt) |
 | Bouton latéral | écran éteint, **l'écoute continue** ; un nouvel appui y revient |
 | Glisser → ou ‹ | quitter l'app : l'écoute s'arrête, le Bluetooth revient |

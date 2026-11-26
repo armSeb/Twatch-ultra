@@ -36,6 +36,7 @@ authorities (Let's Encrypt and so on); self-signed certificates are refused.
 | Name under the frequency | **Bookmarks** of the band (the server's) |
 | Mode chip | modes **of the server**, with their bandwidth (custom modes included) |
 | Waterfall | tap: listen there (snaps to a nearby bookmark); ×1 / ×4 / ×16 zoom in its corner |
+| **Turn on Wi-Fi** | shown on entry when Wi-Fi is not already on as a client: turns it on as a client for the listening session ([details](wifi.md#internet-apps)) |
 | ■ / ▶ | stop / start listening (Wi-Fi off when stopped) |
 | Side button | screen off, **listening continues**; press again to come back |
 | Swipe → or ‹ | leave the app: listening stops, Bluetooth comes back |

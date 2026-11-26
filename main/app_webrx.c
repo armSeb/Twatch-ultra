@@ -54,6 +54,7 @@ static uint32_t m_mode_ver = ~0u;
 /* vue */
 static lv_obj_t *v_scr, *v_dot, *v_prof, *v_dig[NDIG], *v_dot_sep, *v_name, *v_mod, *v_mod_lbl, *v_meter, *v_meter_lbl;
 static lv_obj_t *v_wf, *v_over, *v_zoom, *v_status, *v_st1, *v_st2, *v_play, *v_play_lbl, *v_minus, *v_plus, *v_setup;
+static lv_obj_t *v_gate;                     /* Wi-Fi coupé : bouton pour l'allumer */
 static lv_obj_t *v_sheet, *v_sheet_title, *v_sheet_list, *v_spk;
 static lv_obj_t *v_vol, *v_vol_lbl, *v_sq, *v_sq_lbl, *v_sq_sig;
 static uint16_t *v_wf_buf;
@@ -387,6 +388,7 @@ static void start(void)
         return;
     }
     lv_obj_add_flag(v_setup, LV_OBJ_FLAG_HIDDEN);
+    if (v_gate) lv_obj_add_flag(v_gate, LV_OBJ_FLAG_HIDDEN);
     esp_err_t e = webrx_start();
     if (e != ESP_OK) {
         ui_toast(_("Wi-Fi indisponible (mémoire ?)"));
@@ -396,6 +398,22 @@ static void start(void)
     m_have_floor = false;
     if (v_wf_buf) memset(v_wf_buf, 0, WRX_FFT_W * WF_H * sizeof(uint16_t));
     m_span = 0;
+}
+
+/* en entrant : écoute relancée seulement si le Wi-Fi est déjà allumé en
+ * client ; sinon un bouton l'allume (en client, le temps de l'app) */
+static void auto_start(void)
+{
+    if (!m_want || webrx_running()) return;
+    if (ui_wifi_needed() && wrx_cfg_ready()) ui_wifi_gate_show(v_gate);   /* sinon : écran « Configurer » */
+    else start();
+}
+
+static void gate_cb(lv_event_t *e)
+{
+    m_want = true;
+    start();
+    refresh(true);
 }
 
 static void play_cb(lv_event_t *e)
@@ -965,9 +983,10 @@ static void create(lv_obj_t *scr)
     v_plus = round_btn(scr, "+", plus_cb, C_OFF, S(78), true);
 
     build_setup(scr);
+    v_gate = ui_wifi_gate(scr, TOP_H, lv_color_hex(0x10B981), gate_cb);
     build_sheet(scr);
     v_tick = lv_timer_create(tick_cb, 100, NULL);
-    if (m_want && !webrx_running()) start();
+    auto_start();
     refresh(true);
 }
 
@@ -981,6 +1000,7 @@ static void destroy(void)
     v_wf_buf = NULL;
     v_scr = v_dot = v_prof = v_dot_sep = v_name = v_mod = v_mod_lbl = v_meter = v_meter_lbl = NULL;
     v_wf = v_over = v_zoom = v_status = v_st1 = v_st2 = v_play = v_play_lbl = v_minus = v_plus = v_setup = NULL;
+    v_gate = NULL;
     v_sheet = v_sheet_title = v_sheet_list = v_spk = NULL;
     v_vol = v_vol_lbl = v_sq = v_sq_lbl = v_sq_sig = NULL;
     v_sheet_kind = SH_NONE;
@@ -991,7 +1011,7 @@ static void on_show(void)
 {
     webrx_fft_enable(true, m_zoom);
     if (v_tick) lv_timer_resume(v_tick);
-    if (m_want && !webrx_running() && v_scr) start();
+    if (v_scr) auto_start();
     refresh(true);
 }
 

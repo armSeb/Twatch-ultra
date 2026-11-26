@@ -13,6 +13,16 @@
  *
  * La montre lit sa propre copie des messages (mc_hist.c) : les lire ici ne
  * les retire pas de la file que l'app MeshCore récupère à la connexion.
+ *
+ * Écrire : la barre « Écrire » en bas d'une conversation ouvre le clavier
+ * (compose.c). Sous chaque message envoyé de la montre, son état, comme
+ * l'app iPhone : privé « Envoi… 2/3 », « Livré · 1,8 s » ou « Échec » ;
+ * canal « Envoyé », « Relayé ×3 » ou « Aucun relais entendu ». Toucher un
+ * message en échec le renvoie. Les essais continuent app fermée (tâche mesh).
+ *
+ * Régions (mc_region.c) : onglet Radio › Régions (ajouter, retirer,
+ * découvrir auprès des répéteurs) ; dans un canal, la pastille en haut à
+ * droite choisit la région de ses envois.
  */
 #include <stdio.h>
 #include <string.h>
@@ -29,7 +39,9 @@
 #include "esp_attr.h"
 #include "meshcore/mc_port.h"
 #include "meshcore/mc_text.h"
+#include "meshcore/mc_region.h"
 #include "sx1262.h"
+#include "compose.h"
 
 #define EV_NEW     1
 #define ROWS_STEP  40           /* lignes construites d'un coup (« Afficher plus ») */
@@ -37,6 +49,8 @@
 #define PAGE       20           /* bulles chargées d'un coup */
 #define BUBBLES_MAX 200         /* objets LVGL bornés dans une conversation */
 #define SLIDE_MS   200
+#define TRACK_N    16           /* messages envoyés suivis dans la conversation ouverte */
+#define WRITE_H    S(46)        /* barre « Écrire » */
 
 enum { TAB_CONTACTS, TAB_CHANNELS, TAB_RADIO, TAB_N };
 
@@ -47,7 +61,10 @@ static int m_tab;
 EXT_RAM_BSS_ATTR static mc_conv_t m_conv[ROWS_MAX];
 EXT_RAM_BSS_ATTR static mc_msg_t m_buf[PAGE];
 
+static char m_query[MC_NAME_MAX];      /* recherche dans l'onglet (vide : tout) */
+
 /* vue */
+static lv_obj_t *v_ant;                 /* onglet Radio : antenne intégrée / externe */
 static lv_obj_t *v_scr, *v_tabs, *v_list, *v_off, *v_radio, *v_status, *v_diag, *v_sd;
 static lv_timer_t *v_tmr;
 static uint32_t v_ver = UINT32_MAX;     /* version de l'historique affichée */
@@ -61,6 +78,18 @@ static mc_conv_t c_conv;
 static bool c_open;
 static uint32_t c_oldest, c_newest;
 static int c_count;
+/* état des messages envoyés depuis la montre : ligne à mettre à jour */
+static struct { uint32_t seq; uint8_t flags, hops; int8_t rtt; lv_obj_t *meta; } c_track[TRACK_N];
+static int c_ntrack;
+static lv_obj_t *c_chip;                /* canal : région de ses envois */
+
+/* panneau Régions : gestion (onglet Radio) ou choix pour un canal */
+static lv_obj_t *r_panel, *r_list, *r_stat, *r_closing, *v_reg_btn;
+static bool r_pick;
+static uint8_t r_peer[MC_PEER_LEN];
+static bool r_running;
+EXT_RAM_BSS_ATTR static char r_names[MC_REGION_MAX][MC_REGION_NAME];
+static int r_n;
 
 /* ------------------------------------------------------------------ outils */
 static void fmt_time(uint32_t ts, char *b, size_t n)
@@ -147,7 +176,369 @@ static void refresh_radio(void)
     lv_label_set_text(v_sd, b);
 }
 
+
+/* ------------------------------------------------------------------ régions */
+static void reg_build(void);
+
+static void chip_update(void)
+{
+    if (!c_chip) return;
+    char nm[MC_REGION_NAME];
+    lv_obj_t *l = lv_obj_get_child(c_chip, 0);
+    if (mc_region_of(c_conv.peer, nm)) {
+        lv_label_set_text(l, nm);
+        lv_obj_set_style_text_color(l, C_FG, 0);
+        lv_obj_set_style_bg_color(c_chip, lv_color_hex(0x134E4A), 0);
+    } else {
+        lv_label_set_text(l, _("Région"));
+        lv_obj_set_style_text_color(l, C_DIM, 0);
+        lv_obj_set_style_bg_color(c_chip, C_CARD, 0);
+    }
+}
+
+static void reg_btn_update(void)
+{
+    if (!v_reg_btn) return;
+    char b[64];
+    int n = mc_region_list(r_names, MC_REGION_MAX);
+    r_n = n;
+    if (n) snprintf(b, sizeof b, "%s (%d)", _("Régions"), n);
+    else snprintf(b, sizeof b, "%s", _("Régions"));
+    lv_label_set_text(lv_obj_get_child(v_reg_btn, 0), b);
+}
+
+static void reg_status(void)
+{
+    if (!r_stat) return;
+    mc_region_disc_t st;
+    mc_region_disc_status(&st);
+    char b[200];
+    if (st.running)
+        snprintf(b, sizeof b, _("Répéteurs interrogés : %u/%u · réponses : %u"), st.asked, st.reachable, st.replied);
+    else if (st.ran && !st.candidates)
+        snprintf(b, sizeof b, "%s", _("Aucun répéteur dans les contacts : la découverte n'a personne à interroger."));
+    else if (st.ran && !st.reachable)
+        snprintf(b, sizeof b, _("Aucun des %u répéteurs n'a de chemin connu : échange un message avec l'un d'eux, ou attends son annonce, puis recommence."),
+                 st.candidates);
+    else if (st.ran && !st.replied)
+        snprintf(b, sizeof b, _("Aucune réponse des %u répéteurs interrogés (hors de portée, ou version sans requête des régions)."), st.asked);
+    else if (st.ran && !st.names[0])
+        snprintf(b, sizeof b, _("%u réponse(s) sur %u : aucune région déclarée sur ces répéteurs."), st.replied, st.asked);
+    else if (st.ran)
+        snprintf(b, sizeof b, _("%u réponse(s) sur %u. Reçues : %s (%u nouvelle(s))."), st.replied, st.asked, st.names, st.found);
+    else
+        snprintf(b, sizeof b, "%s", _("Découvrir demande leurs régions aux répéteurs joignables en direct."));
+    lv_label_set_text(r_stat, b);
+    bool ended = r_running && !st.running;
+    r_running = st.running;
+    if (ended) reg_build();                         /* fin : la liste a pu grandir */
+}
+
+static void reg_deleted_cb(lv_anim_t *a)
+{
+    lv_obj_t *p = (lv_obj_t *)lv_anim_get_user_data(a);
+    if (p == r_closing) r_closing = NULL;
+    lv_obj_delete(p);
+}
+
+static void reg_close(bool anim)
+{
+    if (!r_panel) return;
+    lv_obj_t *p = r_panel;
+    r_panel = r_list = r_stat = NULL;
+    compose_close(false);
+    reg_btn_update();
+    if (!anim) { lv_obj_delete(p); return; }
+    if (r_closing) { lv_anim_delete(r_closing, NULL); lv_obj_delete(r_closing); }
+    r_closing = p;
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, p);
+    lv_anim_set_user_data(&a, p);
+    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_x);
+    lv_anim_set_values(&a, 0, UI_W + UI_PAD_X);
+    lv_anim_set_duration(&a, SLIDE_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in);
+    lv_anim_set_completed_cb(&a, reg_deleted_cb);
+    lv_anim_start(&a);
+}
+
+static void reg_back_cb(lv_event_t *e) { reg_close(true); }
+
+/* choix d'une région pour le canal (-1 : défaut du nœud) */
+static void reg_pick_cb(lv_event_t *e)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (!r_pick || i >= r_n) return;
+    mc_region_set(r_peer, i < 0 ? NULL : r_names[i]);
+    chip_update();
+    reg_close(true);
+}
+
+static void reg_rebuild_async(void *arg) { reg_build(); }
+
+static void reg_del_cb(lv_event_t *e)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i < 0 || i >= r_n) return;
+    mc_region_remove(r_names[i]);
+    ui_toast(_("Région retirée"));
+    lv_async_call(reg_rebuild_async, NULL);         /* la ligne touchée part avec la liste */
+}
+
+static bool reg_add_send(const char *text, void *ud)
+{
+    bool added = false;
+    if (!mc_region_add(text, &added)) {
+        ui_toast(_("Nom refusé : vide, privé ($) ou liste pleine"));
+        return false;
+    }
+    if (!added) ui_toast(_("Région déjà dans la liste"));
+    if (r_pick) {                                   /* ajoutée depuis un canal : choisie */
+        char nm[MC_REGION_NAME];
+        const char *t = text;
+        while (*t == ' ' || *t == '#') t++;
+        strlcpy(nm, t, sizeof nm);
+        for (int k = (int)strlen(nm) - 1; k >= 0 && nm[k] == ' '; k--) nm[k] = 0;
+        mc_region_set(r_peer, nm);
+        chip_update();
+    }
+    lv_async_call(reg_rebuild_async, NULL);
+    return true;
+}
+
+static void reg_add_cb(lv_event_t *e)
+{
+    compose_open(v_scr, _("Nouvelle région"), 0x52454731u, MC_REGION_NAME - 1, COMPOSE_NO_CAPS, reg_add_send, NULL);
+}
+
+static void reg_disc_cb(lv_event_t *e)
+{
+    if (!mc_running()) { ui_toast(_("MeshCore coupé")); return; }
+    if (!mc_region_discover()) { ui_toast(_("Découverte déjà en cours")); return; }
+    r_running = true;
+    reg_status();
+}
+
+static lv_obj_t *reg_row(const char *name, bool checked, lv_event_cb_t cb, int i)
+{
+    lv_obj_t *r = lv_button_create(r_list);
+    lv_obj_remove_style_all(r);
+    lv_obj_set_size(r, lv_pct(100), S(44));
+    lv_obj_set_style_bg_color(r, checked ? lv_color_hex(0x134E4A) : C_CARD, 0);
+    lv_obj_set_style_bg_color(r, C_OFF, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(r, S(10), 0);
+    lv_obj_set_style_pad_hor(r, S(10), 0);
+    if (cb) lv_obj_add_event_cb(r, cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    ui_bubble(r);
+    lv_obj_t *n = ui_label(r, &font_text, C_FG, name);
+    lv_label_set_long_mode(n, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(n, UI_W - S(70));
+    lv_obj_align(n, LV_ALIGN_LEFT_MID, 0, 0);
+    if (checked) {
+        lv_obj_t *k = ui_label(r, &font_text, C_ACC, LV_SYMBOL_OK);
+        lv_obj_align(k, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
+    return r;
+}
+
+static void reg_build(void)
+{
+    if (!r_list) return;
+    lv_obj_clean(r_list);
+    r_n = mc_region_list(r_names, MC_REGION_MAX);
+    if (r_pick) {
+        char cur[MC_REGION_NAME];
+        bool has = mc_region_of(r_peer, cur);
+        reg_row(_("Défaut du nœud"), !has, reg_pick_cb, -1);
+        for (int i = 0; i < r_n; i++) reg_row(r_names[i], has && !strcmp(cur, r_names[i]), reg_pick_cb, i);
+    } else {
+        for (int i = 0; i < r_n; i++) {
+            lv_obj_t *r = reg_row(r_names[i], false, NULL, i);
+            lv_obj_remove_flag(r, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_t *d = ui_button(r, LV_SYMBOL_TRASH, lv_color_hex(0x7F1D1D), reg_del_cb, (void *)(intptr_t)i);
+            lv_obj_set_size(d, S(40), S(34));
+            lv_obj_set_ext_click_area(d, S(5));
+            lv_obj_align(d, LV_ALIGN_RIGHT_MID, S(4), 0);
+        }
+        if (!r_n) {
+            lv_obj_t *e = ui_label(r_list, &font_small, C_DIM,
+                                   _("Aucune région. Sans région, les messages partent avec celle par défaut du nœud."));
+            lv_label_set_long_mode(e, LV_LABEL_LONG_WRAP);
+            lv_obj_set_width(e, lv_pct(100));
+        }
+    }
+    char b[64];
+    lv_obj_t *dc = ui_button(r_list, "", C_ACC, reg_disc_cb, NULL);
+    lv_obj_set_size(dc, lv_pct(100), S(44));
+    snprintf(b, sizeof b, "%s  %s", LV_SYMBOL_REFRESH, _("Découvrir"));
+    lv_label_set_text(lv_obj_get_child(dc, 0), b);
+    lv_obj_t *ad = ui_button(r_list, "", C_CARD, reg_add_cb, NULL);
+    lv_obj_set_size(ad, lv_pct(100), S(44));
+    snprintf(b, sizeof b, "+  %s", _("Ajouter une région"));
+    lv_label_set_text(lv_obj_get_child(ad, 0), b);
+    r_stat = ui_label(r_list, &font_small, C_DIM, "");
+    lv_label_set_long_mode(r_stat, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(r_stat, lv_pct(100));
+    reg_status();
+}
+
+/* pick : choix pour le canal peer ; sinon gestion de la liste */
+static void reg_open(bool pick, const uint8_t *peer, const char *chan)
+{
+    if (r_panel) reg_close(false);
+    r_pick = pick;
+    if (peer) memcpy(r_peer, peer, MC_PEER_LEN);
+    mc_region_disc_t st;
+    mc_region_disc_status(&st);
+    r_running = st.running;
+
+    r_panel = ui_container(v_scr);
+    lv_obj_add_flag(r_panel, LV_OBJ_FLAG_FLOATING);
+    lv_obj_set_size(r_panel, UI_W, UI_H);
+    lv_obj_set_style_bg_color(r_panel, C_BG, 0);
+    lv_obj_set_style_bg_opa(r_panel, LV_OPA_COVER, 0);
+    lv_obj_add_flag(r_panel, LV_OBJ_FLAG_CLICKABLE);
+    ui_bubble(r_panel);
+
+    lv_obj_t *hdr = lv_button_create(r_panel);
+    lv_obj_remove_style_all(hdr);
+    lv_obj_set_size(hdr, UI_W, S(40));
+    lv_obj_set_style_bg_color(hdr, C_CARD, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(hdr, reg_back_cb, LV_EVENT_CLICKED, NULL);
+    ui_bubble(hdr);
+    lv_obj_t *ar = ui_label(hdr, &font_title, C_ACC, LV_SYMBOL_LEFT);
+    lv_obj_align(ar, LV_ALIGN_LEFT_MID, S(12), 0);
+    lv_obj_t *t = ui_label(hdr, &font_title, C_FG, "");
+    lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(t, UI_W - S(44), lv_font_get_line_height(&font_title));
+    lv_obj_align(t, LV_ALIGN_LEFT_MID, S(36), 0);
+    char title[MC_NAME_MAX + 16];
+    if (pick) snprintf(title, sizeof title, "%s%s", chan && chan[0] != '#' ? "#" : "", chan ? chan : "");
+    else snprintf(title, sizeof title, "%s", _("Régions"));
+    emoji_label_set_text(t, title);
+
+    r_list = ui_container(r_panel);
+    lv_obj_set_size(r_list, UI_W, UI_H - S(42));
+    lv_obj_set_pos(r_list, 0, S(42));
+    lv_obj_set_style_pad_hor(r_list, S(8), 0);
+    lv_obj_set_style_pad_row(r_list, S(6), 0);
+    lv_obj_set_style_pad_bottom(r_list, S(30), 0);
+    lv_obj_set_flex_flow(r_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(r_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(r_list, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_add_flag(r_list, LV_OBJ_FLAG_SCROLLABLE);
+    ui_bubble(r_list);
+    if (pick) {
+        lv_obj_t *h = ui_label(r_list, &font_small, C_DIM, _("Région des messages envoyés de la montre dans ce canal :"));
+        lv_label_set_long_mode(h, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(h, lv_pct(100));
+        /* l'en-tête et l'indication ne sont pas reconstruits : liste à part */
+        lv_obj_t *l = ui_container(r_list);
+        lv_obj_set_size(l, lv_pct(100), LV_SIZE_CONTENT);
+        lv_obj_set_style_pad_row(l, S(6), 0);
+        lv_obj_set_flex_flow(l, LV_FLEX_FLOW_COLUMN);
+        ui_bubble(l);
+        r_list = l;
+    }
+    reg_build();
+
+    lv_obj_set_x(r_panel, UI_W + UI_PAD_X);
+    slide(r_panel, UI_W + UI_PAD_X, 0, NULL);
+}
+
+static void chip_cb(lv_event_t *e)
+{
+    if (c_open && c_conv.kind == MC_CONV_CHANNEL) reg_open(true, c_conv.peer, c_conv.name);
+}
+
+static void regions_cb(lv_event_t *e) { reg_open(false, NULL, NULL); }
+
 /* ------------------------------------------------------------------ conversation */
+/* ligne sous une bulle : heure, puis état de l'envoi (messages de la montre) */
+static void meta_text(const mc_msg_t *m, lv_obj_t *mt)
+{
+    char meta[64], when[16];
+    bool out = m->flags & MC_F_OUT;
+    fmt_stamp(m->ts, when, sizeof when);
+    lv_color_t col = out ? lv_color_hex(0x93C5FD) : C_DIM;
+    if (out && (m->flags & MC_F_WATCH)) {
+        bool chan = m->kind == MC_CONV_CHANNEL;
+        if (m->flags & MC_F_ACK) {
+            col = C_OK;
+            if (chan) snprintf(meta, sizeof meta, _("%s · ✓ Relayé ×%u"), when, m->hops);
+            else if (m->snr_q4 > 0) {
+                char rt[12];
+                snprintf(rt, sizeof rt, "%d.%d", m->snr_q4 / 10, m->snr_q4 % 10);
+                if (i18n_get() == LANG_FR) for (char *q = rt; *q; q++) if (*q == '.') *q = ',';
+                snprintf(meta, sizeof meta, _("%s · ✓ Livré · %s s"), when, rt);
+            } else snprintf(meta, sizeof meta, _("%s · ✓ Livré"), when);
+        } else if (m->flags & MC_F_FAIL) {
+            col = chan ? C_WARN : C_BAD;
+            snprintf(meta, sizeof meta, "%s · %s", when,
+                     chan ? _("Aucun relais entendu · toucher pour renvoyer") : _("✗ Échec · toucher pour renvoyer"));
+        } else if (m->flags & MC_F_PEND) {
+            uint8_t tries = settings_get()->mesh_tries;
+            if (chan && (tries <= 1 || m->hops == 0)) snprintf(meta, sizeof meta, _("%s · Envoyé, en attente de relais"), when);
+            else if (chan) snprintf(meta, sizeof meta, _("%s · Pas de relais, renvoi %u/%u"), when, m->hops + 1, tries);
+            else if (tries > 1) snprintf(meta, sizeof meta, _("%s · Envoi… %u/%u"), when, m->hops + 1, tries);
+            else snprintf(meta, sizeof meta, _("%s · Envoi…"), when);
+        } else {
+            snprintf(meta, sizeof meta, "%s", when);
+        }
+    } else if (out) snprintf(meta, sizeof meta, "%s", when);
+    else if (m->hops == 0xFF || m->hops == 0) snprintf(meta, sizeof meta, "%s · %s", when, _("direct"));
+    else snprintf(meta, sizeof meta, _("%s · %u saut(s)"), when, m->hops);
+    lv_obj_set_style_text_color(mt, col, 0);
+    lv_label_set_text(mt, meta);
+}
+
+static void track(const mc_msg_t *m, lv_obj_t *mt)
+{
+    if (!(m->flags & MC_F_WATCH)) return;
+    int i = 0;
+    while (i < c_ntrack && c_track[i].seq != m->seq) i++;
+    if (i == c_ntrack) {
+        if (c_ntrack < TRACK_N) c_ntrack++;
+        else {                                   /* le plus ancien suivi cède sa place */
+            int o = 0;
+            for (int k = 1; k < TRACK_N; k++) if (c_track[k].seq < c_track[o].seq) o = k;
+            if (c_track[o].seq > m->seq) return;
+            i = o;
+        }
+    }
+    c_track[i].seq = m->seq;
+    c_track[i].flags = m->flags;
+    c_track[i].hops = m->hops;
+    c_track[i].rtt = m->snr_q4;
+    c_track[i].meta = mt;
+}
+
+/* états changés depuis l'affichage (accusé, relais, nouvel essai) */
+static void track_refresh(void)
+{
+    static mc_msg_t m;
+    for (int i = 0; i < c_ntrack; i++) {
+        if (!c_track[i].meta || !mc_msg_get(c_track[i].seq, &m)) continue;
+        if (m.flags == c_track[i].flags && m.hops == c_track[i].hops && m.snr_q4 == c_track[i].rtt) continue;
+        c_track[i].flags = m.flags;
+        c_track[i].hops = m.hops;
+        c_track[i].rtt = m.snr_q4;
+        meta_text(&m, c_track[i].meta);
+    }
+}
+
+static void bubble_cb(lv_event_t *e)
+{
+    uint32_t seq = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+    static mc_msg_t m;
+    if (!mc_msg_get(seq, &m) || !(m.flags & MC_F_FAIL) || !(m.flags & MC_F_WATCH)) return;
+    if (mc_resend(seq)) ui_toast(_("Nouvel essai"));
+    else ui_toast(_("Radio LoRa indisponible"));
+}
+
 static void add_bubble(const mc_msg_t *m, bool at_top)
 {
     bool out = m->flags & MC_F_OUT;
@@ -168,6 +559,11 @@ static void add_bubble(const mc_msg_t *m, bool at_top)
     lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(c, S(2), 0);
     ui_bubble(c);
+    if (m->flags & MC_F_WATCH) {                /* en échec : toucher pour renvoyer */
+        lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_bg_color(c, lv_color_hex(0x2B4BA8), LV_STATE_PRESSED);
+        lv_obj_add_event_cb(c, bubble_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)m->seq);
+    }
 
     const char *text = m->text;
     char who[MC_NAME_MAX];
@@ -186,13 +582,12 @@ static void add_bubble(const mc_msg_t *m, bool at_top)
     lv_obj_set_style_max_width(t, UI_W * 82 / 100 - S(14), 0);
     emoji_label_set_text(t, text);
 
-    char meta[40], when[16];
-    fmt_stamp(m->ts, when, sizeof when);
-    if (out) snprintf(meta, sizeof meta, "%s", when);
-    else if (m->hops == 0xFF || m->hops == 0) snprintf(meta, sizeof meta, "%s · %s", when, _("direct"));
-    else snprintf(meta, sizeof meta, _("%s · %u saut(s)"), when, m->hops);
-    lv_obj_t *mt = ui_label(c, &font_small, out ? lv_color_hex(0x93C5FD) : C_DIM, meta);
+    lv_obj_t *mt = ui_label(c, &font_small, C_DIM, "");
+    lv_label_set_long_mode(mt, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_max_width(mt, UI_W * 82 / 100 - S(14), 0);
+    meta_text(m, mt);
     if (out) lv_obj_set_style_text_align(mt, LV_TEXT_ALIGN_RIGHT, 0);
+    track(m, mt);
     c_count++;
 }
 
@@ -233,7 +628,11 @@ static void conv_append_new(void)
     bool at_end = lv_obj_get_scroll_bottom(c_list) < S(40);
     int k = 0;
     while (k < n && m_buf[k].seq > c_newest) k++;
-    for (int i = k - 1; i >= 0; i--) add_bubble(&m_buf[i], false);
+    for (int i = k - 1; i >= 0; i--) {
+        add_bubble(&m_buf[i], false);
+        if (m_buf[i].flags & MC_F_OUT) at_end = true;      /* son propre message : on le montre */
+    }
+    track_refresh();
     if (k) {
         c_newest = m_buf[0].seq;
         mc_conv_mark_read(c_conv.kind, c_conv.peer);
@@ -257,8 +656,11 @@ static void close_conv(bool anim)
 {
     if (!c_panel) return;
     lv_obj_t *p = c_panel;
-    c_panel = c_list = c_more = NULL;
+    c_panel = c_list = c_more = c_chip = NULL;
     c_open = false;
+    c_ntrack = 0;
+    compose_close(false);
+    reg_close(false);
     rebuild(true);                      /* liste : compteurs de non lus à jour */
     if (!anim) { lv_obj_delete(p); return; }
     if (c_closing) { lv_anim_delete(c_closing, NULL); lv_obj_delete(c_closing); }
@@ -277,12 +679,33 @@ static void close_conv(bool anim)
 
 static void conv_back_cb(lv_event_t *e) { close_conv(true); }
 
+static bool send_cb(const char *text, void *ud)
+{
+    if (!c_open) return false;
+    if (!mc_running()) { ui_toast(_("MeshCore coupé")); return false; }
+    if (!mc_send_text(c_conv.kind, c_conv.peer, text)) { ui_toast(_("Envoi impossible pour l'instant")); return false; }
+    return true;
+}
+
+static void write_cb(lv_event_t *e)
+{
+    if (!c_open) return;
+    if (!mc_running()) { ui_toast(_("MeshCore coupé")); return; }
+    char title[MC_NAME_MAX + 8];
+    snprintf(title, sizeof title, "%s%s", c_conv.kind == MC_CONV_CHANNEL && c_conv.name[0] != '#' ? "#" : "", c_conv.name);
+    uint8_t key[MC_PEER_LEN + 1];
+    key[0] = c_conv.kind;
+    memcpy(key + 1, c_conv.peer, MC_PEER_LEN);
+    compose_open(v_scr, title, mc_fnv32(key, sizeof key), mc_text_max(c_conv.kind), 0, send_cb, NULL);
+}
+
 static void open_conv(const mc_conv_t *cv)
 {
     if (c_panel) close_conv(false);
     c_conv = *cv;
     c_open = true;
     c_count = 0;
+    c_ntrack = 0;
 
     c_panel = ui_container(v_scr);
     lv_obj_add_flag(c_panel, LV_OBJ_FLAG_FLOATING);
@@ -305,12 +728,28 @@ static void open_conv(const mc_conv_t *cv)
     snprintf(title, sizeof title, "%s%s", cv->kind == MC_CONV_CHANNEL && cv->name[0] != '#' ? "#" : "", cv->name);
     lv_obj_t *t = ui_label(hdr, &font_title, C_FG, "");
     lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(t, UI_W - S(44));
+    bool chan = cv->kind == MC_CONV_CHANNEL;
+    lv_obj_set_size(t, UI_W - S(44) - (chan ? S(84) : 0), lv_font_get_line_height(&font_title));   /* une ligne */
     lv_obj_align(t, LV_ALIGN_LEFT_MID, S(36), 0);
     emoji_label_set_text(t, title);
+    c_chip = NULL;
+    if (chan) {                         /* région des envois : toucher pour la changer */
+        c_chip = ui_button(hdr, "", C_CARD, chip_cb, NULL);
+        lv_obj_set_size(c_chip, S(76), S(32));
+        lv_obj_set_style_radius(c_chip, S(16), 0);
+        lv_obj_set_style_pad_hor(c_chip, S(6), 0);
+        lv_obj_set_ext_click_area(c_chip, S(6));
+        lv_obj_align(c_chip, LV_ALIGN_RIGHT_MID, -S(6), 0);
+        lv_obj_t *cl = lv_obj_get_child(c_chip, 0);
+        lv_obj_set_style_text_font(cl, &font_small, 0);
+        lv_label_set_long_mode(cl, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(cl, lv_pct(100));
+        lv_obj_set_style_text_align(cl, LV_TEXT_ALIGN_CENTER, 0);
+        chip_update();
+    }
 
     c_list = ui_container(c_panel);
-    lv_obj_set_size(c_list, UI_W, UI_H - S(42));
+    lv_obj_set_size(c_list, UI_W, UI_H - S(42) - WRITE_H - S(18));
     lv_obj_set_pos(c_list, 0, S(42));
     lv_obj_set_style_pad_hor(c_list, S(4), 0);
     lv_obj_set_style_pad_row(c_list, S(6), 0);
@@ -320,6 +759,19 @@ static void open_conv(const mc_conv_t *cv)
     lv_obj_set_scrollbar_mode(c_list, LV_SCROLLBAR_MODE_ACTIVE);
     lv_obj_add_flag(c_list, LV_OBJ_FLAG_SCROLLABLE);
     ui_bubble(c_list);
+
+    /* barre « Écrire » : en bas, rétrécie pour les coins arrondis */
+    lv_obj_t *wb = ui_button(c_panel, "", C_ACC, write_cb, NULL);
+    lv_obj_set_size(wb, UI_W - S(60), WRITE_H);
+    lv_obj_set_style_radius(wb, WRITE_H / 2, 0);
+    lv_obj_align(wb, LV_ALIGN_BOTTOM_MID, 0, -S(4));
+    /* le tactile prenait mal le bas de la barre : zone sensible élargie
+     * tout autour (la liste s'arrête au-dessus) */
+    lv_obj_set_ext_click_area(wb, S(14));
+    char wt[48];
+    snprintf(wt, sizeof wt, "%s  %s", SYM_PEN, _("Écrire"));
+    lv_label_set_text(lv_obj_get_child(wb, 0), wt);
+    if (!mc_running()) lv_obj_add_state(wb, LV_STATE_DISABLED);
 
     c_more = ui_button(c_list, _("Messages plus anciens"), C_CARD, more_cb, NULL);
     lv_obj_set_size(c_more, lv_pct(100), S(36));
@@ -396,6 +848,7 @@ static void add_row(int i)
         lv_obj_t *tl = ui_label(r, &font_small, cv->unread ? C_ACC : C_DIM, w);
         lv_obj_align(tl, LV_ALIGN_TOP_RIGHT, 0, S(2));
     }
+    lv_obj_t *badge = NULL;
     if (cv->unread) {
         char u[8];
         snprintf(u, sizeof u, "%u", cv->unread > 99 ? 99 : cv->unread);
@@ -407,10 +860,72 @@ static void add_row(int i)
         lv_obj_set_style_text_align(b, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_min_width(b, S(20), 0);
         lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+        badge = b;
+    }
+    /* contact : chemin connu, comme l'app iPhone (direct, sauts, flood) */
+    if (cv->kind == MC_CONV_CONTACT && cv->hops != MC_HOPS_NA) {
+        char hb[24];
+        if (cv->hops == MC_HOPS_FLOOD) snprintf(hb, sizeof hb, "%s", _("flood"));
+        else if (cv->hops == 0) snprintf(hb, sizeof hb, "%s", _("direct"));
+        else snprintf(hb, sizeof hb, _("%u saut(s)"), cv->hops);
+        lv_obj_t *hl = ui_label(r, &font_small, cv->hops == MC_HOPS_FLOOD ? C_DIM : C_ACC, hb);
+        if (badge) lv_obj_align_to(hl, badge, LV_ALIGN_OUT_LEFT_MID, -S(6), 0);
+        else lv_obj_align(hl, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+        lv_obj_update_layout(hl);
+        int32_t w = lv_obj_get_width(hl) + S(8) + (badge ? S(26) : 0);
+        lv_obj_set_width(pv, UI_W - S(16) - w);
     }
 }
 
 static void more_rows_cb(lv_event_t *e);
+
+/* ------------------------------------------------------------------ recherche */
+static bool matches(const mc_conv_t *cv, const char *qkey)
+{
+    char k[MC_NAME_MAX * 2];
+    mc_sort_key(cv->name, k, sizeof k);         /* sans casse ni accents */
+    return strstr(k, qkey) != NULL;
+}
+
+static bool search_send(const char *text, void *ud)
+{
+    while (*text == ' ' || *text == '#') text++;
+    strlcpy(m_query, text, sizeof m_query);
+    for (int k = (int)strlen(m_query) - 1; k >= 0 && m_query[k] == ' '; k--) m_query[k] = 0;
+    v_limit = ROWS_STEP;
+    rebuild(true);
+    lv_obj_scroll_to_y(v_list, 0, LV_ANIM_OFF);
+    return true;
+}
+
+static void rebuild_async(void *arg) { if (v_list) rebuild(true); }
+
+static void search_cb(lv_event_t *e)
+{
+    if (m_query[0]) {                           /* filtre actif : le toucher l'efface */
+        m_query[0] = 0;
+        lv_async_call(rebuild_async, NULL);     /* le bouton touché part avec la liste */
+        return;
+    }
+    compose_open(v_scr, m_tab == TAB_CHANNELS ? _("Canal…") : _("Contact…"),
+                 0x53524348u, MC_NAME_MAX - 1, COMPOSE_NO_CAPS, search_send, NULL);
+}
+
+static void search_bar(void)
+{
+    char b[MC_NAME_MAX + 32];
+    if (m_query[0]) snprintf(b, sizeof b, "« %s »   %s", m_query, LV_SYMBOL_CLOSE);
+    else snprintf(b, sizeof b, "%s", _("Rechercher…"));
+    lv_obj_t *s = ui_button(v_list, "", m_query[0] ? lv_color_hex(0x134E4A) : C_CARD, search_cb, NULL);
+    lv_obj_set_size(s, lv_pct(100), S(36));
+    lv_obj_set_style_radius(s, S(18), 0);
+    lv_obj_t *l = lv_obj_get_child(s, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(l, lv_pct(100));
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(l, m_query[0] ? C_FG : C_DIM, 0);
+    emoji_label_set_text(l, b);
+}
 
 static void update_tabs(void)
 {
@@ -461,7 +976,18 @@ static void rebuild(bool force)
     int32_t sy = lv_obj_get_scroll_y(v_list);
     lv_obj_clean(v_list);
     uint8_t kind = m_tab == TAB_CHANNELS ? MC_CONV_CHANNEL : MC_CONV_CONTACT;
-    int total = mc_conv_list(kind, m_conv, v_limit < ROWS_MAX ? v_limit : ROWS_MAX);
+    search_bar();
+    int total;
+    if (m_query[0]) {                   /* filtre : sur toute la liste */
+        char q[MC_NAME_MAX * 2];
+        mc_sort_key(m_query, q, sizeof q);
+        int n = mc_conv_list(kind, m_conv, ROWS_MAX);
+        if (n > ROWS_MAX) n = ROWS_MAX;
+        total = 0;
+        for (int i = 0; i < n; i++) if (matches(&m_conv[i], q)) m_conv[total++] = m_conv[i];
+    } else {
+        total = mc_conv_list(kind, m_conv, v_limit < ROWS_MAX ? v_limit : ROWS_MAX);
+    }
     v_nconv = total < v_limit ? total : v_limit;
     for (int i = 0; i < v_nconv; i++) add_row(i);
     if (total > v_nconv && v_limit < ROWS_MAX) {
@@ -470,7 +996,11 @@ static void rebuild(bool force)
         lv_obj_t *m = ui_button(v_list, b, C_CARD, more_rows_cb, NULL);
         lv_obj_set_size(m, lv_pct(100), S(36));
     }
-    if (!total) {
+    if (!total && m_query[0]) {
+        lv_obj_t *e = ui_label(v_list, &font_text, C_DIM, _("Aucun résultat."));
+        lv_obj_set_width(e, lv_pct(100));
+        lv_obj_set_style_text_align(e, LV_TEXT_ALIGN_CENTER, 0);
+    } else if (!total) {
         lv_obj_t *e = ui_label(v_list, &font_small, C_DIM, kind == MC_CONV_CHANNEL ?
                                _("Aucun canal. Ajoute-les depuis l'app MeshCore.") :
                                _("Aucun contact pour l'instant. Ils apparaissent quand les nœuds s'annoncent."));
@@ -512,6 +1042,7 @@ static void tabs_cb(lv_event_t *e)
     if (t >= TAB_N || (int)t == m_tab) return;
     int dir = (int)t > m_tab ? 1 : -1;
     m_tab = (int)t;
+    m_query[0] = 0;
     lv_async_call(tab_switch_async, (void *)(intptr_t)dir);   /* la barre se redessine hors de son clic */
 }
 
@@ -524,8 +1055,29 @@ static void enable_cb(lv_event_t *e)
     rebuild(true);
 }
 
+static void advert_cb(lv_event_t *e)
+{
+    bool flood = lv_event_get_user_data(e) != NULL;
+    if (!mc_running()) { ui_toast(_("MeshCore coupé")); return; }
+    if (mc_send_advert(flood)) ui_toast(flood ? _("Annonce flood envoyée") : _("Annonce locale envoyée"));
+    else ui_toast(_("Envoi impossible pour l'instant"));
+}
+
+static void ant_cb(lv_event_t *e)
+{
+    uint32_t b = lv_buttonmatrix_get_selected_button(v_ant);
+    if (b > 1) return;
+    bool ext = b == 1;
+    if (settings_get()->lora_ext_ant == ext) return;
+    settings_get()->lora_ext_ant = ext;
+    settings_save();
+    sx_set_antenna(ext);
+    ui_toast(ext ? _("Antenne LoRa externe") : _("Antenne LoRa intégrée"));
+}
+
 static void tick_cb(lv_timer_t *t)
 {
+    if (r_panel) reg_status();
     if (m_tab == TAB_RADIO && !c_open) refresh_radio();
 }
 
@@ -567,6 +1119,9 @@ static void create(lv_obj_t *scr)
     lv_obj_set_style_pad_hor(v_radio, S(8), 0);
     lv_obj_set_style_pad_row(v_radio, S(8), 0);
     lv_obj_set_flex_flow(v_radio, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_bottom(v_radio, S(20), 0);
+    lv_obj_set_scroll_dir(v_radio, LV_DIR_VER);
+    lv_obj_add_flag(v_radio, LV_OBJ_FLAG_SCROLLABLE);
     ui_bubble(v_radio);
     v_status = ui_label(v_radio, &font_text, C_FG, "");
     lv_label_set_long_mode(v_status, LV_LABEL_LONG_WRAP);
@@ -577,6 +1132,29 @@ static void create(lv_obj_t *scr)
     v_sd = ui_label(v_radio, &font_small, C_DIM, "");
     lv_label_set_long_mode(v_sd, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(v_sd, lv_pct(100));
+    /* antenne : à portée de doigt, sans passer par les réglages */
+    ui_label(v_radio, &font_text, C_FG, _("Antenne LoRa"));
+    static const char *ant_map[3];
+    ant_map[0] = _("Intégrée");
+    ant_map[1] = _("Externe");
+    ant_map[2] = "";
+    v_ant = ui_segmented(v_radio, ant_map, ant_cb);
+    lv_obj_set_size(v_ant, lv_pct(100), S(40));
+    lv_buttonmatrix_set_button_ctrl_all(v_ant, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_one_checked(v_ant, true);
+    lv_buttonmatrix_set_button_ctrl(v_ant, settings_get()->lora_ext_ant ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
+    /* annonces : la montre se fait connaître (flood : relayée par tout le réseau) */
+    lv_obj_t *af = ui_button(v_radio, "", C_ACC, advert_cb, (void *)1);
+    lv_obj_set_size(af, lv_pct(100), S(44));
+    char ab[64];
+    snprintf(ab, sizeof ab, "%s  %s", SYM_TOWER, _("Annonce flood"));
+    lv_label_set_text(lv_obj_get_child(af, 0), ab);
+    lv_obj_t *az = ui_button(v_radio, _("Annonce locale (0 saut)"), C_CARD, advert_cb, (void *)0);
+    lv_obj_set_size(az, lv_pct(100), S(40));
+    /* régions : liste de la montre, découverte auprès des répéteurs */
+    v_reg_btn = ui_button(v_radio, "", C_CARD, regions_cb, NULL);
+    lv_obj_set_size(v_reg_btn, lv_pct(100), S(44));
+    reg_btn_update();
     lv_obj_t *hint = ui_label(v_radio, &font_small, C_DIM,
                               _("Fréquence, débit et puissance se règlent depuis l'app MeshCore de l'iPhone."));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
@@ -606,7 +1184,12 @@ static void destroy(void)
     if (v_tmr) { lv_timer_delete(v_tmr); v_tmr = NULL; }
     if (c_panel) lv_anim_delete(c_panel, NULL);       /* l'écran et ses enfants partent ensuite */
     if (c_closing) lv_anim_delete(c_closing, NULL);
+    if (r_panel) lv_anim_delete(r_panel, NULL);
+    if (r_closing) lv_anim_delete(r_closing, NULL);
+    r_panel = r_list = r_stat = r_closing = v_reg_btn = c_chip = v_ant = NULL;
     mc_set_msg_cb(NULL);
+    compose_forget();
+    c_ntrack = 0;
     v_scr = v_tabs = v_list = v_off = v_radio = v_status = v_diag = v_sd = NULL;
     c_panel = c_list = c_more = c_closing = NULL;
     c_open = false;
@@ -633,6 +1216,8 @@ static bool on_event(int code)
 
 static bool on_back(void)
 {
+    if (compose_on_back()) return true;
+    if (r_panel) { reg_close(true); return true; }
     if (!c_open) return false;
     close_conv(true);
     return true;

@@ -503,6 +503,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
 }
 
 bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
+  if (_listener) _listener->onFloodHeard(packet);   // twatch
   // REVISIT: try to determine which Region (from transport_codes[1]) that Sender is indicating for replies/responses
   //    if unknown, fallback to finding Region from transport_codes[0], the 'scope' used by Sender
   return false;
@@ -513,6 +514,7 @@ bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
 }
 
 void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis) {
+  pkt->calculatePacketHash(_tw_flood_hash);   // twatch : pour reconnaître ses relais
   if (scope.isNull()) {
     sendFlood(pkt, delay_millis, _prefs.path_hash_mode + 1);
   } else {
@@ -714,6 +716,7 @@ uint8_t MyMesh::onContactRequest(const ContactInfo &contact, uint32_t sender_tim
 void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, uint8_t len) {
   uint32_t tag;
   memcpy(&tag, data, 4);
+  if (len >= 4 && _listener && _listener->onWatchResponse(contact, tag, data, len)) return;   // twatch
 
   if (pending_login && memcmp(&pending_login, contact.id.pub_key, 4) == 0) { // check for login response
     // yes, is response to pending sendLogin()
@@ -2476,6 +2479,25 @@ bool MyMesh::advert() {
   } else {
     return false;
   }
+}
+
+// twatch : comme CMD_SEND_SELF_ADVERT
+bool MyMesh::twatchAdvert(bool flood) {
+  mesh::Packet* pkt;
+  if (_prefs.advert_loc_policy == ADVERT_LOC_NONE) {
+    pkt = createSelfAdvert(_prefs.node_name);
+  } else {
+    pkt = createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon);
+  }
+  if (!pkt) return false;
+  if (flood) {
+    TransportKey default_scope;
+    memcpy(&default_scope.key, _prefs.default_scope_key, sizeof(default_scope.key));
+    sendFloodScoped(default_scope, pkt, 0);
+  } else {
+    sendZeroHop(pkt);
+  }
+  return true;
 }
 
 // To check if there is pending work

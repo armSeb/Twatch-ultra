@@ -2,6 +2,107 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.60 — 2026-11-26
+
+- Control center: full-width **MeshCore** pill; a tap turns MeshCore on or off, it shows the
+  unread count when on, long press opens the MeshCore app. Brightness and volume rows are a
+  little more compact to make room.
+- Control center: a tap on **Wi-Fi** opens a choice **Off / Client / Hotspot** in three large
+  buttons, with the state below (network and address, or hotspot name, password, address and
+  connected devices). Long press still opens the Wi-Fi settings, which also get a
+  *Client / Hotspot* selector.
+- New **hotspot** mode for the global Wi-Fi: network *T-Watch-Ultra* (WPA2, same password as
+  the update), web page and MeshCore TCP on 192.168.4.1, up to 4 devices, no light sleep while
+  it runs. Remembered across restarts. An app that needs the Internet switches Wi-Fi back to
+  client while it runs, then the hotspot returns.
+- Radio and WebRX no longer turn Wi-Fi on when opened: if Wi-Fi is not already on as a client,
+  a large *Turn on Wi-Fi* (or *Switch to client*) button starts it as a client for the
+  listening session only.
+
+## 0.2.59 — 2026-11-26
+
+- Channel messages sent from the watch are retried: when no repeat is heard 17 s after an
+  emission, the very same packet (same timestamp, text and region, so the same packet hash) is
+  flooded again, up to the *Attempts* setting; nodes that already have it drop it as a
+  duplicate. The bubble shows *No repeat, resend 2/3*; the first repeat heard stops the
+  retries and repeats are then counted for one minute from the first emission.
+
+## 0.2.58 — 2026-11-26
+
+- T9: tapping a key opens its characters in large over the keyboard (2: a b c 2 à â ç) and
+  the wanted one is tapped directly, instead of tapping the key several times with a one
+  second timeout. ‹, a tap beside them or the back button close it; long press still gives
+  the digit.
+
+## 0.2.57 — 2026-11-26
+
+- MeshCore › Radio: built-in / external LoRa antenna switch at the top of the tab (same
+  setting as Settings › MeshCore), no trip to the settings needed.
+- Contacts list: path of each contact like the iPhone app (*direct*, *N hop(s)*, *flood*).
+- Search bar at the top of Contacts and Channels: opens the keyboard, filters by name
+  (case and accents ignored); tap the filter to clear it. Cleared when switching tabs.
+- Keyboard title stays on one line.
+
+## 0.2.56 — 2026-11-26
+
+- Contacts (and the paths learned for them) are saved when MeshCore stops, before an OTA
+  reboot or a restart: MeshCore writes them 5 s after a change, so a path learned just before
+  a reboot was lost.
+
+## 0.2.55 — 2026-11-26
+
+- Region discovery only asks repeaters reachable directly: known contact path (reply path =
+  reversed), else the path of their last advert heard since boot (out path = reversed, reply
+  path = as heard). 0.2.54 sent a 0-hop request to every repeater without a path, which only
+  reaches neighbours, so most requests went nowhere.
+- Discovery result says why nothing came back (no path, no reply, no region set) and lists the
+  region names received.
+
+## 0.2.54 — 2026-11-25
+
+MeshCore regions on the watch (the node only stores its default scope; the iPhone app keeps
+its region list and per-channel choice to itself):
+- Region list in Radio › Regions (`main/meshcore/mc_region.c`, NVS `mcreg`): add with the
+  keyboard (new `COMPOSE_NO_CAPS` flag), remove, **Discover**: anonymous `REGIONS` request
+  (0x01) to each repeater contact reachable directly (known path with the reversed path as
+  reply path, else 0-hop), up to 12, one every 1.5 s; names in the replies join the list.
+- Per-channel region: chip at the top right of a channel conversation, picker with *Node
+  default* and the list. Watch channel sends use that region's key (SHA-256 of `#name`, first
+  16 bytes, like `RegionMap`).
+- MeshCore patches: `Listener::onWatchResponse` (responses to the watch's own request tags are
+  not passed to the app), `twatchScopeBegin(key)`.
+- Conversation titles stay on one line.
+
+## 0.2.53 — 2026-11-25
+
+- T9: a letter key acts as soon as the finger touches it, and only that key is redrawn (the
+  whole keyboard was redrawn on each tap, long enough for a quick second tap to be missed,
+  so b and c could not be reached). Long press still gives the digit, replacing the letter.
+- Write bar taller, slightly higher, with a larger touch area: its lower half did not react.
+- Messages sent from the watch use the node's default flood scope (region), not the scope the
+  iPhone app last set for one of its own sends.
+
+## 0.2.52 — 2026-11-25
+
+Writing MeshCore messages from the watch:
+- Every conversation (contact or channel, even without messages) has a **Write** bar that opens
+  a full-screen keyboard (`main/compose.c`): full AZERTY or QWERTY with keys chosen on release
+  and shown large above the finger, long press for accents, automatic capitals, digits and
+  symbols page, common emoji page, quick replies; or T9 multi-tap with huge keys (long press:
+  digit). The keyboard mode switches from the keyboard itself and the last one is remembered;
+  layout in Settings › MeshCore. Drafts survive closing. The keyboard is a single LVGL object
+  drawn key by key, culled to each render strip.
+- Direct messages are retried in the mesh task (app closed or screen off) until the recipient's
+  ack, up to the new *Attempts* setting (1-5, default 3 like the iPhone app); the last attempt
+  floods when the direct path stays silent. Channel messages count the repeats heard (packet
+  hash of our flood seen again). States are shown under each bubble like the iPhone app
+  (Sending… 2/3, ✓ Delivered · 1.8 s, ✓ Heard 3 repeat(s), ✗ Failed) and kept in history
+  and in the SD archive (`"status"`). Tapping a failed message resends it.
+- MeshCore patches: `MyMesh::Listener::onFloodHeard`, `twatchAdvert(flood)`, last flood
+  packet hash.
+- Radio tab: Flood advert and Zero-hop advert buttons.
+- Channels tab: the Public channel comes first, below channels with unread messages.
+
 ## 0.2.51 — 2026-11-25
 
 Pin audit against schematic V1.0, so that every pin is in a known state whatever an earlier

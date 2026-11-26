@@ -68,6 +68,8 @@ typedef struct {
     uint32_t     holders;        /* WIFI_HOLD_* */
     bool         ble_paused;     /* Bluetooth suspendu faute de RAM */
     bool         no_mem;         /* le pilote n'a pas pu démarrer (RAM) */
+    bool         ap;             /* point d'accès de la montre (ssid, ip 192.168.4.1) */
+    uint8_t      ap_clients;     /* appareils connectés au point d'accès */
     int64_t      retry_at_us;    /* FAILED : prochain essai (esp_timer), 0 = aucun prévu */
 } wifi_status_t;
 
@@ -82,6 +84,13 @@ bool      wifi_held(uint32_t holder);
 /* interrupteur global : retenu dans les réglages ; false = refus (RAM…) */
 bool      wifi_user_set(bool on);
 bool      wifi_user_on(void);
+/* Wi-Fi global : client (réseaux connus) ou point d'accès « T-Watch-Ultra »
+ * (page web et MeshCore TCP sur 192.168.4.1, sans box). Retenu ; une app qui
+ * demande le Wi-Fi (WebRX, Radio) le fait passer en client. Tâche app. */
+bool      wifi_user_mode(bool on, bool ap);
+bool      wifi_ap_mode(void);                        /* le point d'accès est voulu */
+const char *wifi_ap_ssid(void);
+const char *wifi_ap_password(void);                  /* 8 chiffres, le même que la mise à jour */
 /* tâche app : relit les réseaux connus (NVS) et le réseau choisi, puis se
  * reconnecte si besoin. Ailleurs : wifi_request_reload() */
 void      wifi_load_cfg(void);
@@ -94,7 +103,7 @@ bool      wifi_battery_check(int pct, bool vbus);
 void      wifi_mgr_shutdown(void);
 
 void      wifi_get_status(wifi_status_t *out);
-bool      wifi_is_up(void);
+bool      wifi_is_up(void);                          /* connecté à un réseau (pas le point d'accès) */
 uint32_t  wifi_gen(void);
 bool      wifi_lost(uint32_t gen);                   /* plus connecté depuis la connexion gen */
 int       wifi_rssi(void);

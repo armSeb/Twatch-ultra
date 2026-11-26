@@ -12,13 +12,35 @@ meshterm. Everything is **off by default**.
 
 ## Turning Wi-Fi on
 
-- **Control center** (swipe down from the watch face): a short tap on the **Wi-Fi** tile turns
-  it on or off. When on, it shows the network name. A **long press** opens the Wi-Fi settings.
-  The watch settings now sit under the small gear, top right.
-- **Settings › Wi-Fi**: switch, connection state (network, IP address, signal), network
-  choice, transmit power and low-battery cut.
+- **Control center** (swipe down from the watch face): a tap on the **Wi-Fi** tile opens the
+  **Off / Client / Hotspot** choice, with the state below. When on, the tile shows the
+  network name. A **long press** (or the gear of the choice) opens the Wi-Fi settings. The
+  watch settings sit under the small gear, top right.
+- **Settings › Wi-Fi**: switch, **Client / Hotspot**, connection state (network, IP address,
+  signal), network choice, transmit power and low-battery cut.
 
-The chosen state is kept across restarts.
+The chosen state and mode are kept across restarts.
+
+### Hotspot
+
+With no router in range (outdoors, in the car), the watch creates its own network
+**T-Watch-Ultra** (WPA2, same 8-digit password as the update, shown in the control center
+choice and in *Settings › Wi-Fi*). The phone joins it and finds the watch at
+**192.168.4.1**: web page (`http://192.168.4.1/`) and MeshCore over TCP (port 5000), when
+enabled. There is no Internet through this network. Up to 4 devices; the choice shows how
+many are connected. The hotspot keeps the watch out of light sleep: it draws clearly more
+than client mode.
+
+An app that needs the Internet (Radio, WebRX, Wi-Fi analyzer) switches Wi-Fi back to client
+while it runs, then the hotspot comes back.
+
+### Internet apps
+
+Radio and WebRX no longer turn Wi-Fi on by themselves: when Wi-Fi is not already on as a
+client, the app shows a large **Turn on Wi-Fi** button (or **Switch to client** when the
+watch is a hotspot). It turns Wi-Fi on as a client for the listening session only; Wi-Fi goes
+back to its previous state when leaving the app. When Wi-Fi is already connected, listening
+starts right away as before.
 
 ### Networks
 
