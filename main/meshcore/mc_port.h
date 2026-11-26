@@ -141,6 +141,10 @@ int  mc_text_max(uint8_t kind);           /* octets permis (canal : « nom: » c
 bool mc_send_text(uint8_t kind, const uint8_t peer[MC_PEER_LEN], const char *text);
 bool mc_resend(uint32_t seq);             /* message en échec : nouvelle série d'essais */
 bool mc_send_advert(bool flood);          /* annonce de la montre (flood : tout le réseau) */
+/* position dans les annonces (advert_loc_policy, le même réglage que l'app
+ * MeshCore « partager la position ») : GNSS si un fix a moins de 2 min,
+ * sinon la dernière position connue */
+bool mc_set_loc_share(bool on);
 bool mc_msg_get(uint32_t seq, mc_msg_t *out);   /* message de l'anneau par son numéro */
 
 /* état courant (diagnostic, écran Réglages) */
@@ -154,6 +158,8 @@ typedef struct {
     bool     app_connected;       /* par Bluetooth ou TCP */
     bool     tcp_connected;
     bool     repeat;              /* relais des paquets des autres (réglage de l'app) */
+    bool     loc_share;           /* position dans les annonces (réglage de l'app ou de la montre) */
+    double   lat, lon;            /* position annoncée (GNSS, ou donnée par l'app), 0 inconnue */
 } mc_status_t;
 void mc_get_status(mc_status_t *out);
 

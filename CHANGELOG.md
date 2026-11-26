@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.70 — 2026-11-26
+
+- New **GPS** app (u-blox MIA-M10Q GNSS): on/off switch (off by default, nothing powered),
+  fix state, position, altitude, speed, satellites used / in view per constellation, signal of
+  the 12 strongest satellites, time to first fix. App closed, the GNSS keeps tracking and the
+  ESP32 reads it 2 s every 30 s so light sleep keeps working.
+- MeshCore: the watch's adverts carry the GPS position when *share location* is on (same
+  setting as the iPhone app, now also in the GPS app); the position is stored for reboots;
+  custom variable `gps` lets the iPhone app turn the GPS on/off; location telemetry.
+- The watch clock is set from the GPS when it drifts by more than 2 s.
+- Host test for the NMEA reader (`host_tests/test_gnss.c`).
+
 ## 0.2.61 — 2026-11-26
 
 - Fix boot loop when the Wi-Fi hotspot is on: the hotspot password was read from NVS (flash)

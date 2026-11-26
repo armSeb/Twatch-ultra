@@ -21,6 +21,7 @@
 
 #include "app_events.h"
 #include "settings.h"
+#include "gnss.h"
 #include "sound.h"
 #include "i2c_bus.h"
 #include "axp2101.h"
@@ -422,6 +423,7 @@ void app_main(void)
         ESP_LOGW(TAG, "mode avion : BLE non démarré");
     }
 #if !TW_DIAG_BARE
+    gnss_init();                        /* GNSS s'il était allumé */
     if (settings_get()->meshcore && mc_start() != ESP_OK) ESP_LOGE(TAG, "MeshCore indisponible");
     wifi_mgr_init();                    /* Wi-Fi global s'il était allumé (sauf batterie faible) */
 #endif

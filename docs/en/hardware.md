@@ -30,7 +30,7 @@ external 32.768 kHz crystal used as the Bluetooth low-power clock.
 | Rail | Feeds | Firmware |
 |---|---|---|
 | DCDC1 3.3 V | ESP32-S3 | always on, never touched |
-| ALDO1 3.3 V | SD card | off until used; on while the LoRa radio runs (shared SPI bus) |
+| ALDO1 3.3 V | SD card | on when the GPS app turns it on; on while the LoRa radio runs (shared SPI bus) |
 | ALDO2 3.3 V | display | on |
 | ALDO3 3.3 V | SX1262 LoRa | on only while MeshCore runs |
 | ALDO4 1.8 V | BHI260AP | on only if raise to wake or the step counter is on |

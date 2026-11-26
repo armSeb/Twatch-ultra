@@ -65,8 +65,26 @@ public:
     void setCurrentTime(uint32_t t) override;
 };
 
-/* pas de GPS ni de capteur d'environnement */
-class TWatchSensors : public SensorManager { };
+/* GNSS de la montre (gnss.c) : position des annonces quand l'app le permet
+ * (« partager la position »), télémétrie de position, réglage « gps » de
+ * l'app MeshCore (variables personnalisées) = interrupteur de l'app GPS. */
+class TWatchSensors : public SensorManager {
+public:
+    bool begin() override { return true; }
+    bool querySensors(uint8_t requester_permissions, CayenneLPP &telemetry) override;
+    void loop() override;
+    int getNumSettings() const override { return 1; }
+    const char *getSettingName(int i) const override { return i == 0 ? "gps" : NULL; }
+    const char *getSettingValue(int i) const override;
+    bool setSettingValue(const char *name, const char *value) override;
+    bool isGPSDetected() const override { return true; }
+    /* position GNSS reçue depuis la dernière sauvegarde des préférences */
+    bool takeMoved() { bool m = moved; moved = false; return m; }
+private:
+    int64_t next_us = 0;
+    bool moved = false;
+    double saved_lat = 0, saved_lon = 0;
+};
 
 extern TWatchRadio radio_driver;
 extern TWatchBoard board;

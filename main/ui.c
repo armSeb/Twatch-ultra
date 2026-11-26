@@ -3884,6 +3884,7 @@ void ui_apply_settings(const settings_t *n)
     st->wifi_on = o.wifi_on;                            /* jamais par le web (on s'y connecte) */
     st->wifi_ap = o.wifi_ap;
     st->web_on = o.web_on;
+    st->gps_on = o.gps_on;                              /* gnss_set (app GPS, app MeshCore) */
     if (n->brightness != o.brightness) display_set_brightness(n->brightness);
     if (n->tap_wake != o.tap_wake) display_tap_enable(n->tap_wake);
     if (n->step_count != o.step_count || n->wrist_wake != o.wrist_wake || n->wrist_sens != o.wrist_sens) motion_apply();

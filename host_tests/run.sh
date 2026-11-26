@@ -17,4 +17,6 @@ gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize=shift -g
 # historique MeshCore : coupe UTF-8, tri des conversations, trames de l'app
 gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main/meshcore -Istubs -o test_mc_text test_mc_text.c \
     ../main/meshcore/mc_text.c && ./test_mc_text
-rm -f test_host test_puca test_meshcore test_mc_text
+# GNSS : trames NMEA du u-blox M10 (fix, constellations, bruit, coupures)
+gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main -o test_gnss test_gnss.c ../main/gnss_nmea.c -lm && ./test_gnss
+rm -f test_host test_puca test_meshcore test_mc_text test_gnss

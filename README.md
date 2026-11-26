@@ -73,6 +73,8 @@ corners)*
   MeshCore iPhone app connects over Bluetooth as a companion and sets the radio; the watch
   shows the latest messages, emoji included, and messages read on the watch are still
   delivered to the app. Built-in or external antenna — [guide](docs/en/meshcore.md).
+- **GPS** (u-blox M10 GNSS): fix, position, satellites per constellation and signal, position
+  in MeshCore adverts (can be turned off). Off, it draws nothing — [guide](docs/en/gps.md).
 - **Settings** by section: display, alerts, motion, Bluetooth, **Wi-Fi** (on/off, network
   choice, transmit power 8 to 20 dBm, off below 30 %), **MeshCore** (on/off, antenna, TCP
   server), SD card, **web server**, battery, update.
@@ -179,6 +181,7 @@ More: [building, flashing and tests](docs/en/building.md).
 | Architecture, power | [docs/en/architecture.md](docs/en/architecture.md) | [docs/fr/architecture.md](docs/fr/architecture.md) |
 | Hardware notes (pins, power rails, display) | [docs/en/hardware.md](docs/en/hardware.md) | [docs/fr/hardware.md](docs/fr/hardware.md) |
 | MeshCore (LoRa messages) | [docs/en/meshcore.md](docs/en/meshcore.md) | [docs/fr/meshcore.md](docs/fr/meshcore.md) |
+| GPS | [docs/en/gps.md](docs/en/gps.md) | [docs/fr/gps.md](docs/fr/gps.md) |
 | Wi-Fi, web server, MeshCore over TCP | [docs/en/wifi.md](docs/en/wifi.md) | [docs/fr/wifi.md](docs/fr/wifi.md) |
 | WebRX (OpenWebRX client) | [docs/en/webrx.md](docs/en/webrx.md) | [docs/fr/webrx.md](docs/fr/webrx.md) |
 | Radio (web radios) | [docs/en/radio.md](docs/en/radio.md) | [docs/fr/radio.md](docs/fr/radio.md) |
