@@ -61,11 +61,17 @@ static void crumbs_format(void)
     }
 }
 
+static bool s_crash_now;                        /* ce démarrage suit un plantage */
+static char s_crash_task[16];                   /* tâche du plantage (même firmware) */
+
+bool crashlog_crashed_in(const char *task) { return s_crash_now && !strcmp(s_crash_task, task); }
+
 void crashlog_init(void)
 {
     s_txt[0] = 0;
     esp_reset_reason_t rr = esp_reset_reason();
-    if (rr == ESP_RST_PANIC || rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT || rr == ESP_RST_WDT) crumbs_format();
+    s_crash_now = rr == ESP_RST_PANIC || rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT || rr == ESP_RST_WDT;
+    if (s_crash_now) crumbs_format();
     s_crumb_magic = 0;                           /* nouveau fil pour cette session */
     if (esp_core_dump_image_check() != ESP_OK) return;
     static esp_core_dump_summary_t sm;           /* ~200 o : hors pile */
@@ -74,6 +80,7 @@ void crashlog_init(void)
     char sha[9];
     esp_app_get_elf_sha256(sha, sizeof(sha));
     bool same = strncmp(sha, (const char *)sm.app_elf_sha256, 8) == 0;
+    if (same) strlcpy(s_crash_task, sm.exc_task, sizeof s_crash_task);
     char why[80] = "";
     esp_core_dump_get_panic_reason(why, sizeof(why));
 

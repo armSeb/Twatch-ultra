@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.61 — 2026-11-26
+
+- Fix boot loop when the Wi-Fi hotspot is on: the hotspot password was read from NVS (flash)
+  by the Wi-Fi task, whose stack is in PSRAM (assert in `spi_flash_disable_interrupts_caches`).
+  It is now read, and the hotspot interface created, from a task with an internal stack.
+
 ## 0.2.60 — 2026-11-26
 
 - Control center: full-width **MeshCore** pill; a tap turns MeshCore on or off, it shows the

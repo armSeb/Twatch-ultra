@@ -5,9 +5,12 @@
  */
 #pragma once
 #include <stddef.h>
+#include <stdbool.h>
 
 void        crashlog_init(void);        /* au démarrage */
 const char *crashlog_text(void);        /* "" si aucun plantage enregistré */
+/* ce démarrage suit un plantage du même firmware dans la tâche « task » */
+bool        crashlog_crashed_in(const char *task);
 
 /* Fil d'Ariane : dernières actions d'interface, gardé en RAM RTC à travers
  * un plantage et affiché avec son résumé. tag = 1 lettre, a/b = petits nombres. */
