@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.0 — 2026-11-26
+
+- Version scheme: the minor number goes up with each new app or major feature, the patch
+  number with each fix or test build; 1.0 once the firmware is stable for daily use.
+  0.3.0 = everything up to 0.2.71 (voice recorder, GPS app).
+
 ## 0.2.71 — 2026-11-26
 
 - New **GPS** app (u-blox MIA-M10Q GNSS): on/off switch (off by default, nothing powered),
