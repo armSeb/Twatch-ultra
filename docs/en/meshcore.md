@@ -90,8 +90,10 @@ any contact or channel, even without messages.
 
 For direct messages the watch **retries** until the recipient confirms, up to the *Attempts*
 setting (3 by default, like the iPhone app); the last attempt floods if the direct path stays
-silent. Retries go on **with the app closed and the screen off**. Touching a failed message
-resends it.
+silent. On a **channel**, if no repeat is heard after 17 s, the watch sends **the same
+packet** again (*No repeat, resend 2/3*), up to the same *Attempts*: nodes that already have it
+ignore it, so there is no duplicate. Retries go on **with the app closed and the screen off**.
+Touching a failed message resends it.
 
 The iPhone app does not see messages written on the watch: the companion protocol has no
 frame for that. They stay in the watch history and on the SD card (with their state).

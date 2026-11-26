@@ -2,6 +2,14 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.59 — 2026-11-26
+
+- Channel messages sent from the watch are retried: when no repeat is heard 17 s after an
+  emission, the very same packet (same timestamp, text and region, so the same packet hash) is
+  flooded again, up to the *Attempts* setting; nodes that already have it drop it as a
+  duplicate. The bubble shows *No repeat, resend 2/3*; the first repeat heard stops the
+  retries and repeats are then counted for one minute from the first emission.
+
 ## 0.2.58 — 2026-11-26
 
 - T9: tapping a key opens its characters in large over the keyboard (2: a b c 2 à â ç) and

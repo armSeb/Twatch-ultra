@@ -481,7 +481,8 @@ static void meta_text(const mc_msg_t *m, lv_obj_t *mt)
                      chan ? _("Aucun relais entendu · toucher pour renvoyer") : _("✗ Échec · toucher pour renvoyer"));
         } else if (m->flags & MC_F_PEND) {
             uint8_t tries = settings_get()->mesh_tries;
-            if (chan) snprintf(meta, sizeof meta, _("%s · Envoyé, en attente de relais"), when);
+            if (chan && (tries <= 1 || m->hops == 0)) snprintf(meta, sizeof meta, _("%s · Envoyé, en attente de relais"), when);
+            else if (chan) snprintf(meta, sizeof meta, _("%s · Pas de relais, renvoi %u/%u"), when, m->hops + 1, tries);
             else if (tries > 1) snprintf(meta, sizeof meta, _("%s · Envoi… %u/%u"), when, m->hops + 1, tries);
             else snprintf(meta, sizeof meta, _("%s · Envoi…"), when);
         } else {

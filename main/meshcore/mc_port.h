@@ -63,7 +63,7 @@ enum { MC_CONV_CONTACT = 0, MC_CONV_CHANNEL = 1 };
 #define MC_F_LEGACY 0x08          /* repris de l'historique 0.2.13 : conversation retrouvée par son nom */
 /* envoyés depuis la montre (MC_F_OUT) : état de l'envoi
  *   privé : PEND (tentative hops+1 en cours) → ACK (reçu) ou FAIL (pas d'accusé)
- *   canal : PEND (en attente d'un relais) → ACK (hops = relais entendus) ou
+ *   canal : PEND (hops = émission en cours, réémise sans relais) → ACK (hops = relais entendus) ou
  *           FAIL (aucun relais entendu : peut-être personne à portée) */
 #define MC_F_PEND  0x10
 #define MC_F_ACK   0x20
@@ -132,7 +132,9 @@ int  mc_conv_messages(uint8_t kind, const uint8_t peer[MC_PEER_LEN], uint32_t be
  *   privé : comme l'app iPhone, jusqu'à settings.mesh_tries tentatives,
  *           chacune attend son accusé ; la dernière repart en inondation si
  *           le chemin direct ne répond pas ;
- *   canal : une émission ; chaque relais qui la répète est compté.
+ *   canal : sans relais entendu au bout de 17 s, le même paquet (même
+ *           empreinte, donc pas de doublon chez ceux qui l'ont) est réémis,
+ *           jusqu'à settings.mesh_tries émissions ; chaque relais est compté.
  * L'app MeshCore ne voit pas ces messages : le protocole compagnon n'a pas
  * de trame « message envoyé par l'appareil ». */
 int  mc_text_max(uint8_t kind);           /* octets permis (canal : « nom: » compris) */

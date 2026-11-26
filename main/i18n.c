@@ -575,6 +575,7 @@ static const tr_t EN[] = {
     { "Annonce flood envoyée", "Flood advert sent" },
     { "Annonce locale envoyée", "Zero-hop advert sent" },
     { "Région", "Region" },
+    { "%s · Pas de relais, renvoi %u/%u", "%s · No repeat, resend %u/%u" },
     { "flood", "flood" },
     { "%u saut(s)", "%u hop(s)" },
     { "Canal…", "Channel…" },

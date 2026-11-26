@@ -596,6 +596,8 @@ typedef struct {
 #define PEND_N         8
 #define TRIES_MAX      5
 #define RELAY_WAIT_MS  60000    /* canal : relais comptés une minute */
+#define CHAN_RETRY_MS  17000    /* canal : sans relais entendu, même paquet réémis */
+#define CHAN_LAST_MS   30000    /* canal : attente après la dernière émission */
 #define ACK_MARGIN_MS  2000     /* privé : marge sur le délai estimé par MeshCore */
 
 typedef struct {
@@ -608,6 +610,7 @@ typedef struct {
     uint32_t seq, ts;
     uint32_t acks[TRIES_MAX];       /* privé : accusé attendu de chaque tentative */
     int64_t  sent_us, deadline_us;
+    int64_t  first_us;              /* canal : première émission */
     char     text[MC_TEXT_MAX + 1];
 } pend_t;
 
@@ -827,7 +830,8 @@ static int find_channel(const uint8_t peer[MC_PEER_LEN], ChannelDetails &ch)
 
 static void pend_state(pend_t &p, uint8_t flags, int8_t rtt)
 {
-    uint8_t hops = p.kind == MC_CONV_CHANNEL ? p.relays : p.attempt;
+    /* canal : relais entendus, ou la tentative en cours tant qu'aucun */
+    uint8_t hops = p.kind == MC_CONV_CHANNEL && (flags & MC_F_ACK) ? p.relays : p.attempt;
     mch_set_send_state(p.seq, flags, hops, rtt);
 }
 
@@ -874,11 +878,17 @@ static bool chan_send(pend_t &p)
     bool ok = s_mesh->sendGroupMessage(p.ts, ch.channel, np->node_name, p.text, (int)strlen(p.text));
     s_mesh->twatchScopeEnd();
     if (!ok) return false;
+    /* même heure, même texte, même région : la réémission est le même
+     * paquet (même empreinte), ignorée comme doublon par ceux qui l'ont */
     memcpy(p.hash, s_mesh->twatchLastFloodHash(), sizeof p.hash);
     p.sent_us = esp_timer_get_time();
-    p.deadline_us = p.sent_us + RELAY_WAIT_MS * 1000LL;
-    p.relays = 0;
-    s_npend_chan++;
+    if (p.attempt == 0) {
+        p.first_us = p.sent_us;
+        p.relays = 0;
+        s_npend_chan++;
+    }
+    p.deadline_us = p.sent_us + (p.attempt + 1 < p.tries ? CHAN_RETRY_MS : CHAN_LAST_MS) * 1000LL;
+    ESP_LOGI(TAG, "canal : émission %u/%u", p.attempt + 1, p.tries);
     pend_state(p, MC_F_PEND, 0);
     return true;
 }
@@ -893,7 +903,7 @@ static void pend_start(pend_t *p)
 {
     p->used = true;
     p->attempt = 0;
-    p->tries = p->kind == MC_CONV_CHANNEL ? 1 : tries_setting();
+    p->tries = tries_setting();
     memset(p->acks, 0, sizeof p->acks);
     bool ok = p->kind == MC_CONV_CHANNEL ? chan_send(*p) : dm_attempt(*p);
     if (!ok) {
@@ -968,6 +978,9 @@ static void pend_tick(int64_t now)
             if (p.relays) {
                 if (s_npend_chan > 0) s_npend_chan--;
                 p.used = false;                 /* état ACK déjà posé */
+            } else if (p.attempt + 1 < p.tries) {
+                p.attempt++;                    /* aucun relais : même paquet, encore */
+                if (!chan_send(p)) pend_fail(p);
             } else {
                 pend_fail(p);
             }
@@ -1009,6 +1022,7 @@ void WatchListener::onFloodHeard(const mesh::Packet *pkt)
         pend_t &p = s_pend[i];
         if (!p.used || p.kind != MC_CONV_CHANNEL || memcmp(p.hash, h, sizeof h)) continue;
         if (p.relays < 250) p.relays++;
+        if (p.relays == 1) p.deadline_us = p.first_us + RELAY_WAIT_MS * 1000LL;   /* plus de réémission : on compte */
         pend_state(p, MC_F_ACK, 0);
         ESP_LOGI(TAG, "canal : relais entendu (%u)", p.relays);
         return;

@@ -95,8 +95,10 @@ tout contact ou canal, même sans message.
 
 En privé, la montre **réessaie** tant que le destinataire n'a pas confirmé, jusqu'au nombre
 de *Tentatives* des réglages (3 par défaut, comme l'app iPhone) ; la dernière repart en
-inondation si le chemin direct reste muet. Les essais continuent **app fermée et écran
-éteint**. Toucher un message en échec le renvoie.
+inondation si le chemin direct reste muet. Sur un **canal**, si aucun relais n'est entendu
+au bout de 17 s, la montre réémet **le même paquet** (*Pas de relais, renvoi 2/3*), jusqu'au
+même nombre de *Tentatives* : ceux qui l'ont déjà reçu l'ignorent, donc pas de doublon. Les
+essais continuent **app fermée et écran éteint**. Toucher un message en échec le renvoie.
 
 L'app iPhone ne voit pas les messages écrits sur la montre : le protocole compagnon n'a pas
 de trame pour ça. Ils restent dans l'historique de la montre et sur la carte SD (avec leur
