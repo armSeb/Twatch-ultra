@@ -32,6 +32,7 @@ static int m_nst;
 
 static lv_obj_t *v_scr, *v_dot, *v_head, *v_name, *v_title, *v_fmt, *v_buf, *v_status, *v_st1, *v_st2;
 static lv_obj_t *v_play, *v_play_lbl, *v_prev, *v_next, *v_setup, *v_spk;
+static lv_obj_t *v_gate;                     /* Wi-Fi coupé : bouton pour l'allumer */
 static lv_obj_t *v_sheet, *v_sheet_title, *v_sheet_list, *v_vol_lbl, *v_tone_lbl;
 static lv_timer_t *v_tick;
 static int v_sheet_kind;
@@ -67,8 +68,25 @@ static void start(void)
         return;
     }
     lv_obj_add_flag(v_setup, LV_OBJ_FLAG_HIDDEN);
+    if (v_gate) lv_obj_add_flag(v_gate, LV_OBJ_FLAG_HIDDEN);
     if (radio_start() != ESP_OK) { ui_toast(_("Wi-Fi indisponible (mémoire ?)")); return; }
     if (radio_ble_paused()) ui_toast(_("Bluetooth en pause pendant l'écoute"));
+}
+
+/* en entrant : écoute relancée seulement si le Wi-Fi est déjà allumé en
+ * client ; sinon un bouton l'allume (en client, le temps de l'app) */
+static void auto_start(void)
+{
+    if (!m_want || radio_running()) return;
+    if (ui_wifi_needed() && configured()) ui_wifi_gate_show(v_gate);   /* sinon : écran « Configurer » */
+    else start();
+}
+
+static void gate_cb(lv_event_t *e)
+{
+    m_want = true;
+    start();
+    refresh();
 }
 
 static void play_cb(lv_event_t *e)
@@ -486,9 +504,10 @@ static void create(lv_obj_t *scr)
     v_next = round_btn(scr, LV_SYMBOL_NEXT, next_cb, C_OFF, S(78));
 
     build_setup(scr);
+    v_gate = ui_wifi_gate(scr, TOP_H, lv_color_hex(0x8B5CF6), gate_cb);
     build_sheet(scr);
     v_tick = lv_timer_create(tick_cb, 250, NULL);
-    if (m_want && !radio_running()) start();
+    auto_start();
     refresh();
 }
 
@@ -499,6 +518,7 @@ static void destroy(void)
     v_tick = NULL;
     v_scr = v_dot = v_head = v_name = v_title = v_fmt = v_buf = v_status = v_st1 = v_st2 = NULL;
     v_play = v_play_lbl = v_prev = v_next = v_setup = v_spk = NULL;
+    v_gate = NULL;
     v_sheet = v_sheet_title = v_sheet_list = v_vol_lbl = v_tone_lbl = NULL;
     v_sheet_kind = SH_NONE;
 }
@@ -507,7 +527,7 @@ static void on_show(void)
 {
     radio_screen(true);
     if (v_tick) lv_timer_resume(v_tick);
-    if (m_want && !radio_running() && v_scr) start();
+    if (v_scr) auto_start();
     refresh();
 }
 

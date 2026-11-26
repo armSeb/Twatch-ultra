@@ -59,3 +59,10 @@ void      ui_toast(const char *text);        /* message bref par-dessus n'import
 int       ui_header(lv_obj_t *scr, const char *title);
 /* choix exclusif (boutons segmentés) ; map terminée par "" ; LV_EVENT_VALUE_CHANGED */
 lv_obj_t *ui_segmented(lv_obj_t *parent, const char *const *map, lv_event_cb_t cb);
+/* apps Internet (Radio, WebRX) : le Wi-Fi n'est pas allumé tout seul en
+ * entrant. ui_wifi_needed() : le Wi-Fi global n'est pas déjà en client.
+ * ui_wifi_gate() : panneau opaque sous la barre du haut (top) avec un gros
+ * bouton « Activer le Wi-Fi » (cb) ; ui_wifi_gate_show() l'affiche à jour. */
+bool      ui_wifi_needed(void);
+lv_obj_t *ui_wifi_gate(lv_obj_t *scr, int top, lv_color_t accent, lv_event_cb_t cb);
+void      ui_wifi_gate_show(lv_obj_t *gate);

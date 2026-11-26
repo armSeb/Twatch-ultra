@@ -22,6 +22,8 @@
 #include "app_events.h"
 #include "task_psram.h"
 #include "display.h"
+#include "nvs.h"
+#include "esp_random.h"
 
 static const char *TAG = "wifi";
 
@@ -29,6 +31,8 @@ static const char *TAG = "wifi";
 #define BIT_DISC BIT1
 
 #define HOSTNAME        "twatch-ultra"
+#define AP_SSID         "T-Watch-Ultra"
+#define AP_IP           "192.168.4.1"
 #define LOW_BATT_PCT    30
 #define CONNECT_TMO_MS  15000
 #define RSSI_PERIOD_MS  10000
@@ -54,6 +58,9 @@ static volatile bool s_kick, s_reload;
 static uint32_t s_ble_pauser;            /* tenant qui a suspendu le Bluetooth */
 static volatile int s_reason;
 static bool s_scan_radio;                /* analyseur : radio voulue allumée */
+static bool s_ap_run;                    /* point d'accès en marche (sous s_drv) */
+static volatile bool s_ap_fail;          /* démarrage raté : pas de nouvel essai avant un choix */
+static char s_ap_pass[12];
 
 static wrx_cfg_t *s_cfg, *s_tcfg;        /* PSRAM : réseaux (app) et copie de la tâche */
 static uint8_t s_pick;                   /* 0 = automatique, k = réseau k-1 seul */
@@ -105,7 +112,13 @@ void wifi_get_status(wifi_status_t *out)
     portEXIT_CRITICAL(&s_mux);
 }
 
-bool wifi_is_up(void) { return cur_state() == WIFI_CONNECTED; }
+bool wifi_is_up(void)
+{
+    portENTER_CRITICAL(&s_mux);
+    bool up = s_st.state == WIFI_CONNECTED && !s_st.ap;
+    portEXIT_CRITICAL(&s_mux);
+    return up;
+}
 
 uint32_t wifi_gen(void)
 {
@@ -128,7 +141,7 @@ int wifi_rssi(void)
 bool wifi_ip(char out[16])
 {
     portENTER_CRITICAL(&s_mux);
-    bool up = s_st.state == WIFI_CONNECTED && s_st.ip[0];
+    bool up = s_st.state == WIFI_CONNECTED && s_st.ip[0];   /* aussi le point d'accès */
     memcpy(out, s_st.ip, 16);
     portEXIT_CRITICAL(&s_mux);
     if (!up) out[0] = 0;
@@ -178,6 +191,12 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         portEXIT_CRITICAL(&s_mux);
         xEventGroupSetBits(s_evg, BIT_IP);
         kick_task();
+    } else if (base == WIFI_EVENT && (id == WIFI_EVENT_AP_STACONNECTED || id == WIFI_EVENT_AP_STADISCONNECTED)) {
+        portENTER_CRITICAL(&s_mux);
+        if (id == WIFI_EVENT_AP_STACONNECTED) { if (s_st.ap_clients < 255) s_st.ap_clients++; }
+        else if (s_st.ap_clients) s_st.ap_clients--;
+        portEXIT_CRITICAL(&s_mux);
+        post_state();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_LOST_IP) {
         xEventGroupClearBits(s_evg, BIT_IP);
         xEventGroupSetBits(s_evg, BIT_DISC);
@@ -229,6 +248,14 @@ static void radio_stop_locked(void)
     esp_wifi_disconnect();
     esp_wifi_stop();
     s_started = false;
+    if (s_ap_run) {
+        s_ap_run = false;
+        esp_wifi_set_mode(WIFI_MODE_STA);
+        portENTER_CRITICAL(&s_mux);
+        s_st.ap = false;
+        s_st.ap_clients = 0;
+        portEXIT_CRITICAL(&s_mux);
+    }
     xEventGroupClearBits(s_evg, BIT_IP | BIT_DISC);
 }
 
@@ -244,7 +271,8 @@ static portMUX_TYPE s_ns_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void sleep_policy(void)
 {
-    bool want = s_started && ble_running();
+    /* point d'accès : jamais de light sleep (les appareils connectés le perdraient) */
+    bool want = s_started && (ble_running() || s_ap_run);
     portENTER_CRITICAL(&s_ns_mux);
     bool ch = want != s_ns_held;
     s_ns_held = want;
@@ -463,6 +491,71 @@ static bool attempt_locked(void)
 static void drv_lock(void) { xSemaphoreTake(s_drv, portMAX_DELAY); }
 static void drv_unlock(void) { xSemaphoreGive(s_drv); }
 
+/* ------------------------------------------------------------------ */
+/* Point d'accès (Wi-Fi global en mode point d'accès)                   */
+/* ------------------------------------------------------------------ */
+/* même mot de passe que le point d'accès de la mise à jour (NVS « otapw ») */
+const char *wifi_ap_password(void)
+{
+    if (s_ap_pass[0]) return s_ap_pass;
+    nvs_handle_t h;
+    size_t len = sizeof s_ap_pass;
+    bool ok = nvs_open("tw", NVS_READWRITE, &h) == ESP_OK;
+    if (!ok || nvs_get_str(h, "otapw", s_ap_pass, &len) != ESP_OK || strlen(s_ap_pass) != 8) {
+        snprintf(s_ap_pass, sizeof s_ap_pass, "%08lu", (unsigned long)(esp_random() % 100000000UL));
+        if (ok) { nvs_set_str(h, "otapw", s_ap_pass); nvs_commit(h); }
+    }
+    if (ok) nvs_close(h);
+    return s_ap_pass;
+}
+
+const char *wifi_ap_ssid(void) { return AP_SSID; }
+
+bool wifi_ap_mode(void) { return settings_get()->wifi_ap; }
+
+/* seul le Wi-Fi global le tient, réglé en point d'accès : une app qui veut
+ * Internet (WebRX, Radio) repasse en client le temps qu'elle le tient */
+static bool ap_wanted(void)
+{
+    return settings_get()->wifi_ap && !s_blocked && !s_ap_fail &&
+           (s_holders & (WIFI_HOLD_CONNECT | WIFI_HOLD_SCAN)) == WIFI_HOLD_USER;
+}
+
+static void ap_start_locked(void)
+{
+    if (s_started) radio_stop_locked();
+    if (!net_ap_netif()) { s_ap_fail = true; set_state(WIFI_FAILED, N_("Erreur Wi-Fi"), ""); return; }
+    wifi_config_t ap = { 0 };
+    strlcpy((char *)ap.ap.ssid, AP_SSID, sizeof ap.ap.ssid);
+    ap.ap.ssid_len = strlen(AP_SSID);
+    strlcpy((char *)ap.ap.password, wifi_ap_password(), sizeof ap.ap.password);
+    ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    ap.ap.channel = 6;
+    ap.ap.max_connection = 4;
+    esp_wifi_set_mode(WIFI_MODE_AP);
+    esp_wifi_set_config(WIFI_IF_AP, &ap);
+    if (esp_wifi_start() != ESP_OK) {
+        esp_wifi_set_mode(WIFI_MODE_STA);
+        s_ap_fail = true;
+        set_state(WIFI_FAILED, N_("Le point d'accès n'a pas démarré"), "");
+        return;
+    }
+    s_started = true;
+    s_ap_run = true;
+    apply_power_locked();
+    portENTER_CRITICAL(&s_mux);
+    s_st.ap = true;
+    s_st.ap_clients = 0;
+    strlcpy(s_st.ssid, AP_SSID, sizeof s_st.ssid);
+    strlcpy(s_st.ip, AP_IP, sizeof s_st.ip);
+    s_st.rssi = 0;
+    s_st.gen++;
+    portEXIT_CRITICAL(&s_mux);
+    set_state(WIFI_CONNECTED, NULL, AP_SSID);
+    ESP_LOGI(TAG, "point d'accès « %s » sur %s", AP_SSID, AP_IP);
+}
+
+
 static void wifi_task(void *arg)
 {
     int fails = 0;
@@ -470,6 +563,29 @@ static void wifi_task(void *arg)
     for (;;) {
         sleep_policy();
         TickType_t wait = portMAX_DELAY;
+        /* point d'accès voulu ou plus voulu : on bascule avant tout le reste */
+        bool apw = ap_wanted();
+        if (apw != s_ap_run) {
+            drv_lock();
+            if (s_inited && apw) ap_start_locked();
+            else if (!apw && s_ap_run) {
+                radio_stop_locked();
+                set_state(want_connect() ? WIFI_CONNECTING : WIFI_IDLE, want_connect() ? N_("Recherche du Wi-Fi…") : NULL, "");
+                fails = 0;
+                next_try = 0;
+            }
+            drv_unlock();
+            sleep_policy();
+            if (apw && s_ap_run) { s_reload = s_kick = false; ulTaskNotifyTake(pdTRUE, portMAX_DELAY); }
+            else if (apw && !s_ap_fail) ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));   /* pilote pas prêt */
+            continue;
+        }
+        if (apw) {                                      /* point d'accès en marche : rien d'autre à faire */
+            s_reload = s_kick = false;
+            if (s_ps_dirty) s_ps_dirty = false;
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            continue;
+        }
         wifi_state_t st = cur_state();
         int64_t now = esp_timer_get_time();
         if (!want_connect()) {
@@ -583,6 +699,8 @@ static bool ensure_base(void)
     esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, on_event, NULL, NULL);
     esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL, NULL);
     esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_LOST_IP, on_event, NULL, NULL);
+    esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_AP_STACONNECTED, on_event, NULL, NULL);
+    esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_AP_STADISCONNECTED, on_event, NULL, NULL);
     wifi_load_cfg();
     if (task_psram(wifi_task, "wifi", 4096, NULL, 4, &s_task, tskNO_AFFINITY) != pdPASS) {
         s_task = NULL;
@@ -739,6 +857,16 @@ bool wifi_user_set(bool on)
         wifi_release(WIFI_HOLD_USER);
     }
     if (st->wifi_on != on) { st->wifi_on = on; settings_save(); }
+    return true;
+}
+
+bool wifi_user_mode(bool on, bool ap)
+{
+    settings_t *st = settings_get();
+    if (st->wifi_ap != ap) { st->wifi_ap = ap; settings_save(); }
+    s_ap_fail = false;
+    if (!wifi_user_set(on)) return false;
+    kick_task();                                        /* bascule client ↔ point d'accès */
     return true;
 }
 

@@ -13,14 +13,37 @@ Tout est **coupé par défaut**.
 
 ## Allumer le Wi-Fi
 
-- **Centre de contrôle** (glisser vers le bas depuis le cadran) : la tuile **Wi-Fi** l'allume
-  ou le coupe d'un appui court. Allumée, elle affiche le nom du réseau. Un **appui long** ouvre
-  les réglages Wi-Fi. Les réglages de la montre sont désormais sous la petite roue dentée, en
-  haut à droite.
-- **Réglages › Wi-Fi** : interrupteur, état de la connexion (réseau, adresse IP, signal), choix
-  du réseau, puissance d'émission et coupure sur batterie faible.
+- **Centre de contrôle** (glisser vers le bas depuis le cadran) : un toucher sur la tuile
+  **Wi-Fi** ouvre le choix **Coupé / Client / Point d'accès**, avec l'état en dessous.
+  Allumée, la tuile affiche le nom du réseau. Un **appui long** (ou la roue dentée du choix)
+  ouvre les réglages Wi-Fi. Les réglages de la montre sont sous la petite roue dentée, en haut
+  à droite.
+- **Réglages › Wi-Fi** : interrupteur, **Client / Point d'accès**, état de la connexion
+  (réseau, adresse IP, signal), choix du réseau, puissance d'émission et coupure sur batterie
+  faible.
 
-L'état choisi est retenu au redémarrage.
+L'état et le mode choisis sont retenus au redémarrage.
+
+### Point d'accès
+
+Sans box à portée (en balade, en voiture), la montre crée son propre réseau
+**T-Watch-Ultra** (WPA2, même mot de passe à 8 chiffres que la mise à jour, affiché dans le
+choix du centre de contrôle et dans *Réglages › Wi-Fi*). Le téléphone s'y connecte et trouve
+la montre à **192.168.4.1** : page web (`http://192.168.4.1/`) et MeshCore en TCP (port
+5000), s'ils sont activés. Il n'y a pas d'accès à Internet par ce réseau. Jusqu'à 4
+appareils ; le choix affiche combien sont connectés. Le point d'accès empêche le sommeil
+léger de la montre : il consomme nettement plus que le mode client.
+
+Une app qui a besoin d'Internet (Radio, WebRX, analyseur Wi-Fi) repasse le Wi-Fi en client le
+temps de son usage, puis le point d'accès revient.
+
+### Apps Internet
+
+Radio et WebRX n'allument plus le Wi-Fi d'elles-mêmes : si le Wi-Fi n'est pas déjà allumé en
+client, l'app affiche un gros bouton **Activer le Wi-Fi** (ou **Passer en client** si la
+montre est en point d'accès). Il allume le Wi-Fi en client pour la durée de l'écoute
+seulement ; le Wi-Fi reprend son état d'avant en quittant l'app. Si le Wi-Fi est déjà
+connecté, l'écoute démarre directement comme avant.
 
 ### Réseaux
 

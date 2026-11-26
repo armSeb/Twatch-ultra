@@ -28,6 +28,7 @@ typedef struct {
     uint8_t wifi_net;         /* réseau choisi : 0 = automatique, k = réseau k (1..WRX_NETS) */
     bool    wifi_lowbatt;     /* coupe le Wi-Fi global sous 30 % de batterie */
     bool    wifi_noble;       /* Bluetooth suspendu tant que le Wi-Fi est allumé (débit) */
+    bool    wifi_ap;          /* Wi-Fi global en point d'accès (montre en hotspot) au lieu de client */
     bool    mesh_tcp;         /* serveur TCP MeshCore (port 5000) quand le Wi-Fi est connecté */
     bool    web_on;           /* serveur web (réglages, mise à jour) */
     bool    web_sd;           /* fichiers de la carte SD sur le serveur web */

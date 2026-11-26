@@ -2,6 +2,23 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.60 — 2026-11-26
+
+- Control center: full-width **MeshCore** pill; a tap turns MeshCore on or off, it shows the
+  unread count when on, long press opens the MeshCore app. Brightness and volume rows are a
+  little more compact to make room.
+- Control center: a tap on **Wi-Fi** opens a choice **Off / Client / Hotspot** in three large
+  buttons, with the state below (network and address, or hotspot name, password, address and
+  connected devices). Long press still opens the Wi-Fi settings, which also get a
+  *Client / Hotspot* selector.
+- New **hotspot** mode for the global Wi-Fi: network *T-Watch-Ultra* (WPA2, same password as
+  the update), web page and MeshCore TCP on 192.168.4.1, up to 4 devices, no light sleep while
+  it runs. Remembered across restarts. An app that needs the Internet switches Wi-Fi back to
+  client while it runs, then the hotspot returns.
+- Radio and WebRX no longer turn Wi-Fi on when opened: if Wi-Fi is not already on as a client,
+  a large *Turn on Wi-Fi* (or *Switch to client*) button starts it as a client for the
+  listening session only.
+
 ## 0.2.59 — 2026-11-26
 
 - Channel messages sent from the watch are retried: when no repeat is heard 17 s after an

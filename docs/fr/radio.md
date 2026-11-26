@@ -30,6 +30,7 @@ pris en charge.
 | Barre du haut, *Radio · i/n* | liste des **stations** ; dernière ligne : *Wi-Fi et radios* (réglages) |
 | Barre du haut, haut-parleur | feuille **Son** : volume, tonalité |
 | ◀◀ / ▶▶ | station précédente / suivante |
+| **Activer le Wi-Fi** | affiché en entrant si le Wi-Fi n'est pas déjà allumé en client : l'allume en client le temps de l'écoute ([détails](wifi.md#apps-internet)) |
 | ■ / ▶ | arrêter / reprendre l'écoute (Wi-Fi coupé à l'arrêt) |
 | Message d'erreur | toucher : nouvel essai immédiat |
 | Bouton latéral | écran éteint, **l'écoute continue** ; un nouvel appui y revient |
