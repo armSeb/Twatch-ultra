@@ -36,6 +36,7 @@ typedef struct {
     uint8_t kb_mode;          /* clavier : 0 complet, 1 T9 (KB_MODE_*) */
     uint8_t kb_layout;        /* clavier complet : 0 AZERTY, 1 QWERTY */
     bool    gps_on;           /* GNSS allumé (gnss.c) ; coupé par défaut */
+    bool    rec_hq;           /* magnétophone : 32 kHz (sinon 16 kHz, voix) */
 } settings_t;
 
 void        settings_load(void);

@@ -47,6 +47,8 @@ corners)*
   reopens), *Torch*, *Steps*, **Wi-Fi analyzer**, **WebRX** (listen to your OpenWebRX /
   OpenWebRX+ receivers over Wi-Fi on the watch speaker — [guide](docs/en/webrx.md)),
   **Radio** (web radios: MP3, AAC/HE-AAC, playlists, song titles — [guide](docs/en/radio.md)),
+  **Recorder** (records the microphone to the SD card as WAV, even with the screen off, and plays
+  back — [guide](docs/en/recorder.md)),
   **Tone** (repeater access tone), **Mouse** (Bluetooth touchpad, clicker and media remote —
   [guide](docs/en/mouse.md)). An open app stays put: the screen turns off on it and wakes
   back to it. A small app framework lets you add one in a single file.
@@ -185,6 +187,7 @@ More: [building, flashing and tests](docs/en/building.md).
 | Wi-Fi, web server, MeshCore over TCP | [docs/en/wifi.md](docs/en/wifi.md) | [docs/fr/wifi.md](docs/fr/wifi.md) |
 | WebRX (OpenWebRX client) | [docs/en/webrx.md](docs/en/webrx.md) | [docs/fr/webrx.md](docs/fr/webrx.md) |
 | Radio (web radios) | [docs/en/radio.md](docs/en/radio.md) | [docs/fr/radio.md](docs/fr/radio.md) |
+| Recorder (voice recorder) | [docs/en/recorder.md](docs/en/recorder.md) | [docs/fr/recorder.md](docs/fr/recorder.md) |
 | Púca (virtual pet) | [docs/en/puca.md](docs/en/puca.md) | [docs/fr/puca.md](docs/fr/puca.md) |
 | Demo "Tír na nÓg" | [docs/en/demo.md](docs/en/demo.md) | [docs/fr/demo.md](docs/fr/demo.md) |
 | Soar (flying game) | [docs/en/flight.md](docs/en/flight.md) | [docs/fr/flight.md](docs/fr/flight.md) |

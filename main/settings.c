@@ -21,6 +21,7 @@ static settings_t s_set = {
     .volume = 100,            /* 100 % = niveaux d'avant le réglage */
     .wifi_lowbatt = true,
     .mesh_tries = 3,
+    .rec_hq = true,
 };
 
 void settings_load(void)
@@ -61,6 +62,7 @@ void settings_load(void)
     if (nvs_get_u8(h, "kbm", &u8) == ESP_OK && u8 <= 1) s_set.kb_mode = u8;
     if (nvs_get_u8(h, "kbl", &u8) == ESP_OK && u8 <= 1) s_set.kb_layout = u8;
     if (nvs_get_u8(h, "gps", &u8) == ESP_OK) s_set.gps_on = u8;
+    if (nvs_get_u8(h, "rhq", &u8) == ESP_OK) s_set.rec_hq = u8;
     nvs_close(h);
     ESP_LOGI(TAG, "lum=%u veille=%us vib=%d bt=%d tz=%+d min", s_set.brightness,
              s_set.screen_timeout_s, s_set.vibrate, s_set.ble_enabled, s_set.tz_offset_min);
@@ -103,6 +105,7 @@ void settings_save(void)
     nvs_set_u8(h, "kbm", s_set.kb_mode);
     nvs_set_u8(h, "kbl", s_set.kb_layout);
     nvs_set_u8(h, "gps", s_set.gps_on);
+    nvs_set_u8(h, "rhq", s_set.rec_hq);
     nvs_commit(h);
     nvs_close(h);
 }

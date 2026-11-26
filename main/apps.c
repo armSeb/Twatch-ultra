@@ -20,12 +20,14 @@ extern const app_t app_tone;
 extern const app_t app_radio;
 extern const app_t app_mesh;
 extern const app_t app_gps;
+extern const app_t app_rec;
 
 const app_t *const g_apps[] = {
     &app_mesh,
     &app_gps,
     &app_chrono,
     &app_timer,
+    &app_rec,
     &app_steps,
     &app_puca,
     &app_demo,

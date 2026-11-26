@@ -46,6 +46,7 @@
 #define SYM_POINTER   "\xEF\x89\x85"   /* U+F245 */
 #define SYM_SILENT    "\xEF\x87\xB6"   /* U+F1F6, cloche barrée : mode silencieux */
 #define SYM_SATELLITE "\xEF\x9E\xBF"   /* U+F7BF */
+#define SYM_MIC       "\xEF\x84\xB0"   /* U+F130, micro : magnétophone */
 
 #define UI_ANIM_MS 140
 
