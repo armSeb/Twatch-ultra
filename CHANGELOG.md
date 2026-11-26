@@ -2,6 +2,17 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.64 — 2026-11-26
+
+- Recorder: works with the Wi-Fi hotspot on (it failed with "Microphone unavailable": the
+  hotspot leaves little internal DMA RAM). The SD write buffer shrinks from 8 KB to 4, 2 or
+  1 KB when internal RAM is short, keeping room for the microphone, and the microphone DMA
+  buffers retry at 4, 2 then 1 KB.
+- Recorder: "Microphone unavailable" diagnostics. Opening the microphone is retried 3 times,
+  a read timeout must last 2 s before giving up, and the error message shows the failing step
+  and the ESP-IDF code (also logged with the free internal DMA RAM). I2S DMA buffers reduced
+  to 4 KB.
+
 ## 0.2.63 — 2026-11-26
 
 - Recorder: louder recordings (0.2.62 was too quiet on the watch). The automatic gain now

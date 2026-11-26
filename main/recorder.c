@@ -39,7 +39,8 @@
 #define HDR_BYTES     512                    /* en-tête WAV : données alignées sur un secteur */
 #define RING_SAMPLES  (256 * 1024)           /* 512 Ko en PSRAM : 8 s à 32 kHz */
 #define RING_MASK     (RING_SAMPLES - 1)
-#define IO_SAMPLES    4096                   /* tampon DMA d'écriture/lecture : 8 Ko */
+#define IO_SAMPLES    4096                   /* tampon DMA d'écriture/lecture : 8 Ko… */
+#define IO_MIN        1024                   /* …ou moins si la RAM interne manque (Wi-Fi en point d'accès) */
 #define CHUNK_SAMPLES (32 * 1024)            /* écriture par 64 Ko */
 #define HDR_EVERY_US  (30 * 1000000LL)       /* en-tête + fsync toutes les 30 s */
 #define RD_SAMPLES    512                    /* bloc lu sur l'I2S */
@@ -66,9 +67,12 @@ static volatile bool s_cap_done;             /* tâche micro terminée */
 static volatile uint32_t s_wr, s_rd;         /* compteurs d'échantillons (réserve) */
 static volatile uint32_t s_drops;
 static volatile uint8_t s_level, s_gain_db;
+static volatile int s_mic_stage;             /* 1 canal, 2 mode PDM, 3 démarrage, 4 lecture */
+static volatile esp_err_t s_mic_err;
 static uint32_t s_rate;
 static int16_t *s_ring;
-static uint8_t *s_io;                        /* 8 Ko DMA, enregistrement OU lecture */
+static uint8_t *s_io;                        /* ≤ 8 Ko DMA, enregistrement OU lecture */
+static uint32_t s_io_n;                      /* sa taille, en échantillons */
 static int s_fd = -1;                        /* fichier enregistré, utilisé sous sd_lock() */
 static volatile uint32_t s_data;             /* octets de données écrits */
 static uint32_t s_limit;                     /* octets de données permis */
@@ -138,6 +142,20 @@ static void closer(void)
     if (s_pfd >= 0) { close(s_pfd); s_pfd = -1; }
 }
 
+/* tampon DMA interne : 8 Ko, sinon 4 puis 2 Ko (le Wi-Fi en point d'accès
+ * occupe beaucoup de RAM interne) ; un tampon plus petit fait seulement
+ * plus d'appels au pilote SD */
+static uint8_t *io_alloc(void)
+{
+    size_t big = heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    for (uint32_t n = IO_SAMPLES; n >= IO_MIN; n /= 2) {
+        if (n > IO_MIN && big < n * 2 + 6144) continue;   /* laisser de quoi ouvrir le micro */
+        uint8_t *p = heap_caps_malloc(n * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        if (p) { s_io_n = n; return p; }
+    }
+    return NULL;
+}
+
 static void fail(rec_err_t e)
 {
     if (s_err == REC_OK) s_err = e;
@@ -173,8 +191,7 @@ static void mic_task(void *arg)
 {
     i2s_chan_handle_t rx = NULL;
     i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    cc.dma_desc_num = 6;
-    cc.dma_frame_num = RD_SAMPLES;
+    cc.dma_desc_num = 4;                      /* 4 Ko de RAM DMA : 64 ms à 32 kHz */
     i2s_pdm_rx_config_t pc = {
         .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(s_rate),
         .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
@@ -183,13 +200,27 @@ static void mic_task(void *arg)
     /* horloge PDM ≈ 2 Mbit/s dans les deux cas (plage nominale des micros
      * MEMS) : 32 kHz × 64, ou 16 kHz × 128 */
     pc.clk_cfg.dn_sample_mode = s_rate >= 32000 ? I2S_PDM_DSR_8S : I2S_PDM_DSR_16S;
-    esp_err_t e = i2s_new_channel(&cc, NULL, &rx);
-    if (e == ESP_OK) e = i2s_channel_init_pdm_rx_mode(rx, &pc);
-    if (e == ESP_OK) e = i2s_channel_enable(rx);
-    if (e != ESP_OK) {
-        ESP_LOGE(TAG, "micro indisponible : %s", esp_err_to_name(e));
+    /* ouverture : jusqu'à 3 essais (RAM DMA interne momentanément prise
+     * par le Wi-Fi ou le Bluetooth…) ; l'étape et le code d'erreur sont
+     * gardés pour l'écran et le journal */
+    esp_err_t e = ESP_FAIL;
+    for (int t = 0; t < 3 && !s_stop; t++) {
+        if (t) vTaskDelay(pdMS_TO_TICKS(150));
+        s_mic_stage = 1;
+        cc.dma_frame_num = RD_SAMPLES >> t;   /* 4, 2 puis 1 Ko de RAM DMA */
+        e = i2s_new_channel(&cc, NULL, &rx);
+        if (e == ESP_OK) { s_mic_stage = 2; e = i2s_channel_init_pdm_rx_mode(rx, &pc); }
+        if (e == ESP_OK) { s_mic_stage = 3; e = i2s_channel_enable(rx); }
+        if (e == ESP_OK) break;
+        ESP_LOGE(TAG, "micro indisponible (étape %d, essai %d) : %s ; RAM DMA libre %u o, plus grand bloc %u o",
+                 s_mic_stage, t + 1, esp_err_to_name(e),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
         if (rx) i2s_del_channel(rx);
         rx = NULL;
+    }
+    if (!rx) {
+        s_mic_err = e;
         fail(REC_ERR_MIC);
     }
 
@@ -200,13 +231,20 @@ static void mic_task(void *arg)
     int64_t calm_since = 0, warm_end = esp_timer_get_time() + WARMUP_MS * 1000;
     int64_t log_t = esp_timer_get_time();
     float raw_peak_log = 0;
+    int read_fail = 0;
 
     while (rx && !s_stop) {
         size_t got = 0;
-        if (i2s_channel_read(rx, buf, sizeof buf, &got, pdMS_TO_TICKS(500)) != ESP_OK || got == 0) {
+        esp_err_t re = i2s_channel_read(rx, buf, sizeof buf, &got, pdMS_TO_TICKS(500));
+        if (re != ESP_OK || got == 0) {
+            ESP_LOGW(TAG, "lecture micro : %s", esp_err_to_name(re));
+            if (++read_fail < 4) continue;   /* 2 s sans données : abandon */
+            s_mic_stage = 4;
+            s_mic_err = re != ESP_OK ? re : ESP_ERR_TIMEOUT;
             fail(REC_ERR_MIC);
             break;
         }
+        read_fail = 0;
         int n = got / 2;
         /* passe-haut du 1er ordre, crête du bloc */
         float pk = 0;
@@ -282,7 +320,7 @@ static bool write_samples(uint32_t n)
     if (!sd_lock()) { fail(REC_ERR_SD); return false; }
     bool ok = s_fd >= 0;
     while (ok && n) {
-        uint32_t k = n < IO_SAMPLES ? n : IO_SAMPLES;
+        uint32_t k = n < s_io_n ? n : s_io_n;
         uint32_t p = s_rd & RING_MASK, k1 = RING_SAMPLES - p;
         if (k1 > k) k1 = k;
         memcpy(s_io, s_ring + p, k1 * 2);
@@ -387,7 +425,7 @@ esp_err_t rec_start(bool hq)
     s_err = REC_OK;
     s_rate = hq ? 32000 : 16000;
     s_ring = heap_caps_malloc(RING_SAMPLES * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    s_io = heap_caps_malloc(IO_SAMPLES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    s_io = io_alloc();
     if (!s_ring || !s_io) {
         heap_caps_free(s_ring);
         heap_caps_free(s_io);
@@ -431,6 +469,8 @@ esp_err_t rec_start(bool hq)
     }
 
     s_wr = s_rd = s_drops = 0;
+    s_mic_stage = 0;
+    s_mic_err = ESP_OK;
     s_level = 0;
     s_stop = false;
     s_cap_done = false;
@@ -478,6 +518,8 @@ void rec_get(rec_status_t *o)
     uint32_t d = s_data;
     o->left_s = s_rate && s_limit > d ? (s_limit - d) / (2 * s_rate) : 0;
     strlcpy(o->name, s_name, sizeof o->name);
+    o->mic_stage = s_mic_stage;
+    o->mic_err = s_mic_err;
     if (s_state == REC_RECORDING && s_stop) o->state = REC_STOPPING;
 }
 
@@ -607,7 +649,7 @@ static void play_task(void *arg)
         }
         if (s_poff >= s_pdata_len) break;
         uint32_t want = s_pdata_len - s_poff;
-        if (want > IO_SAMPLES * 2) want = IO_SAMPLES * 2;
+        if (want > s_io_n * 2) want = s_io_n * 2;
         int got = -1;
         if (sd_lock()) {
             if (s_pfd < 0) s_pfd = open(s_ppath, O_RDONLY);   /* refermé par la mise au repos */
@@ -641,7 +683,7 @@ esp_err_t rec_play(const char *name)
     }
     if (!s_closer_set) { sd_add_closer(closer); s_closer_set = true; }
     snprintf(s_ppath, sizeof s_ppath, REC_DIR "/%s", name);
-    s_io = heap_caps_malloc(IO_SAMPLES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    s_io = io_alloc();
     if (!s_io) return ESP_ERR_NO_MEM;
     if (!sd_lock()) { heap_caps_free(s_io); s_io = NULL; return ESP_ERR_NOT_FOUND; }
     bool ok = false;

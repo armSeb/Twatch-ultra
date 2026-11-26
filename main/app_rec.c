@@ -97,7 +97,10 @@ static void refresh_main(void)
 
     if (st.err != m_err_seen) {              /* erreur survenue pendant l'enregistrement */
         m_err_seen = st.err;
-        if (st.err != REC_OK) ui_toast(err_text(st.err));
+        if (st.err == REC_ERR_MIC) {         /* détail pour le diagnostic */
+            snprintf(b, sizeof b, "%s (%d, 0x%x)", err_text(st.err), st.mic_stage, (unsigned)st.mic_err);
+            ui_toast(b);
+        } else if (st.err != REC_OK) ui_toast(err_text(st.err));
     }
 
     bool sd = sd_mounted();

@@ -49,6 +49,8 @@ typedef struct {
     uint8_t     gain_db;        /* gain automatique appliqué */
     uint32_t    left_s;         /* place restante sur la carte, en secondes */
     char        name[40];       /* fichier en cours (ou dernier), sans dossier */
+    int         mic_stage;      /* REC_ERR_MIC : étape en échec (1 canal, 2 PDM, 3 démarrage, 4 lecture) */
+    esp_err_t   mic_err;        /* REC_ERR_MIC : code ESP-IDF */
 } rec_status_t;
 
 esp_err_t rec_start(bool hq);   /* hq : 32 kHz, sinon 16 kHz */
