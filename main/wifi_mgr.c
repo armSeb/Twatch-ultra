@@ -22,6 +22,7 @@
 #include "app_events.h"
 #include "task_psram.h"
 #include "display.h"
+#include "crashlog.h"
 #include "nvs.h"
 #include "esp_random.h"
 
@@ -494,10 +495,15 @@ static void drv_unlock(void) { xSemaphoreGive(s_drv); }
 /* ------------------------------------------------------------------ */
 /* Point d'accès (Wi-Fi global en mode point d'accès)                   */
 /* ------------------------------------------------------------------ */
-/* même mot de passe que le point d'accès de la mise à jour (NVS « otapw ») */
+/* même mot de passe que le point d'accès de la mise à jour (NVS « otapw »).
+ * Lu une fois depuis une tâche à pile interne (ensure_base, wifi_user_mode) :
+ * la tâche wifi a sa pile en PSRAM et ne doit jamais toucher la flash (NVS),
+ * sinon assert « esp_task_stack_is_sane_cache_disabled » (boucle de
+ * redémarrage de la 0.2.60). */
 const char *wifi_ap_password(void)
 {
     if (s_ap_pass[0]) return s_ap_pass;
+    if (s_task && xTaskGetCurrentTaskHandle() == s_task) return s_ap_pass;   /* jamais de NVS ici */
     nvs_handle_t h;
     size_t len = sizeof s_ap_pass;
     bool ok = nvs_open("tw", NVS_READWRITE, &h) == ESP_OK;
@@ -524,6 +530,7 @@ static bool ap_wanted(void)
 static void ap_start_locked(void)
 {
     if (s_started) radio_stop_locked();
+    if (!s_ap_pass[0]) { s_ap_fail = true; set_state(WIFI_FAILED, N_("Le point d'accès n'a pas démarré"), ""); return; }
     if (!net_ap_netif()) { s_ap_fail = true; set_state(WIFI_FAILED, N_("Erreur Wi-Fi"), ""); return; }
     wifi_config_t ap = { 0 };
     strlcpy((char *)ap.ap.ssid, AP_SSID, sizeof ap.ap.ssid);
@@ -686,6 +693,8 @@ static void wifi_task(void *arg)
 static bool ensure_base(void)
 {
     if (s_task) return true;
+    wifi_ap_password();                                 /* NVS lue ici, pas depuis la tâche wifi */
+    if (settings_get()->wifi_ap) net_ap_netif();        /* idem : interface créée hors tâche wifi */
     if (!s_drv) s_drv = xSemaphoreCreateMutex();
     if (!s_cfg_mx) s_cfg_mx = xSemaphoreCreateMutex();
     if (!s_evg) s_evg = xEventGroupCreate();
@@ -862,6 +871,8 @@ bool wifi_user_set(bool on)
 
 bool wifi_user_mode(bool on, bool ap)
 {
+    wifi_ap_password();
+    if (ap) net_ap_netif();
     settings_t *st = settings_get();
     if (st->wifi_ap != ap) { st->wifi_ap = ap; settings_save(); }
     s_ap_fail = false;
@@ -911,6 +922,14 @@ void wifi_mgr_init(void)
     bool vbus = power_vbus();
     s_last_pct = pct < 0 ? -1 : vbus ? 100 : pct;
     if (!settings_get()->wifi_on) return;
+    /* le Wi-Fi vient de faire planter la montre : on ne le relance pas tout
+     * seul, pour ne jamais tourner en boucle de redémarrages */
+    if (crashlog_crashed_in("wifi")) {
+        ESP_LOGW(TAG, "plantage dans la tâche wifi au démarrage précédent : Wi-Fi laissé coupé");
+        settings_get()->wifi_on = false;
+        settings_save();
+        return;
+    }
     /* batterie déjà faible au démarrage : pas de Wi-Fi automatique */
     if (settings_get()->wifi_lowbatt && !vbus && pct >= 0 && pct < LOW_BATT_PCT) {
         ESP_LOGW(TAG, "batterie %d %% : Wi-Fi global laissé coupé", pct);
