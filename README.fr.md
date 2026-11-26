@@ -50,7 +50,8 @@ arrondis de la dalle)*
   rouvre), *Lampe*, *Pas*, **Analyseur Wi-Fi**, **WebRX** (écoute de vos récepteurs
   OpenWebRX / OpenWebRX+ par Wi-Fi sur le haut-parleur — [guide](docs/fr/webrx.md)),
   **Radio** (webradios : MP3, AAC/HE-AAC, listes de lecture, titres —
-  [guide](docs/fr/radio.md)), **Tone** (tonalité d'accès aux relais), **Souris** (pavé
+  [guide](docs/fr/radio.md)), **Magnéto** (enregistre le micro sur la carte SD en WAV, même
+  écran éteint, et relit — [guide](docs/fr/recorder.md)), **Tone** (tonalité d'accès aux relais), **Souris** (pavé
   tactile, télécommande de présentation et multimédia en Bluetooth —
   [guide](docs/fr/mouse.md)). Une app ouverte reste en place : l'écran s'éteint dessus et s'y
   rallume. Un petit cadre permet d'en ajouter une en un seul fichier.
@@ -190,6 +191,7 @@ Plus de détails : [compilation, flashage et tests](docs/fr/building.md).
 | Wi-Fi, serveur web, MeshCore en TCP | [docs/fr/wifi.md](docs/fr/wifi.md) | [docs/en/wifi.md](docs/en/wifi.md) |
 | WebRX (client OpenWebRX) | [docs/fr/webrx.md](docs/fr/webrx.md) | [docs/en/webrx.md](docs/en/webrx.md) |
 | Radio (webradios) | [docs/fr/radio.md](docs/fr/radio.md) | [docs/en/radio.md](docs/en/radio.md) |
+| Magnéto (enregistreur) | [docs/fr/recorder.md](docs/fr/recorder.md) | [docs/en/recorder.md](docs/en/recorder.md) |
 | Púca (animal virtuel) | [docs/fr/puca.md](docs/fr/puca.md) | [docs/en/puca.md](docs/en/puca.md) |
 | Démo « Tír na nÓg » | [docs/fr/demo.md](docs/fr/demo.md) | [docs/en/demo.md](docs/en/demo.md) |
 | Envol (jeu de vol) | [docs/fr/flight.md](docs/fr/flight.md) | [docs/en/flight.md](docs/en/flight.md) |

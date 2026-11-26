@@ -2,6 +2,36 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.64 — 2026-11-26
+
+- Recorder: works with the Wi-Fi hotspot on (it failed with "Microphone unavailable": the
+  hotspot leaves little internal DMA RAM). The SD write buffer shrinks from 8 KB to 4, 2 or
+  1 KB when internal RAM is short, keeping room for the microphone, and the microphone DMA
+  buffers retry at 4, 2 then 1 KB.
+- Recorder: "Microphone unavailable" diagnostics. Opening the microphone is retried 3 times,
+  a read timeout must last 2 s before giving up, and the error message shows the failing step
+  and the ESP-IDF code (also logged with the free internal DMA RAM). I2S DMA buffers reduced
+  to 4 KB.
+
+## 0.2.63 — 2026-11-26
+
+- Recorder: louder recordings (0.2.62 was too quiet on the watch). The automatic gain now
+  aims at -1 dBFS peaks instead of -6 dBFS, reaches up to +48 dB (was +36 dB), starts at
+  +30 dB and recovers at 6 dB/s after 0.5 s of calm.
+
+## 0.2.62 — 2026-11-26
+
+- New **Recorder** app (*Magnéto*): records the PDM microphone to the SD card as WAV
+  (16-bit mono PCM, 32 kHz by default, 16 kHz "voice" option for twice the duration), in
+  `/sd/REC/YYYYMMDD-HHMMSS.WAV`. Recording keeps running with the screen off and when the app
+  is left; only the stop button ends it. Automatic gain (up to +36 dB) with a level meter,
+  80 Hz high-pass. Samples are buffered in PSRAM (8 s) and written in 64 KB sector-aligned
+  blocks; the WAV header is refreshed every 30 s so a crash or card removal keeps the audio.
+  List of recordings (newest first) with playback on the speaker (pause, ±10 s) and delete.
+- The speaker now uses I2S1: I2S0 is the only port with the PDM-to-PCM filter, needed by the
+  microphone. Beeps and notifications still sound during a recording.
+- Microphone icon added to the fonts.
+
 ## 0.2.61 — 2026-11-26
 
 - Fix boot loop when the Wi-Fi hotspot is on: the hotspot password was read from NVS (flash)
