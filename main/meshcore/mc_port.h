@@ -108,6 +108,7 @@ typedef struct {
     uint16_t unread;
     uint32_t last_ts;             /* 0 : aucun message dans l'anneau */
     bool     last_out;            /* le dernier message est de nous */
+    uint8_t  hops;                /* contact : sauts du chemin, MC_HOPS_FLOOD inconnu, MC_HOPS_NA sans contact */
     char     last[64];            /* aperçu du dernier message */
 } mc_conv_t;
 /* Liste triée : non lus d'abord, puis ordre alphabétique (émojis et
@@ -115,6 +116,8 @@ typedef struct {
  * salons ; plus ceux de l'historique supprimés depuis. Renvoie le nombre total
  * (peut dépasser max). La liste des contacts et canaux est recopiée par la
  * tâche mesh après mc_conv_refresh() (rappel mc_set_msg_cb avec NULL). */
+#define MC_HOPS_FLOOD 0xFF
+#define MC_HOPS_NA    0xFE
 int  mc_conv_list(uint8_t kind, mc_conv_t *out, int max);
 void mc_conv_refresh(void);
 int  mc_unread_total(uint8_t kind);

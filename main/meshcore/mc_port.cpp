@@ -557,6 +557,7 @@ static void peers_snapshot(void)
     for (int i = 0; i < nc && n < MCH_PEERS_MAX; i++) {
         if (!s_mesh->getContactByIdx(i, c) || (c.type != ADV_TYPE_CHAT && c.type != ADV_TYPE_ROOM)) continue;
         p[n].pub = false;
+        p[n].hops = c.out_path_len == OUT_PATH_UNKNOWN ? MC_HOPS_FLOOD : (uint8_t)(c.out_path_len & 63);
         p[n].kind = MC_CONV_CONTACT;
         memcpy(p[n].peer, c.id.pub_key, MC_PEER_LEN);
         mc_copy_utf8(p[n].name, sizeof p[n].name, c.name, sizeof c.name);
@@ -571,6 +572,7 @@ static void peers_snapshot(void)
         p[n].pub = !memcmp(ch.channel.secret, pub_key, sizeof pub_key) &&
                    !memcmp(ch.channel.secret + sizeof pub_key, zero, sizeof ch.channel.secret - sizeof pub_key);
         p[n].kind = MC_CONV_CHANNEL;
+        p[n].hops = MC_HOPS_NA;
         channel_peer(ch, p[n].peer);
         mc_copy_utf8(p[n].name, sizeof p[n].name, ch.name, sizeof ch.name);
         n++;

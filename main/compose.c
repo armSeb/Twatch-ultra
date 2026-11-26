@@ -921,7 +921,7 @@ void compose_open(lv_obj_t *scr, const char *title, uint32_t draft_id, int max_b
     lv_obj_set_pos(x, 46, HDR_Y);
     lv_obj_t *t = ui_label(o_root, &font_text, C_FG, "");
     lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(t, 196);
+    lv_obj_set_size(t, 196, lv_font_get_line_height(&font_text));     /* une ligne */
     lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(t, (SCR_W - 196) / 2, HDR_Y + (HDR_H - lv_font_get_line_height(&font_text)) / 2);
     emoji_label_set_text(t, title);

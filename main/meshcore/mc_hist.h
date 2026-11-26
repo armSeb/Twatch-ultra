@@ -23,6 +23,7 @@ typedef struct {
     uint8_t peer[MC_PEER_LEN];
     char    name[MC_NAME_MAX];
     bool    pub;                /* canal public de MeshCore (clé connue de tous) */
+    uint8_t hops;               /* contact : sauts du chemin connu, 0xFF inconnu (flood) */
 } mch_peer_t;
 
 void mch_init(void);                    /* avant tout le reste */

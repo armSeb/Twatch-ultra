@@ -61,7 +61,10 @@ static int m_tab;
 EXT_RAM_BSS_ATTR static mc_conv_t m_conv[ROWS_MAX];
 EXT_RAM_BSS_ATTR static mc_msg_t m_buf[PAGE];
 
+static char m_query[MC_NAME_MAX];      /* recherche dans l'onglet (vide : tout) */
+
 /* vue */
+static lv_obj_t *v_ant;                 /* onglet Radio : antenne intégrée / externe */
 static lv_obj_t *v_scr, *v_tabs, *v_list, *v_off, *v_radio, *v_status, *v_diag, *v_sd;
 static lv_timer_t *v_tmr;
 static uint32_t v_ver = UINT32_MAX;     /* version de l'historique affichée */
@@ -844,6 +847,7 @@ static void add_row(int i)
         lv_obj_t *tl = ui_label(r, &font_small, cv->unread ? C_ACC : C_DIM, w);
         lv_obj_align(tl, LV_ALIGN_TOP_RIGHT, 0, S(2));
     }
+    lv_obj_t *badge = NULL;
     if (cv->unread) {
         char u[8];
         snprintf(u, sizeof u, "%u", cv->unread > 99 ? 99 : cv->unread);
@@ -855,10 +859,72 @@ static void add_row(int i)
         lv_obj_set_style_text_align(b, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_min_width(b, S(20), 0);
         lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+        badge = b;
+    }
+    /* contact : chemin connu, comme l'app iPhone (direct, sauts, flood) */
+    if (cv->kind == MC_CONV_CONTACT && cv->hops != MC_HOPS_NA) {
+        char hb[24];
+        if (cv->hops == MC_HOPS_FLOOD) snprintf(hb, sizeof hb, "%s", _("flood"));
+        else if (cv->hops == 0) snprintf(hb, sizeof hb, "%s", _("direct"));
+        else snprintf(hb, sizeof hb, _("%u saut(s)"), cv->hops);
+        lv_obj_t *hl = ui_label(r, &font_small, cv->hops == MC_HOPS_FLOOD ? C_DIM : C_ACC, hb);
+        if (badge) lv_obj_align_to(hl, badge, LV_ALIGN_OUT_LEFT_MID, -S(6), 0);
+        else lv_obj_align(hl, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+        lv_obj_update_layout(hl);
+        int32_t w = lv_obj_get_width(hl) + S(8) + (badge ? S(26) : 0);
+        lv_obj_set_width(pv, UI_W - S(16) - w);
     }
 }
 
 static void more_rows_cb(lv_event_t *e);
+
+/* ------------------------------------------------------------------ recherche */
+static bool matches(const mc_conv_t *cv, const char *qkey)
+{
+    char k[MC_NAME_MAX * 2];
+    mc_sort_key(cv->name, k, sizeof k);         /* sans casse ni accents */
+    return strstr(k, qkey) != NULL;
+}
+
+static bool search_send(const char *text, void *ud)
+{
+    while (*text == ' ' || *text == '#') text++;
+    strlcpy(m_query, text, sizeof m_query);
+    for (int k = (int)strlen(m_query) - 1; k >= 0 && m_query[k] == ' '; k--) m_query[k] = 0;
+    v_limit = ROWS_STEP;
+    rebuild(true);
+    lv_obj_scroll_to_y(v_list, 0, LV_ANIM_OFF);
+    return true;
+}
+
+static void rebuild_async(void *arg) { if (v_list) rebuild(true); }
+
+static void search_cb(lv_event_t *e)
+{
+    if (m_query[0]) {                           /* filtre actif : le toucher l'efface */
+        m_query[0] = 0;
+        lv_async_call(rebuild_async, NULL);     /* le bouton touché part avec la liste */
+        return;
+    }
+    compose_open(v_scr, m_tab == TAB_CHANNELS ? _("Canal…") : _("Contact…"),
+                 0x53524348u, MC_NAME_MAX - 1, COMPOSE_NO_CAPS, search_send, NULL);
+}
+
+static void search_bar(void)
+{
+    char b[MC_NAME_MAX + 32];
+    if (m_query[0]) snprintf(b, sizeof b, "« %s »   %s", m_query, LV_SYMBOL_CLOSE);
+    else snprintf(b, sizeof b, "%s", _("Rechercher…"));
+    lv_obj_t *s = ui_button(v_list, "", m_query[0] ? lv_color_hex(0x134E4A) : C_CARD, search_cb, NULL);
+    lv_obj_set_size(s, lv_pct(100), S(36));
+    lv_obj_set_style_radius(s, S(18), 0);
+    lv_obj_t *l = lv_obj_get_child(s, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(l, lv_pct(100));
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(l, m_query[0] ? C_FG : C_DIM, 0);
+    emoji_label_set_text(l, b);
+}
 
 static void update_tabs(void)
 {
@@ -909,7 +975,18 @@ static void rebuild(bool force)
     int32_t sy = lv_obj_get_scroll_y(v_list);
     lv_obj_clean(v_list);
     uint8_t kind = m_tab == TAB_CHANNELS ? MC_CONV_CHANNEL : MC_CONV_CONTACT;
-    int total = mc_conv_list(kind, m_conv, v_limit < ROWS_MAX ? v_limit : ROWS_MAX);
+    search_bar();
+    int total;
+    if (m_query[0]) {                   /* filtre : sur toute la liste */
+        char q[MC_NAME_MAX * 2];
+        mc_sort_key(m_query, q, sizeof q);
+        int n = mc_conv_list(kind, m_conv, ROWS_MAX);
+        if (n > ROWS_MAX) n = ROWS_MAX;
+        total = 0;
+        for (int i = 0; i < n; i++) if (matches(&m_conv[i], q)) m_conv[total++] = m_conv[i];
+    } else {
+        total = mc_conv_list(kind, m_conv, v_limit < ROWS_MAX ? v_limit : ROWS_MAX);
+    }
     v_nconv = total < v_limit ? total : v_limit;
     for (int i = 0; i < v_nconv; i++) add_row(i);
     if (total > v_nconv && v_limit < ROWS_MAX) {
@@ -918,7 +995,11 @@ static void rebuild(bool force)
         lv_obj_t *m = ui_button(v_list, b, C_CARD, more_rows_cb, NULL);
         lv_obj_set_size(m, lv_pct(100), S(36));
     }
-    if (!total) {
+    if (!total && m_query[0]) {
+        lv_obj_t *e = ui_label(v_list, &font_text, C_DIM, _("Aucun résultat."));
+        lv_obj_set_width(e, lv_pct(100));
+        lv_obj_set_style_text_align(e, LV_TEXT_ALIGN_CENTER, 0);
+    } else if (!total) {
         lv_obj_t *e = ui_label(v_list, &font_small, C_DIM, kind == MC_CONV_CHANNEL ?
                                _("Aucun canal. Ajoute-les depuis l'app MeshCore.") :
                                _("Aucun contact pour l'instant. Ils apparaissent quand les nœuds s'annoncent."));
@@ -960,6 +1041,7 @@ static void tabs_cb(lv_event_t *e)
     if (t >= TAB_N || (int)t == m_tab) return;
     int dir = (int)t > m_tab ? 1 : -1;
     m_tab = (int)t;
+    m_query[0] = 0;
     lv_async_call(tab_switch_async, (void *)(intptr_t)dir);   /* la barre se redessine hors de son clic */
 }
 
@@ -978,6 +1060,18 @@ static void advert_cb(lv_event_t *e)
     if (!mc_running()) { ui_toast(_("MeshCore coupé")); return; }
     if (mc_send_advert(flood)) ui_toast(flood ? _("Annonce flood envoyée") : _("Annonce locale envoyée"));
     else ui_toast(_("Envoi impossible pour l'instant"));
+}
+
+static void ant_cb(lv_event_t *e)
+{
+    uint32_t b = lv_buttonmatrix_get_selected_button(v_ant);
+    if (b > 1) return;
+    bool ext = b == 1;
+    if (settings_get()->lora_ext_ant == ext) return;
+    settings_get()->lora_ext_ant = ext;
+    settings_save();
+    sx_set_antenna(ext);
+    ui_toast(ext ? _("Antenne LoRa externe") : _("Antenne LoRa intégrée"));
 }
 
 static void tick_cb(lv_timer_t *t)
@@ -1037,6 +1131,17 @@ static void create(lv_obj_t *scr)
     v_sd = ui_label(v_radio, &font_small, C_DIM, "");
     lv_label_set_long_mode(v_sd, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(v_sd, lv_pct(100));
+    /* antenne : à portée de doigt, sans passer par les réglages */
+    ui_label(v_radio, &font_text, C_FG, _("Antenne LoRa"));
+    static const char *ant_map[3];
+    ant_map[0] = _("Intégrée");
+    ant_map[1] = _("Externe");
+    ant_map[2] = "";
+    v_ant = ui_segmented(v_radio, ant_map, ant_cb);
+    lv_obj_set_size(v_ant, lv_pct(100), S(40));
+    lv_buttonmatrix_set_button_ctrl_all(v_ant, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_one_checked(v_ant, true);
+    lv_buttonmatrix_set_button_ctrl(v_ant, settings_get()->lora_ext_ant ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
     /* annonces : la montre se fait connaître (flood : relayée par tout le réseau) */
     lv_obj_t *af = ui_button(v_radio, "", C_ACC, advert_cb, (void *)1);
     lv_obj_set_size(af, lv_pct(100), S(44));
@@ -1080,7 +1185,7 @@ static void destroy(void)
     if (c_closing) lv_anim_delete(c_closing, NULL);
     if (r_panel) lv_anim_delete(r_panel, NULL);
     if (r_closing) lv_anim_delete(r_closing, NULL);
-    r_panel = r_list = r_stat = r_closing = v_reg_btn = c_chip = NULL;
+    r_panel = r_list = r_stat = r_closing = v_reg_btn = c_chip = v_ant = NULL;
     mc_set_msg_cb(NULL);
     compose_forget();
     c_ntrack = 0;

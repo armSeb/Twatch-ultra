@@ -28,8 +28,9 @@ Default preset: **EU/UK Narrow**, 869.618 MHz, 62.5 kHz bandwidth, SF8, CR 4/8, 
 radio parameter (frequency, bandwidth, spreading factor, coding rate, power) is set **from the
 MeshCore app** and saved on the watch; the watch shows them but does not edit them.
 
-**Antenna**: *Settings › MeshCore › External antenna* switches between the built-in antenna
-(off) and an antenna on the USB-C connector (on). It applies immediately.
+**Antenna**: at the top of the **Radio** tab of the MeshCore app (*Built-in* / *External*),
+or *Settings › MeshCore › External antenna*. External: antenna on the USB-C connector. It
+applies immediately.
 
 ## The MeshCore app on the watch
 
@@ -47,6 +48,11 @@ channel with the well-known key), then follow **alphabetical** order
 (leading emoji and punctuation ignored, case and accents ignored). Each row shows the last
 message, its time and a badge with the unread count; tab titles count unread messages too.
 Past 40 rows, *Show more* loads the rest.
+
+For a contact, the row also shows its **path**, like the iPhone app: *direct*, *2 hop(s)*,
+or *flood* when no path is known. **Search…**, at the top of the Contacts and Channels tabs,
+opens the keyboard: the list keeps only names containing the typed text (case and accents
+ignored). Tap the filter to clear it.
 
 Touching a row **slides the conversation in**: bubbles, oldest at the top, sender name on
 channels, messages sent from the iPhone on the right, an *Unread* marker. *Older messages*

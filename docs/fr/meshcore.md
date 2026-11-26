@@ -30,8 +30,9 @@ Préréglage par défaut : **EU/UK Narrow**, 869,618 MHz, bande de 62,5 kHz, SF8
 se règlent **depuis l'app MeshCore** et sont enregistrés sur la montre ; la montre les
 affiche sans les modifier.
 
-**Antenne** : *Réglages › MeshCore › Antenne externe* bascule entre l'antenne intégrée
-(coupé) et une antenne sur le connecteur USB-C (activé). Effet immédiat.
+**Antenne** : en haut de l'onglet **Radio** de l'app MeshCore (*Intégrée* / *Externe*), ou
+*Réglages › MeshCore › Antenne externe*. Externe : antenne sur le connecteur USB-C. Effet
+immédiat.
 
 ## L'app MeshCore de la montre
 
@@ -51,6 +52,11 @@ Les listes mettent en tête les conversations qui ont des **non lus**, puis le c
 Chaque ligne montre le dernier message, son heure et une pastille avec le nombre de non lus ;
 le titre des onglets compte aussi les non lus. Au-delà de 40 lignes, *Afficher plus* charge
 la suite.
+
+Pour un contact, la ligne montre aussi son **chemin**, comme l'app iPhone : *direct*,
+*2 saut(s)*, ou *flood* quand aucun chemin n'est connu. **Rechercher…**, en haut des onglets
+Contacts et Canaux, ouvre le clavier : la liste ne garde que les noms qui contiennent le texte
+tapé (sans majuscules ni accents). Toucher le filtre l'efface.
 
 Toucher une ligne fait **glisser la conversation** : bulles, les plus anciennes en haut, nom
 de l'expéditeur sur les canaux, messages envoyés depuis l'iPhone à droite, repère *Non lus*.

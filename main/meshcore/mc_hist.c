@@ -479,6 +479,7 @@ int mc_conv_list(uint8_t kind, mc_conv_t *out, int max)
         memcpy(w[n].c.peer, s_peers[i].peer, MC_PEER_LEN);
         memcpy(w[n].c.name, s_peers[i].name, MC_NAME_MAX);
         w[n].pub = s_peers[i].pub;
+        w[n].c.hops = kind == MC_CONV_CONTACT ? s_peers[i].hops : MC_HOPS_NA;
         n++;
     }
     for (int i = 0; i < s_n; i++) {          /* du plus récent au plus ancien */
@@ -491,6 +492,7 @@ int mc_conv_list(uint8_t kind, mc_conv_t *out, int max)
             w[n].c.kind = kind;
             memcpy(w[n].c.peer, e->peer, MC_PEER_LEN);
             memcpy(w[n].c.name, e->from, MC_NAME_MAX);
+            w[n].c.hops = MC_HOPS_NA;
             n++;
         }
         mc_conv_t *c = &w[k].c;

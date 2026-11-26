@@ -2,6 +2,15 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.57 — 2026-11-26
+
+- MeshCore › Radio: built-in / external LoRa antenna switch at the top of the tab (same
+  setting as Settings › MeshCore), no trip to the settings needed.
+- Contacts list: path of each contact like the iPhone app (*direct*, *N hop(s)*, *flood*).
+- Search bar at the top of Contacts and Channels: opens the keyboard, filters by name
+  (case and accents ignored); tap the filter to clear it. Cleared when switching tabs.
+- Keyboard title stays on one line.
+
 ## 0.2.56 — 2026-11-26
 
 - Contacts (and the paths learned for them) are saved when MeshCore stops, before an OTA
