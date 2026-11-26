@@ -2,6 +2,11 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.4.1 — 2026-11-26
+
+- Maps: dots and the position arrow are only drawn in the screen strips they touch (fewer
+  draw tasks per frame while panning).
+
 ## 0.4.0 — 2026-11-26
 
 - New **Maps** app: offline OpenStreetMap tiles from the SD card (`/tiles/<z>/<x>/<y>.png`,

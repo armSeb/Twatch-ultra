@@ -377,8 +377,17 @@ static void draw_tiles(lv_layer_t *layer, const lv_area_t *co)
     }
 }
 
+/* LVGL 9.2 ne trie pas les dessins par bande : chaque appel hors de la bande
+ * en cours coûte quand même une tâche de dessin */
+static bool in_clip(lv_layer_t *layer, int x1, int y1, int x2, int y2)
+{
+    const lv_area_t *c = &layer->_clip_area;
+    return x1 <= c->x2 && x2 >= c->x1 && y1 <= c->y2 && y2 >= c->y1;
+}
+
 static void draw_dot(lv_layer_t *layer, int x, int y, int r, lv_color_t c, int border)
 {
+    if (!in_clip(layer, x - r, y - r, x + r, y + r)) return;
     lv_draw_rect_dsc_t d;
     lv_draw_rect_dsc_init(&d);
     d.radius = LV_RADIUS_CIRCLE;
@@ -433,6 +442,9 @@ static void draw_me(lv_layer_t *layer, const lv_area_t *co)
     x += co->x1;
     y += co->y1;
     if (x < -S(60) || x > co->x2 + S(60) || y < -S(60) || y > co->y2 + S(60)) return;
+    int reach = S(40);                         /* flèche avec son ombre */
+    if (s_me_fresh && s_me_acc_m > 0) reach = MAP_W;
+    if (!in_clip(layer, x - reach, y - reach, x + reach, y + reach)) return;
     lv_color_t c = s_me_fresh ? C_ME : C_ME_OLD;
     /* précision : disque pâle, s'il dépasse le repère */
     if (s_me_fresh && s_me_acc_m > 0) {
