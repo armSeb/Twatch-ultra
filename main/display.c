@@ -366,6 +366,10 @@ void display_direct_end(void) { }
 /* ------------------------------------------------------------------ */
 #define CST_ACK 0xAB
 
+static bool s_p2_ok;           /* second doigt posé (dernier rapport) */
+static int16_t s_p2_x, s_p2_y;
+static int64_t s_p2_us;
+
 static bool cst_read(uint16_t *x, uint16_t *y, int *count)
 {
     uint8_t reg[2] = { 0xD0, 0x00 };
@@ -380,6 +384,21 @@ static bool cst_read(uint16_t *x, uint16_t *y, int *count)
     *x = (uint16_t)((b[1] << 4) | (b[3] >> 4));
     *y = (uint16_t)((b[2] << 4) | (b[3] & 0x0F));
     *count = n;
+    /* second doigt (pincement des Cartes) */
+    s_p2_ok = n == 2 && (b[7] & 0x0F) == 0x06;
+    if (s_p2_ok) {
+        s_p2_x = (int16_t)((b[8] << 4) | (b[10] >> 4));
+        s_p2_y = (int16_t)((b[9] << 4) | (b[10] & 0x0F));
+        s_p2_us = esp_timer_get_time();
+    }
+    return true;
+}
+
+bool display_touch_second(int *x, int *y)
+{
+    if (!s_p2_ok || esp_timer_get_time() - s_p2_us > 80000) return false;
+    *x = s_p2_x;
+    *y = s_p2_y;
     return true;
 }
 

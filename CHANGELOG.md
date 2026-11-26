@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.4.0 — 2026-11-26
+
+- New **Maps** app: offline OpenStreetMap tiles from the SD card (`/tiles/<z>/<x>/<y>.png`,
+  the MCLite / MeshCore T-Deck layout, zoom levels detected), GPS position with a heading
+  arrow and accuracy disc, MeshCore nodes that advertise a position (tap for name, distance
+  and age), drag with momentum, pinch / double-tap / buttons to zoom, two levels of
+  over-zoom, missing tiles filled from a wider level, scale bar. Tiles decoded in PSRAM by a
+  background task (ROM `tinfl`), cache freed on exit.
+- Touch: the second finger of the CST9217 is read (`display_touch_second()`).
+- MeshCore: `mc_node_positions()` lists contacts that advertise a position.
+- Host test for the PNG tile decoder (`host_tests/test_png.c`, needs Pillow and zlib).
+
 ## 0.3.0 — 2026-11-26
 
 - Version scheme: the minor number goes up with each new app or major feature, the patch

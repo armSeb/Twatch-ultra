@@ -19,4 +19,13 @@ gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main/meshcore 
     ../main/meshcore/mc_text.c && ./test_mc_text
 # GNSS : trames NMEA du u-blox M10 (fix, constellations, bruit, coupures)
 gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main -o test_gnss test_gnss.c ../main/gnss_nmea.c -lm && ./test_gnss
-rm -f test_host test_puca test_meshcore test_mc_text test_gnss
+# Cartes : décodeur de tuiles PNG (formats fabriqués par Pillow, fichiers abîmés)
+if python3 -c "import PIL" 2>/dev/null; then
+    T=$(mktemp -d)
+    python3 gen_png.py "$T" >/dev/null
+    gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main -o test_png test_png.c ../main/png_tile.c -lz && ./test_png "$T"
+    rm -rf "$T"
+else
+    echo "png : Pillow absent, test sauté"
+fi
+rm -f test_host test_puca test_meshcore test_mc_text test_gnss test_png

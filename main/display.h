@@ -50,4 +50,6 @@ void      display_bench_mode(bool on);
  * le bord haut (ui.c), qui doit voir le doigt avant les objets de l'écran. */
 typedef void (*display_touch_hook_t)(bool down, int x, int y);
 void      display_set_touch_hook(display_touch_hook_t hook);
+/* second doigt posé (le CST9217 en suit deux) : position, tâche app */
+bool      display_touch_second(int *x, int *y);
 void      display_tap_enable(bool en);  /* réglage modifié */      /* CPU max seulement pendant l'interaction */
