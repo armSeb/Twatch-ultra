@@ -31,7 +31,7 @@ tactile (8), détection de la carte SD (10), commutateur d'antenne LoRa (11).
 | Rail | Alimente | Firmware |
 |---|---|---|
 | DCDC1 3,3 V | ESP32-S3 | toujours allumé, jamais touché |
-| ALDO1 3,3 V | carte SD | coupé tant qu'inutilisé ; allumé pendant que la radio LoRa tourne (bus SPI partagé) |
+| ALDO1 3,3 V | carte SD | allumé par l'app GPS ; allumé pendant que la radio LoRa tourne (bus SPI partagé) |
 | ALDO2 3,3 V | écran | allumé |
 | ALDO3 3,3 V | LoRa SX1262 | allumé seulement quand MeshCore tourne |
 | ALDO4 1,8 V | BHI260AP | allumé seulement si lever le poignet ou le compteur de pas est activé |

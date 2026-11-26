@@ -9,6 +9,7 @@
 #include <new>
 #include <algorithm>
 #include <time.h>
+#include <math.h>
 #include <sys/time.h>
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -27,6 +28,8 @@ extern "C" {
 #include "wclock.h"
 #include "ble.h"
 #include "settings.h"
+#include "gnss.h"
+#include "app_events.h"
 }
 
 static const char *TAG = "mesh";
@@ -230,6 +233,55 @@ TWatchRadio radio_driver;
 TWatchBoard board;
 TWatchClock rtc_clock;
 TWatchSensors sensors;
+
+/* ---- GNSS (gnss.c) ---- */
+static void gps_set_cb(void *arg) { gnss_set(arg != NULL); }
+
+const char *TWatchSensors::getSettingValue(int i) const
+{
+    return i == 0 ? (gnss_is_on() ? "1" : "0") : NULL;
+}
+
+/* réglage « gps » de l'app MeshCore : même interrupteur que l'app GPS */
+bool TWatchSensors::setSettingValue(const char *name, const char *value)
+{
+    if (!name || !value || strcmp(name, "gps") != 0 || (value[0] != '0' && value[0] != '1')) return false;
+    bool on = value[0] == '1';
+    if (on == gnss_is_on()) return true;
+    return app_call(gps_set_cb, on ? (void *)1 : NULL, 1000);
+}
+
+/* tâche mesh : position des annonces = dernier fix (moins de 2 min) */
+void TWatchSensors::loop()
+{
+    int64_t now = esp_timer_get_time();
+    if (now < next_us) return;
+    next_us = now + 5 * 1000000LL;
+    double lat, lon;
+    float alt;
+    bool alt_ok;
+    if (!gnss_position(&lat, &lon, &alt, &alt_ok, 120)) return;
+    node_lat = lat;
+    node_lon = lon;
+    if (alt_ok) node_altitude = alt;
+    /* ≈ 200 m (1° de latitude ≈ 111 km) : la position mémorisée suivra */
+    double dy = (lat - saved_lat) * 111000.0, dx = (lon - saved_lon) * 111000.0 * cos(lat * M_PI / 180.0);
+    if ((saved_lat == 0 && saved_lon == 0) || dx * dx + dy * dy > 200.0 * 200.0) {
+        moved = true;
+        saved_lat = lat;
+        saved_lon = lon;
+    }
+}
+
+bool TWatchSensors::querySensors(uint8_t perm, CayenneLPP &telemetry)
+{
+    double lat, lon;
+    float alt;
+    bool alt_ok;
+    if (!(perm & TELEM_PERM_LOCATION) || !gnss_position(&lat, &lon, &alt, &alt_ok, 120)) return false;
+    telemetry.addGPS(TELEM_CHANNEL_SELF, (float)lat, (float)lon, alt_ok ? alt : 0.0f);
+    return true;
+}
 
 /* ================================================================== app compagnon */
 /* Interface « série » du protocole compagnon, par deux chemins :
@@ -462,6 +514,9 @@ static void update_status(void)
     t.app_connected = s_link || s_tcp_link;
     t.tcp_connected = s_tcp_link;
     t.repeat = p->isRepeatEn();
+    t.loc_share = p->advert_loc_policy != ADVERT_LOC_NONE;
+    t.lat = sensors.node_lat;
+    t.lon = sensors.node_lon;
     portENTER_CRITICAL(&s_st_mux);
     s_st = t;
     portEXIT_CRITICAL(&s_st_mux);
@@ -584,7 +639,7 @@ static void peers_snapshot(void)
 /* ================================================================== envoi depuis la montre */
 /* Demandes de la tâche app, exécutées par la tâche mesh. Les envois en
  * cours (accusé ou relais attendus) vivent dans s_pend, tâche mesh seule. */
-enum { REQ_TEXT, REQ_RESEND, REQ_ADVERT, REQ_DISCOVER };
+enum { REQ_TEXT, REQ_RESEND, REQ_ADVERT, REQ_DISCOVER, REQ_LOCPOL };
 typedef struct {
     uint8_t  op, kind;
     uint8_t  peer[MC_PEER_LEN];
@@ -921,6 +976,13 @@ static void do_request(const send_req_t &r)
         return;
     }
     if (r.op == REQ_DISCOVER) { disc_start(); return; }
+    if (r.op == REQ_LOCPOL) {
+        NodePrefs *np = s_mesh->getNodePrefs();
+        np->advert_loc_policy = r.flood ? ADVERT_LOC_SHARE : ADVERT_LOC_NONE;
+        s_mesh->savePrefs();
+        update_status();
+        return;
+    }
     pend_t *p = pend_alloc();
     if (r.op == REQ_RESEND) {
         if (!mch_get(r.seq, &m) || (m.flags & (MC_F_WATCH | MC_F_FAIL)) != (MC_F_WATCH | MC_F_FAIL)) return;
@@ -1079,6 +1141,15 @@ extern "C" bool mc_region_discover(void)
     return post_req(r);
 }
 
+extern "C" bool mc_set_loc_share(bool on)
+{
+    EXT_RAM_BSS_ATTR static send_req_t r;
+    memset(&r, 0, sizeof r);
+    r.op = REQ_LOCPOL;
+    r.flood = on;
+    return post_req(r);
+}
+
 extern "C" bool mc_send_advert(bool flood)
 {
     EXT_RAM_BSS_ATTR static send_req_t r;
@@ -1102,6 +1173,14 @@ static void mesh_task(void *arg)
         }
         s_mesh->loop();
         rtc_clock.tick();
+        sensors.loop();
+        /* position GNSS mémorisée (annonces après un redémarrage, GPS coupé) :
+         * au premier fix, puis tous les 200 m, au plus toutes les 15 min */
+        static int64_t loc_saved_at;
+        if ((!loc_saved_at || esp_timer_get_time() - loc_saved_at > 15 * 60 * 1000000LL) && sensors.takeMoved()) {
+            loc_saved_at = esp_timer_get_time();
+            s_mesh->savePrefs();
+        }
 
         int64_t now = esp_timer_get_time();
         pend_tick(now);
