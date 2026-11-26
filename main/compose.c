@@ -121,7 +121,7 @@ static uint32_t s_draft_id;
 static bool s_draft_valid;
 
 static lv_obj_t *o_root, *o_box, *o_lbl, *o_count, *o_send, *o_mode, *o_kb, *o_prev, *o_prev_l,
-                *o_acc, *o_quick, *o_closing;
+                *o_acc, *o_quick, *o_pick, *o_closing;
 static lv_timer_t *s_t9_tmr;
 static compose_send_cb_t s_cb;
 static void *s_ud;
@@ -131,9 +131,10 @@ static int s_nkeys, s_page, s_mode, s_shift;    /* shift : 0, 1 (une lettre), 2 
 static int s_press = -1;                        /* touche sous le doigt */
 static bool s_long;                             /* appui long déjà traité */
 static bool s_t9_down;                          /* touche T9 déjà prise à l'appui */
-static int s_t9_key = -1, s_t9_i, s_t9_bytes;   /* lettre T9 en cours (pas encore validée) */
+static int s_t9_key = -1;                       /* (ancien défilement T9 : plus utilisé) */
 static uint32_t s_t9_tick;
 static int s_acc_row = -1, s_acc_hover = -1, s_acc_n;
+static int s_pick_key = -1;                     /* T9 : touche dont la bulle est ouverte */
 static lv_area_t s_acc_area;                    /* bulle d'accents, repère écran */
 
 /* ------------------------------------------------------------------ UTF-8 */
@@ -300,31 +301,6 @@ static void t9_tmr_cb(lv_timer_t *t)
     if (s_t9_key >= 0 && lv_tick_elaps(s_t9_tick) >= T9_COMMIT_MS) t9_commit();
 }
 
-static int s_t9_shift;                          /* majuscule au début de la lettre en cours */
-
-static void t9_tap(int k)
-{
-    int n = 0;
-    while (n < 10 && T9G[k][n]) n++;
-    if (s_t9_key == k && lv_tick_elaps(s_t9_tick) < T9_COMMIT_MS) {
-        s_len -= s_t9_bytes;                    /* même touche : lettre suivante à la place */
-        s_txt[s_len] = 0;
-        s_t9_i = (s_t9_i + 1) % n;
-    } else {
-        t9_commit();
-        s_t9_key = k;
-        s_t9_i = 0;
-        s_t9_shift = s_shift;
-    }
-    if (s_shift != 2) s_shift = s_t9_shift;     /* la majuscule vaut pour la lettre retenue */
-    int before = s_len;
-    if (!insert(T9G[k][s_t9_i])) s_t9_key = -1;
-    s_t9_bytes = s_len - before;
-    s_t9_tick = lv_tick_get();
-    if (s_t9_tmr && s_t9_key >= 0) lv_timer_resume(s_t9_tmr);
-    invalidate_t9(k);
-    refresh_text();
-}
 
 /* ------------------------------------------------------------------ disposition */
 static void add_row(const kdef_t *d, int n, int x0, int x1, int y)
@@ -354,8 +330,11 @@ static void add_key(int x, int y, int w, int h, uint8_t type, uint8_t arg, const
     k->txt = txt;
 }
 
+static void pick_close(void);
+
 static void build_page(int pg)
 {
+    pick_close();
     s_page = pg;
     s_nkeys = 0;
     s_press = -1;
@@ -439,7 +418,7 @@ static void kb_draw_cb(lv_event_t *e)
         if (k->type != K_CHAR && k->type != K_T9 && k->type != K_SPACE) bg = lv_color_hex(0x2A2E36);
         if (k->type == K_SHIFT && s_shift == 1) { bg = C_ACC; }
         if (k->type == K_SHIFT && s_shift == 2) { bg = C_FG; fg = C_BG; }
-        if (k->type == K_T9 && k->arg == s_t9_key && s_t9_key >= 0) bg = lv_color_hex(0x1E3A8A);
+        if (k->type == K_T9 && k->arg == s_pick_key && s_pick_key >= 0) bg = lv_color_hex(0x1E3A8A);
         if (pr) bg = C_OFF;
         lv_draw_rect_dsc_t r;
         lv_draw_rect_dsc_init(&r);
@@ -555,6 +534,79 @@ static void acc_open(int ki)
     lv_obj_add_flag(o_prev, LV_OBJ_FLAG_HIDDEN);
 }
 
+
+/* ------------------------------------------------------------------ T9 : bulle de choix */
+/* Toucher une touche T9 ouvre, par-dessus le clavier, ses caractères en
+ * grand (a b c 2 à â ç) : on touche celui qu'on veut. Toucher à côté ou
+ * « retour » referme. Appui long sur la touche : le chiffre, sans bulle. */
+static void pick_close(void)
+{
+    if (o_pick) { lv_obj_delete(o_pick); o_pick = NULL; }
+    if (s_pick_key >= 0) { int d = s_pick_key; s_pick_key = -1; invalidate_t9(d); }
+}
+
+static void pick_close_async(void *arg) { pick_close(); }
+
+static void pick_cell_cb(lv_event_t *e)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (s_pick_key < 0 || i < 0 || i >= 10 || !T9G[s_pick_key][i]) return;
+    insert(T9G[s_pick_key][i]);
+    auto_shift();
+    refresh_text();
+    lv_async_call(pick_close_async, NULL);     /* hors de son propre clic */
+}
+
+static void pick_bg_cb(lv_event_t *e)
+{
+    if (lv_event_get_target(e) == lv_event_get_current_target(e)) lv_async_call(pick_close_async, NULL);
+}
+
+static void pick_open(int d)
+{
+    pick_close();
+    if (d < 1 || d > 9) return;
+    int n = 0;
+    while (n < 10 && T9G[d][n]) n++;
+    s_pick_key = d;
+    invalidate_t9(d);
+    o_pick = ui_container(o_root);
+    lv_obj_add_flag(o_pick, LV_OBJ_FLAG_FLOATING);
+    lv_obj_set_pos(o_pick, 0, KB_Y);
+    lv_obj_set_size(o_pick, SCR_W, SCR_H - KB_Y);
+    lv_obj_set_style_bg_color(o_pick, C_BG, 0);
+    lv_obj_set_style_bg_opa(o_pick, LV_OPA_COVER, 0);
+    lv_obj_add_flag(o_pick, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(o_pick, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(o_pick, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(o_pick, pick_bg_cb, LV_EVENT_CLICKED, NULL);
+    /* 4 colonnes, 2 rangées au plus ; la seconde centrée */
+    const int cols = n > 4 ? (n + 1) / 2 : n, cw = 96, ch = 104, gap = 4;
+    int rows = (n + cols - 1) / cols;
+    int y0 = 6;
+    char buf[8];
+    for (int i = 0; i < n; i++) {
+        int r = i / cols, inrow = r == rows - 1 ? n - r * cols : cols;
+        int c = i % cols, x0 = (SCR_W - inrow * cw - (inrow - 1) * gap) / 2;
+        const char *t = T9G[d][i];
+        if (s_shift && is_letter(t)) { upcase(t, buf, sizeof buf); t = buf; }
+        bool digit = t[0] >= '0' && t[0] <= '9' && !t[1];
+        lv_obj_t *b = ui_button(o_pick, t, digit ? lv_color_hex(0x2A2E36) : C_CARD, pick_cell_cb, (void *)(intptr_t)i);
+        lv_obj_remove_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
+        lv_obj_set_size(b, cw, ch);
+        lv_obj_set_pos(b, x0 + c * (cw + gap), y0 + r * (ch + gap));
+        lv_obj_set_style_radius(b, 14, 0);
+        lv_obj_set_style_bg_color(b, C_ACC, LV_STATE_PRESSED);
+        lv_obj_set_style_text_font(lv_obj_get_child(b, 0), &font_title, 0);
+    }
+    /* retour : en bas, hors des coins arrondis */
+    lv_obj_t *bk = ui_button(o_pick, LV_SYMBOL_LEFT, lv_color_hex(0x2A2E36), pick_bg_cb, NULL);
+    lv_obj_remove_flag(bk, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_size(bk, 200, 56);
+    lv_obj_set_style_radius(bk, 28, 0);
+    lv_obj_set_pos(bk, (SCR_W - 200) / 2, y0 + 2 * (ch + gap) + 6);
+}
+
 /* ------------------------------------------------------------------ réponses rapides */
 static void quick_close(void)
 {
@@ -651,7 +703,7 @@ static void activate(int i)
             auto_shift();
             refresh_text();
         } else {
-            t9_tap(k->arg);
+            pick_open(k->arg);
         }
         break;
     default:
@@ -708,7 +760,7 @@ static void kb_event_cb(lv_event_t *e)
             /* T9 : la lettre change dès que le doigt touche, pour suivre
              * des tapes rapides ; pas de glissé sur ces grandes touches */
             s_t9_down = true;
-            t9_tap(s_keys[s_press].arg);
+            pick_open(s_keys[s_press].arg);
         } else if (s_press >= 0 && s_keys[s_press].type == K_BKSP) {
             t9_commit();
             del_last();
@@ -738,16 +790,7 @@ static void kb_event_cb(lv_event_t *e)
         } else if (s_keys[s_press].type == K_T9) {
             s_long = true;                                /* le chiffre, à la place de la lettre */
             int d = s_keys[s_press].arg;
-            if (s_t9_down && s_t9_key == d) {
-                s_len -= s_t9_bytes;
-                s_txt[s_len] = 0;
-                s_t9_key = -1;
-                if (s_t9_tmr) lv_timer_pause(s_t9_tmr);
-                if (s_t9_shift == 1 && s_shift == 0) s_shift = 1;
-                invalidate_t9(d);
-            } else {
-                t9_commit();
-            }
+            pick_close();
             insert(T9D[d]);
             auto_shift();
             refresh_text();
@@ -849,7 +892,8 @@ void compose_close(bool anim)
     s_t9_key = -1;
     s_draft_valid = s_len > 0;                       /* brouillon gardé */
     lv_obj_t *p = o_root;
-    o_root = o_box = o_lbl = o_count = o_send = o_mode = o_kb = o_prev = o_prev_l = o_acc = o_quick = NULL;
+    o_root = o_box = o_lbl = o_count = o_send = o_mode = o_kb = o_prev = o_prev_l = o_acc = o_quick = o_pick = NULL;
+    s_pick_key = -1;
     s_press = -1;
     if (!anim) { lv_obj_delete(p); return; }
     if (o_closing) { lv_anim_delete(o_closing, NULL); lv_obj_delete(o_closing); }
@@ -872,6 +916,7 @@ bool compose_is_open(void) { return o_root != NULL; }
 bool compose_on_back(void)
 {
     if (!o_root) return false;
+    if (o_pick) { pick_close(); return true; }
     if (o_quick) { quick_close(); return true; }
     if (s_page != home_page()) { build_page(home_page()); return true; }
     compose_close(true);

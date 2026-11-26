@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.58 — 2026-11-26
+
+- T9: tapping a key opens its characters in large over the keyboard (2: a b c 2 à â ç) and
+  the wanted one is tapped directly, instead of tapping the key several times with a one
+  second timeout. ‹, a tap beside them or the back button close it; long press still gives
+  the digit.
+
 ## 0.2.57 — 2026-11-26
 
 - MeshCore › Radio: built-in / external LoRa antenna switch at the top of the tab (same

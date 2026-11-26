@@ -71,9 +71,9 @@ any contact or channel, even without messages.
   **Long press** on e, a, c, i, o, u, y, n, ' or .: accents (é è ê ë…), slide onto one and
   release. Automatic capital at the start of a sentence; ⇧ twice: caps lock. *123*: digits and
   symbols.
-- **T9**: huge keys. Tapping the same key cycles through its letters (2: a b c 2 à â ç); the
-  pending letter is highlighted and is kept after one second or with another key. Long press:
-  the digit.
+- **T9**: huge keys. Tapping a key opens its characters in large over the keyboard (2: a b c
+  2 à â ç): tap the one you want. ‹ or a tap beside them closes it. Long press on the key:
+  the digit directly.
 - The top-right button switches between them (**T9** / **ABC**); the last one used comes back
   next time.
 - 🙂: common emoji. 💬: **quick replies** ("OK 👍", "On my way", "Where are you?"…).

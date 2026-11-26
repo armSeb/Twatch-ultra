@@ -11,9 +11,8 @@
  *   ⇧ w x c v b n ' ⌫                    lâcher, montrée en grand au-dessus ;
  *    123 🙂 💬 [ espace ] , .             appui long : accents (é è ê ë…)
  *
- * T9 : 2 = a b c 2 à â ç… ; toucher la même touche fait défiler les lettres
- * (la lettre en cours est surlignée), une autre touche ou une seconde de
- * pause la valide ; appui long : le chiffre.
+ * T9 : toucher une touche (2 = a b c 2 à â ç) ouvre ses caractères en grand
+ * par-dessus le clavier, on touche celui qu'on veut ; appui long : le chiffre.
  *
  * Le module occupe tout l'écran par-dessus l'app (coins arrondis compris :
  * la rangée du bas est resserrée). Tâche app seulement.

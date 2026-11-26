@@ -76,9 +76,9 @@ tout contact ou canal, même sans message.
   corriger. **Appui long** sur e, a, c, i, o, u, y, n, ' ou . : les accents (é è ê ë…),
   glisser dessus puis lâcher. Majuscule automatique en début de phrase ; ⇧ deux fois :
   verrouillage. *123* : chiffres et symboles.
-- **T9** : touches géantes. Toucher plusieurs fois la même touche fait défiler ses lettres
-  (2 : a b c 2 à â ç) ; la lettre en cours est surlignée et se valide au bout d'une seconde ou
-  avec une autre touche. Appui long : le chiffre.
+- **T9** : touches géantes. Toucher une touche ouvre ses caractères en grand par-dessus le
+  clavier (2 : a b c 2 à â ç) : toucher celui qu'on veut. ‹ ou un toucher à côté referme.
+  Appui long sur la touche : le chiffre directement.
 - Le bouton en haut à droite passe de l'un à l'autre (**T9** / **ABC**) ; le dernier choisi
   revient la fois suivante.
 - 🙂 : émojis courants. 💬 : **réponses rapides** (« OK 👍 », « J'arrive », « Où es-tu ? »…).
