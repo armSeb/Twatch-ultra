@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.2.63 — 2026-11-26
+
+- Recorder: louder recordings (0.2.62 was too quiet on the watch). The automatic gain now
+  aims at -1 dBFS peaks instead of -6 dBFS, reaches up to +48 dB (was +36 dB), starts at
+  +30 dB and recovers at 6 dB/s after 0.5 s of calm.
+
 ## 0.2.62 — 2026-11-26
 
 - New **Recorder** app (*Magnéto*): records the PDM microphone to the SD card as WAV

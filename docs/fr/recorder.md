@@ -16,7 +16,7 @@ L'app **Magnéto** enregistre le micro de la montre sur la **carte micro-SD**, m
 - **16 kHz** au choix (voix) : ≈ 115 Mo par heure, deux fois plus de durée.
 - Fichiers dans le dossier **REC** de la carte, nommés par la date et l'heure de début :
   `REC/20261126-143205.WAV`.
-- Gain automatique (jusqu'à +36 dB, descente immédiate sur un son fort, remontée lente),
+- Gain automatique (jusqu'à +48 dB, descente immédiate sur un son fort, remontée de 6 dB/s),
   filtre coupe-bas à 80 Hz contre le souffle du vent et les chocs.
 
 ## Utilisation

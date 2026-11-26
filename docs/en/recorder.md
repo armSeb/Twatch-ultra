@@ -16,7 +16,7 @@ card**, even with the **screen off**, and plays recordings back on the speaker.
 - **16 kHz** option (voice): about 115 MB per hour, twice the duration.
 - Files go to the card's **REC** folder, named after the start date and time:
   `REC/20261126-143205.WAV`.
-- Automatic gain (up to +36 dB, instant decrease on loud sounds, slow recovery) and an 80 Hz
+- Automatic gain (up to +48 dB, instant decrease on loud sounds, recovery 6 dB/s) and an 80 Hz
   high-pass filter against wind rumble and knocks.
 
 ## Use

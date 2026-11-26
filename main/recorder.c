@@ -48,13 +48,15 @@
 #define SD_MARGIN     (2u * 1024 * 1024)     /* place laissée libre sur la carte */
 #define MAX_BYTES     0xF0000000u            /* sous la limite FAT32 (4 Go) */
 
-/* gain automatique : crêtes ramenées vers -6 dBFS, montée lente (3 dB/s)
- * après 1 s de calme, descente immédiate ; de 0 à +36 dB */
-#define AGC_LIM       16000.0f
-#define AGC_LOW       8000.0f
-#define AGC_MAX       64.0f
-#define AGC_UP_DBS    3.0f
-#define AGC_HOLD_US   1000000LL
+/* gain automatique : crêtes ramenées vers -1 dBFS (le limiteur doux
+ * arrondit les rares dépassements), montée de 6 dB/s après 0,5 s de calme,
+ * descente immédiate ; de 0 à +48 dB (0.2.62 : -6 dBFS et +36 dB au plus,
+ * trop faible d'après Seb) */
+#define AGC_LIM       29000.0f
+#define AGC_LOW       14500.0f
+#define AGC_MAX       251.0f
+#define AGC_UP_DBS    6.0f
+#define AGC_HOLD_US   500000LL
 
 /* ---- état partagé ---- */
 static volatile rec_state_t s_state;
@@ -194,7 +196,7 @@ static void mic_task(void *arg)
     int16_t buf[RD_SAMPLES];
     const float a = expf(-2.0f * (float)M_PI * HP_HZ / s_rate);
     const float up = powf(10.0f, AGC_UP_DBS * RD_SAMPLES / s_rate / 20.0f);
-    float x1 = 0, y1 = 0, g = 4.0f;
+    float x1 = 0, y1 = 0, g = 32.0f;          /* +30 dB d'entrée : la parole y est */
     int64_t calm_since = 0, warm_end = esp_timer_get_time() + WARMUP_MS * 1000;
     int64_t log_t = esp_timer_get_time();
     float raw_peak_log = 0;
