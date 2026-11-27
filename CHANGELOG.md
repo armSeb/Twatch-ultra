@@ -2,6 +2,27 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.21 — 2026-11-27
+
+- Build of main with the control center redesign (0.3.20), the Púca redesign (0.3.13) and
+  Now playing (0.3.3).
+
+## 0.3.20 — 2026-11-27
+
+- Control center redesigned: the status line at the top (battery, Bluetooth, gear) is gone,
+  the tiles move up and are slightly shorter, and a third row adds **MeshCore** (red badge
+  with the unread count, refreshed every 2 s while shown; tap opens the app, long press turns
+  it on or off), **Battery** (level icon with the percentage below, tap opens Energy) and
+  **Settings**. The full-width MeshCore pill is removed.
+- Control center: brightness and volume are large sliders like Now playing's volume bar
+  (touch or drag, value shown inside), instead of − / + buttons. Brightness is saved and the
+  volume test beep plays when the finger lifts. Swiping up from a slider closes the center
+  and puts its value back.
+- Control center: it closes only by pushing it back up (or the button); swiping right no
+  longer closes it.
+- Bluetooth tile reads "iPhone" when the phone is connected. Wi-Fi tile keeps the network
+  name on one line.
+
 ## 0.3.13 — 2026-11-27
 
 - Merge of the Púca redesign (0.3.10–0.3.12) with the Now playing work (0.3.1–0.3.3).
