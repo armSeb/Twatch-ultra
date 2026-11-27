@@ -42,6 +42,7 @@ void      ble_pairing_mode(void);       /* thread-safe : pub rapide pendant 60 s
 void      ble_wifi_coex(bool wifi_on);  /* radio Wi-Fi démarrée : pas de modem sleep BLE (coexistence) */
 /* mode souris (ble_hid.h) : pris en compte au prochain ble_start() */
 void      ble_set_hid_mode(bool on);
+void      ble_set_ui_fast(bool on);   /* écran qui veut un lien rapide (Lecture) ; thread-safe */
 bool      ble_hid_mode(void);
 uint8_t   ble_get_battery(void);
 

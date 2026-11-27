@@ -130,6 +130,8 @@ static volatile bool s_mc_on;           /* MeshCore actif : visible pour l'app *
 #define MC_ITVL_MAX     24      /* 30 ms */
 #define MC_RETRY_MS     2000
 static bool s_mc_fast;                  /* lien rapide + verrous tenus (tâche hôte) */
+static volatile bool s_ui_fast;         /* écran Lecture affiché : lien rapide aussi */
+static struct ble_npl_event s_ev_uifast;
 static void mc_set_fast(bool on);
 
 /* Table GATT : à incrémenter à chaque service ajouté ou retiré. iOS garde en
@@ -407,11 +409,27 @@ static void adv_start_connected(void)
 
 static void ev_mc_cb(struct ble_npl_event *ev)
 {
-    if (!s_nus_sub) mc_set_fast(false);
+    if (!s_nus_sub) mc_set_fast(s_ui_fast);
     if (ble_gap_adv_active()) ble_gap_adv_stop();
     adv_set_data();
     if (s_conn == BLE_HS_CONN_HANDLE_NONE) adv_start(s_fast_adv, ADV_FAST_MS);
     else adv_start_connected();
+}
+
+/* écran Lecture : lien rapide (15-30 ms) le temps qu'il est affiché, pour
+ * que les crans de volume AMS s'enchaînent vite ; retour à l'éco ensuite,
+ * sauf si l'appli MeshCore est connectée */
+static void ev_uifast_cb(struct ble_npl_event *ev)
+{
+    if (s_conn == BLE_HS_CONN_HANDLE_NONE) return;
+    mc_set_fast(s_nus_sub || s_ui_fast);
+}
+
+void ble_set_ui_fast(bool on)
+{
+    if (s_ui_fast == on) return;
+    s_ui_fast = on;
+    if (s_running && !s_stopping) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_uifast);
 }
 
 void ble_mc_set_enabled(bool on)
@@ -553,6 +571,7 @@ void ble_internal_ancs_ready(uint16_t conn)
     set_state(BLE_ST_READY);
     s_eco_tries = 0;
     ble_npl_callout_reset(&s_co_eco, ble_npl_time_ms_to_ticks32(ECO_DELAY_MS));
+    if (s_ui_fast) mc_set_fast(true);     /* reconnecté avec Lecture à l'écran */
 }
 
 /* ------------------------------------------------------------------ */
@@ -828,7 +847,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             if (up != s_nus_sub) {
                 s_nus_sub = up;
                 mc_ble_link(up);
-                mc_set_fast(up);     /* rapide tant que l'appli reste connectée */
+                mc_set_fast(up || s_ui_fast);     /* rapide tant que l'appli reste connectée */
             }
         }
         return 0;
@@ -984,6 +1003,7 @@ esp_err_t ble_start(void)
     ble_npl_event_init(&s_ev_forget, ev_forget_cb, NULL);
     ble_npl_event_init(&s_ev_pair, ev_pair_cb, NULL);
     ble_npl_event_init(&s_ev_mc, ev_mc_cb, NULL);
+    ble_npl_event_init(&s_ev_uifast, ev_uifast_cb, NULL);
     ble_npl_event_init(&s_ev_coex, ev_coex_cb, NULL);
     s_ancs_up = !s_hid;
     if (s_ancs_up) ancs_host_init();
@@ -1015,6 +1035,7 @@ void ble_stop(void)
         ble_npl_event_deinit(&s_ev_forget);
         ble_npl_event_deinit(&s_ev_pair);
         ble_npl_event_deinit(&s_ev_mc);
+        ble_npl_event_deinit(&s_ev_uifast);
         ble_npl_event_deinit(&s_ev_coex);
         if (s_ancs_up) ancs_host_deinit();
         s_ancs_up = false;

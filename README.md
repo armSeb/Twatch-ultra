@@ -35,8 +35,13 @@ corners)*
   1,949 colour emoji ([Twemoji](https://github.com/jdecked/twemoji)) with flags, keycaps and
   ZWJ sequences (👩‍💻, 👨‍👩‍👧, 🏳️‍🌈…), in notifications, the banner, calls and now playing.
 - **Incoming call** screen.
-- **Now playing** (Apple Media Service): title, artist, album, progress, volume, play/pause,
-  previous/next — works with any iOS audio app.
+- **Now playing** (Apple Media Service): title, artist, progress, big play/pause and
+  previous/next buttons, and the volume as a wide bar you touch or drag with a finger, with any
+  iOS audio app. While music plays (or was paused less than 10 min ago), Now playing stays
+  open when the screen goes off and comes straight back on wake; the button switches the
+  screen off there instead of going back to the watch face.
+
+  ![now playing](docs/img/now-playing.png)
 - **Time and time zone** (DST included) from the iPhone (Current Time Service); the PCF85063
   RTC keeps UTC.
 - **Three watch faces**: *Retro* (ivory dial, blued hands, battery as power reserve, date

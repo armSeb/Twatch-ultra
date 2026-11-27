@@ -37,8 +37,13 @@ arrondis de la dalle)*
   drapeaux, keycaps et séquences ZWJ (👩‍💻, 👨‍👩‍👧, 🏳️‍🌈…), dans les notifications, le bandeau,
   les appels et la lecture en cours.
 - Écran d'**appel entrant**.
-- **Lecture en cours** (Apple Media Service) : titre, artiste, album, progression, volume,
-  lecture/pause, précédent/suivant, avec n'importe quelle app audio iOS.
+- **Lecture en cours** (Apple Media Service) : titre, artiste, progression, lecture/pause,
+  précédent/suivant en grosses touches, et le volume en large barre qu'on touche ou qu'on
+  glisse du doigt, avec n'importe quelle app audio iOS. Tant que la musique joue (ou est en
+  pause depuis moins de 10 min), l'écran Lecture reste ouvert à l'extinction et revient
+  directement au réveil ; le bouton y éteint l'écran au lieu de revenir au cadran.
+
+  ![lecture en cours](docs/img/now-playing.png)
 - **Heure et fuseau** (heure d'été comprise) depuis l'iPhone (Current Time Service) ; la RTC
   PCF85063 garde l'heure UTC.
 - **Trois cadrans** : *Rétro* (cadran ivoire, aiguilles bleuies, batterie en réserve de
