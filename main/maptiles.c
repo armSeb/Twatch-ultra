@@ -1,6 +1,8 @@
 /* maptiles.c — voir maptiles.h */
 #include "maptiles.h"
 #include <dirent.h>
+#include <math.h>
+#include <strings.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "png_tile.h"
+#include "pmtiles.h"
 #include "sdcard.h"
 #include "task_psram.h"
 #include "esp_heap_caps.h"
@@ -18,6 +21,7 @@
 static const char *TAG = "tiles";
 
 #define DIR_TILES   SD_ROOT "/tiles"
+#define PACK_ROOT   SD_ROOT "/tiles.pmtiles"   /* un seul fichier : bien plus rapide */
 #define NSLOT_MAX   20                 /* 2,5 Mo de PSRAM */
 #define NSLOT_MIN   12                 /* 3 × 3 tuiles visibles et un peu d'avance */
 #define FILE_MAX    (1024 * 1024)      /* tuile plus grosse : refusée */
@@ -45,7 +49,8 @@ static SemaphoreHandle_t s_mx, s_done;
 static TaskHandle_t s_task;
 static volatile bool s_quit, s_scan_req, s_dirty;
 static volatile mt_state_t s_state;
-static volatile uint32_t s_mask;
+static volatile uint32_t s_mask;      /* niveaux lisibles (paquet ou dossier) */
+static uint32_t s_dir_mask;            /* niveaux du dossier tiles/z/x/y.png */
 static double s_cmx, s_cmy;
 static bool s_has_center;
 static uint32_t s_frame;
@@ -57,6 +62,12 @@ static size_t s_file_cap;
 static uint16_t *s_tmp;                /* tuile d'un niveau plus large, avant agrandissement */
 static tinfl_decompressor *s_inf;
 static png_tile_ctx_t s_png;
+
+/* paquet PMTiles : index en PSRAM, fichier gardé ouvert (sous sd_lock()) */
+static pm_t s_pm;
+static bool s_pm_ok;
+static int s_pm_fd = -1;
+static char s_pm_path[64];
 
 static void lock(void) { xSemaphoreTake(s_mx, portMAX_DELAY); }
 static void unlock(void) { xSemaphoreGive(s_mx); }
@@ -75,6 +86,86 @@ static long inflate_rom(const uint8_t *in, size_t n, uint8_t *out, size_t out_le
 
 static void *ps_realloc(void *p, size_t n) { return heap_caps_realloc(p, n, MT_PS); }
 
+/* ------------------------------------------------------------------ paquet PMTiles */
+static long inflate_raw(const uint8_t *in, size_t n, uint8_t *out, size_t out_len)
+{
+    tinfl_init(s_inf);
+    size_t in_n = n, out_n = out_len;
+    tinfl_status st = tinfl_decompress(s_inf, in, &in_n, out, out, &out_n, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+    if (st < 0 && out_n != out_len) return -1;
+    return (long)out_n;
+}
+
+static void *ps_alloc(size_t n) { return heap_caps_malloc(n, MT_PS); }
+
+/* sous sd_lock() ; le fichier a pu être fermé par un démontage (pm_closer) */
+static int pm_read(void *ctx, uint64_t off, void *buf, size_t n)
+{
+    if (s_pm_fd < 0) s_pm_fd = open(s_pm_path, O_RDONLY);
+    if (s_pm_fd < 0 || off > INT32_MAX || lseek(s_pm_fd, (off_t)off, SEEK_SET) != (off_t)off) return -1;
+    uint8_t *b = buf;
+    while (n) {
+        ssize_t r = read(s_pm_fd, b, n);
+        if (r <= 0) return -1;
+        b += r;
+        n -= (size_t)r;
+    }
+    return 0;
+}
+
+/* appelé sous le verrou de la carte juste avant un démontage */
+static void pm_closer(void)
+{
+    if (s_pm_fd >= 0) close(s_pm_fd);
+    s_pm_fd = -1;
+}
+
+static void pack_close(void)                   /* sous sd_lock(), ou carte absente */
+{
+    if (s_pm_ok) pm_close(&s_pm);
+    s_pm_ok = false;
+    pm_closer();
+}
+
+/* paquet trouvé : niveaux et centre ; sous sd_lock() */
+static uint32_t pack_open(const char *path, double *cx, double *cy, bool *has)
+{
+    static bool closer;
+    if (!closer) { sd_add_closer(pm_closer); closer = true; }
+    snprintf(s_pm_path, sizeof s_pm_path, "%s", path);
+    memset(&s_pm, 0, sizeof s_pm);
+    s_pm.read = pm_read;
+    s_pm.inflate = inflate_raw;
+    s_pm.alloc = ps_alloc;
+    s_pm.free = heap_caps_free;
+    int r = pm_open(&s_pm);
+    if (r == PM_OK && ((s_pm.tile_type != PM_TYPE_PNG && s_pm.tile_type != 0) ||
+                       (s_pm.tile_comp != PM_COMP_NONE && s_pm.tile_comp != 0))) r = PM_E_UNSUPPORTED;
+    if (r != PM_OK) {
+        ESP_LOGW(TAG, "%s : PMTiles illisible (%d, type %u, compression %u)", path, r, s_pm.tile_type, s_pm.tile_comp);
+        pm_close(&s_pm);
+        pm_closer();
+        return 0;
+    }
+    s_pm_ok = true;
+    int z0 = s_pm.min_zoom, z1 = s_pm.max_zoom > MT_ZMAX ? MT_ZMAX : s_pm.max_zoom;
+    uint32_t mask = 0;
+    for (int z = z0; z <= z1; z++) mask |= 1u << z;
+    double lat = s_pm.center_lat_e7 / 1e7, lon = s_pm.center_lon_e7 / 1e7;
+    if (!s_pm.center_lat_e7 && !s_pm.center_lon_e7) {
+        lat = (s_pm.min_lat_e7 + (double)s_pm.max_lat_e7) / 2e7;
+        lon = (s_pm.min_lon_e7 + (double)s_pm.max_lon_e7) / 2e7;
+    }
+    if (lat > 85) lat = 85;
+    if (lat < -85) lat = -85;
+    double rl = lat * M_PI / 180.0;
+    *cx = (lon + 180.0) / 360.0;
+    *cy = (1.0 - log(tan(rl) + 1.0 / cos(rl)) / M_PI) / 2.0;
+    *has = true;
+    ESP_LOGI(TAG, "%s : niveaux %d à %d, index %lu entrées", path, z0, z1, (unsigned long)s_pm.root.n);
+    return mask;
+}
+
 /* lit et décode z/x/y dans out ; false : absente ou illisible */
 static bool read_tile(int z, int32_t x, int32_t y, uint16_t *out)
 {
@@ -86,7 +177,20 @@ static bool read_tile(int z, int32_t x, int32_t y, uint16_t *out)
     }
     size_t n = 0;
     bool ok = false;
-    int fd = open(path, O_RDONLY);
+    if (s_pm_ok && z >= s_pm.min_zoom && z <= s_pm.max_zoom) {
+        uint64_t off;
+        uint32_t len;
+        if (pm_find(&s_pm, z, (uint32_t)x, (uint32_t)y, &off, &len) == 1 && len > 0 && len <= FILE_MAX) {
+            if (s_file_cap < len) {
+                uint8_t *p = heap_caps_realloc(s_file, len, MT_PS);
+                if (p) { s_file = p; s_file_cap = len; }
+            }
+            n = len;
+            ok = s_file_cap >= len && pm_read(NULL, off, s_file, len) == 0;
+            if (ok) snprintf(path, sizeof path, "pmtiles %d/%ld/%ld", z, (long)x, (long)y);
+        }
+    }
+    int fd = ok || !((s_dir_mask >> z) & 1) ? -1 : open(path, O_RDONLY);
     if (fd >= 0) {
         struct stat st;
         if (fstat(fd, &st) == 0 && st.st_size > 0 && st.st_size <= FILE_MAX) {
@@ -194,20 +298,29 @@ static void scan(void)
         s_state = MT_NO_SD;
         return;
     }
-    uint32_t mask = 0;
+    pack_close();
+    uint32_t mask = 0, pmask = 0;
+    bool has = false;
+    double cx = 0, cy = 0;
+    char pk[64] = "";
     DIR *d = opendir(DIR_TILES);
     if (d) {
         struct dirent *e;
         while ((e = readdir(d))) {
             long v;
+            size_t l = strlen(e->d_name);
             if (e->d_type == DT_DIR && num_name(e->d_name, &v) && v <= MT_ZMAX) mask |= 1u << v;
+            else if (!pk[0] && e->d_type != DT_DIR && l > 8 && l < 40 && !strcasecmp(e->d_name + l - 8, ".pmtiles"))
+                snprintf(pk, sizeof pk, DIR_TILES "/%s", e->d_name);
         }
         closedir(d);
     }
-    /* centre de la zone couverte au niveau le plus large */
-    bool has = false;
-    double cx = 0, cy = 0;
-    if (mask) {
+    /* paquet : à la racine, sinon le premier de /tiles */
+    struct stat st;
+    if (stat(PACK_ROOT, &st) == 0) snprintf(pk, sizeof pk, "%s", PACK_ROOT);
+    if (pk[0]) pmask = pack_open(pk, &cx, &cy, &has);
+    /* sinon centre de la zone couverte au niveau le plus large du dossier */
+    if (mask && !has) {
         int z = __builtin_ctz(mask);
         char p[64];
         long x0, x1, y0, y1;
@@ -230,6 +343,8 @@ static void scan(void)
     }
     sd_unlock();
     lock();
+    s_dir_mask = mask;
+    mask |= pmask;
     s_mask = mask;
     s_cmx = cx;
     s_cmy = cy;
@@ -274,6 +389,12 @@ static void tiles_task(void *arg)
         best->approx = r == 2;
         unlock();
         s_dirty = true;
+    }
+    if (s_pm_fd >= 0 && sd_lock()) {           /* fichier ouvert : fermé sous le verrou */
+        pack_close();
+        sd_unlock();
+    } else {
+        pack_close();                          /* déjà fermé (démontage) : l'index seul */
     }
     xSemaphoreGive(s_done);
     task_psram_exit();

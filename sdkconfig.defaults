@@ -178,3 +178,6 @@ CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=64
 # noms de fichiers en UTF-8 (carte SD vue par le serveur web)
 CONFIG_FATFS_API_ENCODING_UTF_8=y
+# carte SD : saut rapide dans un gros fichier lu (paquet de cartes PMTiles),
+# sans relire la chaîne de clusters à chaque lseek
+CONFIG_FATFS_USE_FASTSEEK=y

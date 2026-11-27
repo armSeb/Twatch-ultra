@@ -34,11 +34,20 @@ position (arrow pointing where you walk) and the MeshCore nodes that advertise t
 
 ## Preparing the SD card
 
-Same layout as MCLite and the MeshCore T-Deck firmware: maps prepared for them work as is.
+**A single `tiles.pmtiles` file** at the root of the SD card (standard
+[PMTiles](https://github.com/protomaps/PMTiles) format, PNG tiles). This is the recommended
+way: copying is as fast as for any big file, and the watch finds each tile through its index
+in memory, with a single card access. A `*.pmtiles` file in `/tiles` is read too. Size: 2 GB
+at most.
 
-```
-/tiles/<zoom>/<x>/<y>.png
-```
+- The watch's tile generator writes it directly (see below).
+- To pack an existing tile folder: `python3 -m venv ~/venv-pmtiles && ~/venv-pmtiles/bin/pip install pmtiles`, then
+  `~/venv-pmtiles/bin/python tools/tiles2pmtiles.py path/to/tiles tiles.pmtiles`.
+
+**Or a folder** `/tiles/<zoom>/<x>/<y>.png`, the MCLite / MeshCore T-Deck layout. It works,
+but thousands of small files are very slow to copy, and FAT, having no index, looks each file
+up one by one in its folder. Without a pack the watch reads the folder; with both, the pack
+first, then the folder for what it lacks.
 
 - 256 × 256 "slippy map" tiles (512 × 512 accepted, halved); palette, grey, RGB or RGBA PNG,
   not interlaced.

@@ -36,12 +36,22 @@ leur (contacts, répéteurs, salons, capteurs).
 
 ## Préparer la carte SD
 
-Même format que MCLite et le firmware MeshCore du T-Deck : les cartes déjà préparées pour
-eux servent telles quelles.
+**Un seul fichier `tiles.pmtiles`** à la racine de la carte SD (format standard
+[PMTiles](https://github.com/protomaps/PMTiles), tuiles PNG). C'est la solution conseillée :
+la copie va aussi vite que pour n'importe quel gros fichier, et la montre trouve chaque tuile
+par son index en mémoire, en un seul accès à la carte. Un fichier `*.pmtiles` rangé dans
+`/tiles` est lu aussi. Taille : 2 Go au plus.
 
-```
-/tiles/<zoom>/<x>/<y>.png
-```
+- Le générateur de la montre le produit directement (voir plus bas).
+- Pour regrouper un dossier de tuiles existant :
+  `python3 -m venv ~/venv-pmtiles && ~/venv-pmtiles/bin/pip install pmtiles`, puis
+  `~/venv-pmtiles/bin/python tools/tiles2pmtiles.py chemin/vers/tiles tiles.pmtiles`.
+
+**Ou un dossier** `/tiles/<zoom>/<x>/<y>.png`, le format de MCLite et du firmware MeshCore du
+T-Deck. Il marche, mais des milliers de petits fichiers sont très longs à copier, et la
+carte FAT, sans index, cherche chaque fichier un par un dans son dossier. Sans paquet, la
+montre lit ce dossier ; avec les deux, le paquet d'abord, puis le dossier pour ce qui lui
+manque.
 
 - Tuiles « slippy map » de 256 × 256 pixels (512 × 512 acceptées, réduites de moitié) ;
   PNG palette, gris, RGB ou RGBA, non entrelacés.

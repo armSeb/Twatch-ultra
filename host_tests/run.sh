@@ -28,4 +28,13 @@ if python3 -c "import PIL" 2>/dev/null; then
 else
     echo "png : Pillow absent, test sauté"
 fi
-rm -f test_host test_puca test_meshcore test_mc_text test_gnss test_png
+# Cartes : paquet PMTiles (fichiers écrits par le paquet Python pmtiles)
+if python3 -c "import pmtiles" 2>/dev/null; then
+    T=$(mktemp -d)
+    python3 gen_pmtiles.py "$T" >/dev/null
+    gcc -std=gnu17 -Wall -Wextra -fsanitize=address,undefined -g -I../main -o test_pmtiles test_pmtiles.c ../main/pmtiles.c -lz && ./test_pmtiles "$T"
+    rm -rf "$T"
+else
+    echo "pmtiles : paquet Python pmtiles absent, test sauté"
+fi
+rm -f test_host test_puca test_meshcore test_mc_text test_gnss test_png test_pmtiles

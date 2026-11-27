@@ -2,6 +2,16 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.4.3 — 2026-11-27
+
+- Maps: reads a single **PMTiles** file (`/tiles.pmtiles`, or `*.pmtiles` in `/tiles`): fast
+  to copy, and each tile is found through the index kept in PSRAM with one card read instead
+  of a FAT directory search. The `tiles/z/x/y.png` folder still works (fallback).
+- `tools/tiles2pmtiles.py` packs an existing tile folder into one PMTiles file.
+- FAT fast seek enabled for files read from the SD card.
+- Host test for the PMTiles reader (`host_tests/test_pmtiles.c`, files from the Python
+  `pmtiles` package, leaf directories, run lengths, corrupted directories).
+
 ## 0.4.2 — 2026-11-27
 
 - Maps app (0.4.0, 0.4.1) on top of main 0.3.21 (Lecture, Púca, control center).

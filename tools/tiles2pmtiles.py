@@ -2,8 +2,8 @@
 """Regroupe un dossier de tuiles tiles/<z>/<x>/<y>.png en un seul fichier PMTiles
 lu par l'app Cartes de la montre (beaucoup plus rapide à copier et à lire).
 
-    pip install pmtiles
-    python3 tools/tiles2pmtiles.py /chemin/vers/tiles tiles.pmtiles
+    python3 -m venv ~/venv-pmtiles && ~/venv-pmtiles/bin/pip install pmtiles
+    ~/venv-pmtiles/bin/python tools/tiles2pmtiles.py /chemin/vers/tiles tiles.pmtiles
 
 Puis copier tiles.pmtiles à la racine de la carte SD.
 """
@@ -15,7 +15,9 @@ try:
     from pmtiles.tile import zxy_to_tileid, TileType, Compression
     from pmtiles.writer import Writer
 except ImportError:
-    sys.exit("Il manque le paquet Python pmtiles : pip install pmtiles")
+    sys.exit("Il manque le paquet Python pmtiles. Dans un environnement à part (pipx ne convient pas) :\n"
+             "  python3 -m venv ~/venv-pmtiles && ~/venv-pmtiles/bin/pip install pmtiles\n"
+             "  ~/venv-pmtiles/bin/python " + sys.argv[0] + " <dossier tiles> tiles.pmtiles")
 
 
 def lon_of(x, z):
