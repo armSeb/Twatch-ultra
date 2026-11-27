@@ -21,7 +21,7 @@ labels, wide high-contrast roads, little clutter. One command; only Docker is ne
 ## Usage
 
 ```sh
-# France up to level 12, plus 25 km around Rennes in detail (levels 13 to 16)
+# France up to level 12, plus 25 km around Rennes in detail (levels 13 to 17)
 tools/tuiles/generer-tuiles.sh --detail 48.11,-1.68,25
 
 # Same, and copy to the mounted SD card
@@ -46,9 +46,10 @@ interruption; `--refaire` redraws everything. `--help` lists every option.
 
 Each level has four times as many tiles as the previous one. Whole France levels 0–12:
 37,000 tiles, ≈ 320 MB at most; level 13 alone adds 110,000 tiles (≈ 950 MB). A 25 km detail
-zone at levels 13–16: 20,500 tiles, ≈ 140 MB. Sea and empty areas take almost nothing.
+zone at levels 13–17 (default): 81,000 tiles, ≈ 540 MB. Sea and empty areas take almost
+nothing; real files are about half the estimate.
 
-**Suggested**: France 0–12 plus 25 km around home at 13–16, under 500 MB. With a single file
+**Suggested for 2 GB**: `--zooms 0-13 --detail LAT,LON,25,14-17`, about 1 GB. With a single file
 the card's cluster size no longer matters. The watch reads files up to 2 GB; the script checks this before drawing.
 
 ## Style

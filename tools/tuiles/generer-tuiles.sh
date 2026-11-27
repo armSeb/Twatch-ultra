@@ -23,10 +23,10 @@ Ce qu'on dessine
   -z, --zooms A-B         niveaux pour tout l'extrait (défaut : 0-12) ; « aucun » pour
                           ne dessiner que les zones ci-dessous
   -d, --detail LAT,LON,RAYON_KM[,A-B]
-                          zone détaillée autour d'un point (défaut des niveaux : 13-16)
+                          zone détaillée autour d'un point (défaut des niveaux : 13-17)
                           ex. : --detail 48.11,-1.68,25  (Rennes, 25 km autour)
   -b, --bbox OUEST,SUD,EST,NORD[,A-B]
-                          zone détaillée en rectangle (degrés), niveaux 13-16 par défaut
+                          zone détaillée en rectangle (degrés), niveaux 13-17 par défaut
       (--detail et --bbox peuvent être répétés)
 
 Carte SD et sortie

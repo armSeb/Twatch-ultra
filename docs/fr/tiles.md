@@ -29,7 +29,7 @@ peu de détails inutiles. Une seule commande, rien à installer à part Docker.
 Depuis le dossier du dépôt :
 
 ```sh
-# La France jusqu'au niveau 12, et 25 km autour de Rennes en détail (niveaux 13 à 16)
+# La France jusqu'au niveau 12, et 25 km autour de Rennes en détail (niveaux 13 à 17)
 tools/tuiles/generer-tuiles.sh --detail 48.11,-1.68,25
 
 # Pareil, et copie directe sur la carte SD montée
@@ -77,7 +77,7 @@ tard, relancer : un extrait plus récent est retéléchargé et tout est refait.
 | `-r, --region NOM` | extrait Geofabrik, chemin de son URL : `europe/france` (défaut), `europe/france/bretagne`, `europe/belgium`… |
 | `-p, --pbf FICHIER` | extrait `.osm.pbf` déjà téléchargé |
 | `-z, --zooms A-B` | niveaux pour tout l'extrait (défaut `0-12`) ; `aucun` pour ne faire que les zones |
-| `-d, --detail LAT,LON,RAYON_KM[,A-B]` | zone détaillée autour d'un point (niveaux `13-16` par défaut), répétable |
+| `-d, --detail LAT,LON,RAYON_KM[,A-B]` | zone détaillée autour d'un point (niveaux `13-17` par défaut), répétable |
 | `-b, --bbox OUEST,SUD,EST,NORD[,A-B]` | zone détaillée en rectangle, répétable |
 | `-s, --sd DOSSIER` | carte SD montée : sa place libre sert à l'estimation, `tiles.pmtiles` y est copié à la fin |
 | `--taille T` | sans `--sd` : taille de la carte (défaut `2G`) |
@@ -103,19 +103,21 @@ Chaque niveau compte **quatre fois plus** de tuiles que le précédent :
 | niveaux 0 à 12 | 37 000 | ≈ 320 Mo |
 | niveau 13 en plus | + 110 000 | + 950 Mo |
 
-| Zone détaillée, niveaux 13 à 16 | Tuiles | Taille au plus |
+| Zone détaillée, niveaux 13 à 17 | Tuiles | Taille au plus |
 |---|---|---|
-| rayon 10 km | 3 400 | ≈ 25 Mo |
-| rayon 25 km | 20 500 | ≈ 140 Mo |
-| rayon 50 km | 80 000 | ≈ 540 Mo |
+| rayon 10 km | 13 000 | ≈ 90 Mo |
+| rayon 25 km | 81 000 | ≈ 540 Mo |
+| rayon 50 km | 322 000 | ≈ 2,1 Go |
 
 Ce sont des maximums : la mer et les pays voisins (vides, hors de l'extrait) ne prennent
-presque rien. Le niveau 12 montre les villages et les routes principales, le 14 toutes les
-rues, le 16 les bâtiments et les sentiers. La montre zoome deux niveaux plus loin que le plus
+presque rien, et le fichier réel fait environ **la moitié** de l'estimation (mesuré sur la
+France 0 à 12 avec 25 km en détail : 248 Mo pour 460 Mo estimés). Le niveau 12 montre les villages et les routes principales, le 14 toutes les
+rues, le 16 les bâtiments et les sentiers, le 17 tous les détails des rues. La montre zoome deux niveaux plus loin que le plus
 détaillé présent, en agrandissant.
 
-**Conseil** : la France de 0 à 12 et une zone de 25 km autour de chez soi, de 13 à 16, soit
-moins de 500 Mo. Avec un seul fichier, la taille des blocs de la carte (FAT16 ou FAT32) ne
+**Conseil pour 2 Go** : la France de 0 à 13 et une zone de 25 km autour de chez soi de 14 à
+17 (`--zooms 0-13 --detail LAT,LON,25,14-17`), soit environ 1 Go réel. Plus léger : la France
+de 0 à 12 et 25 km de 13 à 17 (le défaut avec `--detail`), environ 300 Mo. Avec un seul fichier, la taille des blocs de la carte (FAT16 ou FAT32) ne
 compte plus. La montre lit un fichier de **2 Go au plus** : le script le vérifie avant de dessiner.
 
 ## Le style

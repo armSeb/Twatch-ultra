@@ -33,7 +33,7 @@ const TILE = 256;
 const META = 8;            /* bloc de 8 × 8 tuiles dessiné d'un coup */
 const MARGIN = 128;        /* marge autour du bloc : libellés entiers */
 const UPSCALE_MAX = 4;     /* MT_UPSCALE du firmware (main/maptiles.h) */
-const DETAIL_ZOOMS = [13, 16];
+const DETAIL_ZOOMS = [13, 17];
 const PACK_MAX = 2 ** 31 - 1;  /* la montre lit un fichier de 2 Go au plus */
 
 /* ------------------------------------------------------------ options */
@@ -52,7 +52,7 @@ function parseSize(s, what) {
 
 function parseZooms(s, what) {
     const m = /^(\d+)(?:-(\d+))?$/.exec(String(s).trim());
-    if (!m) die(`${what} : niveaux illisibles « ${s} » (exemple : 13-16)`);
+    if (!m) die(`${what} : niveaux illisibles « ${s} » (exemple : 13-17)`);
     const a = +m[1], b = m[2] === undefined ? a : +m[2];
     if (a > b || b > 20) die(`${what} : niveaux ${s} invalides (0 à 20, du plus petit au plus grand)`);
     return [a, b];
