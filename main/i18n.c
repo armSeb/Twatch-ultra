@@ -660,6 +660,18 @@ static const tr_t EN[] = {
       "Sent from the watch: retried until the recipient confirms. The last attempt floods." },
     { "CLAVIER", "KEYBOARD" },
     { "Complet", "Full" },
+    /* Cartes (app_map.c) */
+    { "Cartes", "Maps" },
+    { "Position inconnue : ouvrez l'appli GPS", "Position unknown: open the GPS app" },
+    { "Dernière position connue", "Last known position" },
+    { "il y a %lu min", "%lu min ago" },
+    { "il y a %lu h", "%lu h ago" },
+    { "il y a %lu j", "%lu d ago" },
+    { "Lecture de la carte SD…", "Reading the SD card…" },
+    { "Carte SD prêtée au PC.", "SD card shared with the PC." },
+    { "Pas de carte SD.\nLes cartes s'y rangent dans le dossier tiles.", "No SD card.\nMaps go in its tiles folder." },
+    { "Aucune carte sur la carte SD.\nCopier les tuiles dans tiles/z/x/y.png", "No maps on the SD card.\nCopy tiles to tiles/z/x/y.png" },
+    { "Mémoire insuffisante pour les cartes.", "Not enough memory for maps." },
     /* GPS (app_gps.c) */
     { "Les annonces ne donnent pas de position.", "Adverts carry no position." },
     { "Position du GPS, ou la dernière connue sans fix.", "GPS position, or the last known one without a fix." },

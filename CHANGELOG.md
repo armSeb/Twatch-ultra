@@ -2,6 +2,54 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.4.5 — 2026-11-27
+
+- About 18 KB more internal RAM, all the time: the Wi-Fi driver's code stays in flash instead
+  of IRAM (on the ESP32-S3, IRAM and internal data RAM are the same memory). Wi-Fi
+  throughput is a little lower.
+- Wi-Fi receive buffers capped at 16 (each takes 1.6 KB of internal RAM while in use).
+
+## 0.4.4 — 2026-11-27
+
+- Maps: ➤ centres on the last known position and no longer turns the GPS on (the GPS app
+  updates it).
+- Maps: no more momentum after a drag; the map stops where you let go.
+- Maps: smoother panning. Tiles are copied straight into the screen strip being drawn (one
+  row copy per tile) instead of one LVGL image task per tile and strip; tiles still loading
+  are filled from a cached wider or finer level the same way, without LVGL scaling.
+- Maps: three levels of over-zoom (was two); a missing tile is enlarged from up to 8 wider
+  levels, so zooming past the detailed area shows no hole.
+
+## 0.4.3 — 2026-11-27
+
+- Maps: reads a single **PMTiles** file (`/tiles.pmtiles`, or `*.pmtiles` in `/tiles`): fast
+  to copy, and each tile is found through the index kept in PSRAM with one card read instead
+  of a FAT directory search. The `tiles/z/x/y.png` folder still works (fallback).
+- `tools/tiles2pmtiles.py` packs an existing tile folder into one PMTiles file.
+- FAT fast seek enabled for files read from the SD card.
+- Host test for the PMTiles reader (`host_tests/test_pmtiles.c`, files from the Python
+  `pmtiles` package, leaf directories, run lengths, corrupted directories).
+
+## 0.4.2 — 2026-11-27
+
+- Maps app (0.4.0, 0.4.1) on top of main 0.3.21 (Lecture, Púca, control center).
+
+## 0.4.1 — 2026-11-26
+
+- Maps: dots and the position arrow are only drawn in the screen strips they touch (fewer
+  draw tasks per frame while panning).
+
+## 0.4.0 — 2026-11-26
+
+- New **Maps** app: offline OpenStreetMap tiles from the SD card (`/tiles/<z>/<x>/<y>.png`,
+  the MCLite / MeshCore T-Deck layout, zoom levels detected), GPS position with a heading
+  arrow and accuracy disc, MeshCore nodes that advertise a position (tap for name, distance
+  and age), drag with momentum, pinch / double-tap / buttons to zoom, two levels of
+  over-zoom, missing tiles filled from a wider level, scale bar. Tiles decoded in PSRAM by a
+  background task (ROM `tinfl`), cache freed on exit.
+- Touch: the second finger of the CST9217 is read (`display_touch_second()`).
+- MeshCore: `mc_node_positions()` lists contacts that advertise a position.
+- Host test for the PNG tile decoder (`host_tests/test_png.c`, needs Pillow and zlib).
 ## 0.3.21 — 2026-11-27
 
 - Build of main with the control center redesign (0.3.20), the Púca redesign (0.3.13) and

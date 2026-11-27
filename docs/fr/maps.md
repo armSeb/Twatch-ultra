@@ -1,0 +1,92 @@
+# Cartes — tuiles OpenStreetMap sur la carte SD
+
+**Français** · [English](../en/maps.md)
+
+L'app **Cartes** affiche des cartes OpenStreetMap rangées sur la carte micro-SD, sans réseau :
+votre position GPS (flèche dans le sens de la marche) et les nœuds MeshCore qui annoncent la
+leur (contacts, répéteurs, salons, capteurs).
+
+![App Cartes : suivi de la position, zoom avant, vue large](../img/maps.png)
+
+*Captures du simulateur PC, avec des tuiles de démonstration (données inventées).*
+
+## Utilisation
+
+| Où | Action |
+|---|---|
+| Glisser | déplace la carte, qui s'arrête dès qu'on la lâche ; le suivi de la position s'arrête |
+| Pincer, ou toucher deux fois | zoom avant / arrière autour des doigts |
+| **−** / **+** | zoom arrière / avant (grisé au bout) |
+| **➤** (en bas au centre) | recentre sur votre dernière position connue et la suit (bleu : suivi actif). Il n'allume pas le GPS : la position se met à jour depuis l'appli GPS |
+| Toucher un nœud | son nom, sa distance et l'âge de son annonce |
+| **‹** ou bouton de la montre | retour (glisser vers la droite déplace la carte) |
+
+- **Moi** : flèche bleue dans le sens de la marche (au-dessus de 2,5 km/h), rond bleu à
+  l'arrêt ; gris quand la position date (pas de fix depuis 10 s). Disque pâle : la précision,
+  quand elle dépasse le repère.
+- **Nœuds MeshCore** : vert discussion, orange répéteur, violet salon, turquoise capteur. Les
+  noms ne se chevauchent pas : un nom qui n'a pas la place n'est pas écrit (toucher le point).
+  La liste se relit toutes les 15 s.
+- **Échelle** en haut, au centre.
+- À la première ouverture, la carte se centre sur votre position, sinon sur celle de MeshCore,
+  sinon au milieu des tuiles présentes. Elle garde ensuite sa vue jusqu'au redémarrage.
+- On peut zoomer **trois niveaux au-delà** du plus détaillé présent sur la carte : la tuile est
+  agrandie. Une tuile absente est remplacée par un morceau agrandi d'un niveau plus large
+  (jusqu'à 8 niveaux) : la carte reste lisible même incomplète.
+
+## Préparer la carte SD
+
+**Un seul fichier `tiles.pmtiles`** à la racine de la carte SD (format standard
+[PMTiles](https://github.com/protomaps/PMTiles), tuiles PNG). C'est la solution conseillée :
+la copie va aussi vite que pour n'importe quel gros fichier, et la montre trouve chaque tuile
+par son index en mémoire, en un seul accès à la carte. Un fichier `*.pmtiles` rangé dans
+`/tiles` est lu aussi. Taille : 2 Go au plus.
+
+- Le générateur de la montre le produit directement (voir plus bas).
+- Pour regrouper un dossier de tuiles existant :
+  `python3 -m venv ~/venv-pmtiles && ~/venv-pmtiles/bin/pip install pmtiles`, puis
+  `~/venv-pmtiles/bin/python tools/tiles2pmtiles.py chemin/vers/tiles tiles.pmtiles`.
+
+**Ou un dossier** `/tiles/<zoom>/<x>/<y>.png`, le format de MCLite et du firmware MeshCore du
+T-Deck. Il marche, mais des milliers de petits fichiers sont très longs à copier, et la
+carte FAT, sans index, cherche chaque fichier un par un dans son dossier. Sans paquet, la
+montre lit ce dossier ; avec les deux, le paquet d'abord, puis le dossier pour ce qui lui
+manque.
+
+- Tuiles « slippy map » de 256 × 256 pixels (512 × 512 acceptées, réduites de moitié) ;
+  PNG palette, gris, RGB ou RGBA, non entrelacés.
+- Les niveaux de zoom présents sont détectés tout seuls. Pour une ville, 12 à 16 suffisent
+  (de quelques Mo à quelques dizaines) ; 17 et 18 pour les rues en détail, beaucoup plus gros.
+- **Fabriquer les tuiles** : le script `tools/tuiles/generer-tuiles.sh` les produit sur le
+  PC à partir d'un extrait OpenStreetMap de Geofabrik, avec un style lisible sur la montre
+  (voir [Cartes hors ligne — fabriquer les tuiles](tiles.md)). Copier ensuite le dossier `tiles`
+  à la racine de la carte SD, par l'USB (Réglages › Carte SD › Partager avec le PC) ou avec un
+  lecteur de carte.
+- **Licence** : les données sont © les contributeurs d'OpenStreetMap (ODbL). Le serveur
+  officiel `tile.openstreetmap.org` **interdit le téléchargement en masse** : c'est pourquoi
+  on fabrique ses tuiles soi-même.
+
+Sans carte SD, sans dossier `tiles` ou carte prêtée au PC, l'app le dit à l'écran ; elle
+relit la carte dès qu'elle revient.
+
+## Énergie et mémoire
+
+- App ouverte, le GPS (s'il est allumé) est lu en continu, comme dans l'app GPS.
+- Les tuiles décodées vivent en **PSRAM** (cache de 12 à 20 tuiles, ≈ 128 Ko chacune, en
+  laissant 1,5 Mo au reste de la montre), libérées à la fermeture. Rien en RAM interne.
+- La carte SD n'est tenue que le temps de lire un fichier : MeshCore (même bus SPI) continue
+  de recevoir.
+
+## Détails techniques
+
+- `main/maptiles.c` : tâche « tiles » (pile en PSRAM : la carte SD n'est pas la flash), cache
+  LRU, file par priorité (centre de l'écran d'abord, puis une couronne d'avance), lecture des
+  niveaux et du centre de la zone couverte.
+- `main/png_tile.c` : décodeur PNG → RGB565, décompression par le `tinfl` de la ROM de
+  l'ESP32-S3 (aucun code zlib ajouté). Testé sur PC (`host_tests/test_png.c` : tous les
+  formats, fichiers tronqués ou abîmés).
+- `main/app_map.c` : un seul objet LVGL dessine tuiles, nœuds, position et échelle. Pendant
+  le chargement d'une tuile, la tuile voisine d'un autre niveau déjà en cache est dessinée à
+  l'échelle : le zoom ne montre pas de trou.
+- Pincement : le contrôleur tactile (CST9217) suit deux doigts ; `display_touch_second()`
+  donne le second.

@@ -46,6 +46,10 @@
 #define SYM_POINTER   "\xEF\x89\x85"   /* U+F245 */
 #define SYM_SILENT    "\xEF\x87\xB6"   /* U+F1F6, cloche barrée : mode silencieux */
 #define SYM_SATELLITE "\xEF\x9E\xBF"   /* U+F7BF */
+#define SYM_MAP       "\xEF\x89\xB9"   /* U+F279, carte : app Cartes */
+#define SYM_PLUS      "\xEF\x81\xA7"   /* U+F067, zoom avant */
+#define SYM_MINUS     "\xEF\x81\xA8"   /* U+F068, zoom arrière */
+#define SYM_LOCATE    "\xEF\x84\xA4"   /* U+F124, flèche de position : recentrer la carte */
 #define SYM_MIC       "\xEF\x84\xB0"   /* U+F130, micro : magnétophone */
 
 #define UI_ANIM_MS 140

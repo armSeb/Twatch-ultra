@@ -147,6 +147,17 @@ bool mc_send_advert(bool flood);          /* annonce de la montre (flood : tout 
 bool mc_set_loc_share(bool on);
 bool mc_msg_get(uint32_t seq, mc_msg_t *out);   /* message de l'anneau par son numéro */
 
+/* ---- nœuds dont l'annonce donne une position (app Cartes) ----
+ * Recopiés par la tâche mesh avec les contacts (après mc_conv_refresh()).
+ * type : 1 discussion, 2 répéteur, 3 salon, 4 capteur (ADV_TYPE_*). */
+typedef struct {
+    char     name[MC_NAME_MAX];
+    int32_t  lat_e6, lon_e6;      /* degrés × 10⁶ */
+    uint32_t heard;               /* horodatage de son annonce (son horloge, UTC), 0 inconnu */
+    uint8_t  type;
+} mc_node_pos_t;
+int  mc_node_positions(mc_node_pos_t *out, int max);    /* renvoie le nombre copié */
+
 /* état courant (diagnostic, écran Réglages) */
 typedef struct {
     char     name[MC_NAME_MAX];

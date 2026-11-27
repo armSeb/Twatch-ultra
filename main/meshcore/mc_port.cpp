@@ -602,9 +602,45 @@ static void offq_load(void)
     ESP_LOGI(TAG, "%d message(s) en attente pour l'app", s_mesh->getOfflineQueueLen());
 }
 
+/* nœuds positionnés, pour l'app Cartes : écrits par la tâche mesh */
+EXT_RAM_BSS_ATTR static mc_node_pos_t s_npos[MAX_CONTACTS];
+static int s_nnpos;
+static SemaphoreHandle_t s_npos_mx;
+
+int mc_node_positions(mc_node_pos_t *out, int max)
+{
+    if (!s_npos_mx || max <= 0) return 0;
+    xSemaphoreTake(s_npos_mx, portMAX_DELAY);
+    int n = s_nnpos < max ? s_nnpos : max;
+    memcpy(out, s_npos, (size_t)n * sizeof *out);
+    xSemaphoreGive(s_npos_mx);
+    return n;
+}
+
+static void npos_snapshot(void)
+{
+    if (!s_npos_mx && !(s_npos_mx = xSemaphoreCreateMutex())) return;
+    static ContactInfo c;
+    xSemaphoreTake(s_npos_mx, portMAX_DELAY);
+    int n = 0, nc = s_mesh->getNumContacts() + MAX_ANON_CONTACTS;
+    for (int i = 0; i < nc && n < MAX_CONTACTS; i++) {
+        if (!s_mesh->getContactByIdx(i, c) || (c.gps_lat == 0 && c.gps_lon == 0)) continue;
+        if (c.gps_lat < -90000000 || c.gps_lat > 90000000 || c.gps_lon < -180000000 || c.gps_lon > 180000000) continue;
+        mc_node_pos_t *p = &s_npos[n++];
+        mc_copy_utf8(p->name, sizeof p->name, c.name, sizeof c.name);
+        p->lat_e6 = c.gps_lat;
+        p->lon_e6 = c.gps_lon;
+        p->heard = c.last_advert_timestamp;
+        p->type = c.type;
+    }
+    s_nnpos = n;
+    xSemaphoreGive(s_npos_mx);
+}
+
 /* contacts (discussion, salons) et canaux connus, pour les onglets de l'app */
 static void peers_snapshot(void)
 {
+    npos_snapshot();
     EXT_RAM_BSS_ATTR static mch_peer_t p[MCH_PEERS_MAX];    /* tâche mesh seule */
     static ContactInfo c;
     static ChannelDetails ch;
