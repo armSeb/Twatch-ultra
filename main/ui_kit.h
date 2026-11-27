@@ -65,6 +65,13 @@ void      ui_toast(const char *text);        /* message bref par-dessus n'import
 int       ui_header(lv_obj_t *scr, const char *title);
 /* choix exclusif (boutons segmentés) ; map terminée par "" ; LV_EVENT_VALUE_CHANGED */
 lv_obj_t *ui_segmented(lv_obj_t *parent, const char *const *map, lv_event_cb_t cb);
+/* contrôles de chaque bouton segmenté, à remettre après lv_buttonmatrix_set_map() */
+#define UI_SEG_CTRL (LV_BUTTONMATRIX_CTRL_CHECKABLE | LV_BUTTONMATRIX_CTRL_CLICK_TRIG)
+/* curseur : un geste vertical parti de lui ne change pas sa valeur */
+void      ui_slider_guard(lv_obj_t *slider);
+/* question oui / non par-dessus l'écran courant ; cb(true) si confirmé */
+void      ui_confirm(const char *question, const char *detail, const char *yes, lv_color_t yes_bg,
+                     void (*cb)(bool ok, void *ud), void *ud);
 /* apps Internet (Radio, WebRX) : le Wi-Fi n'est pas allumé tout seul en
  * entrant. ui_wifi_needed() : le Wi-Fi global n'est pas déjà en client.
  * ui_wifi_gate() : panneau opaque sous la barre du haut (top) avec un gros

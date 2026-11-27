@@ -5,6 +5,7 @@
 #include "lvgl.h"
 #include "face_bake.h"
 #include "src/display/lv_display_private.h"   /* act_scr / prev_scr / scr_to_load */
+#include "src/widgets/slider/lv_slider_private.h" /* dragging (garde des curseurs) */
 #include "fonts/fonts.h"
 #include "face_classic.h"
 #include "face_pub.h"
@@ -171,6 +172,132 @@ static void scr_delete(lv_obj_t *o)
 {
     scr_anim_settle();
     lv_obj_delete(o);
+}
+
+/* ------------------------------------------------------------------ */
+/* Garde anti « clics fantômes »                                        */
+/* Un doigt qui glisse (geste de navigation, défilement, glissé lent)   */
+/* ne déclenche rien là où il passe : ni clic, ni appui long, ni        */
+/* bascule d'interrupteur ou de bouton segmenté, ni curseur bougé par   */
+/* un geste vertical. Un toucher commencé pendant l'animation d'un      */
+/* changement d'écran est ignoré lui aussi.                             */
+/* ------------------------------------------------------------------ */
+#define TAP_SLOP S(14)          /* au-delà, le doigt a glissé : plus un tap */
+
+static lv_point_t tg_p0;        /* point du toucher en cours */
+static bool tg_anim;            /* toucher commencé pendant une animation d'écran */
+
+static bool scr_anim_running(void)
+{
+    lv_display_t *d = lv_display_get_default();
+    return d && (d->prev_scr || d->scr_to_load);
+}
+
+static void tg_delta(lv_indev_t *in, int32_t *dx, int32_t *dy)
+{
+    lv_point_t p;
+    lv_indev_get_point(in, &p);
+    *dx = p.x - tg_p0.x;
+    *dy = p.y - tg_p0.y;
+}
+
+static bool touch_moved(lv_indev_t *in)
+{
+    if (tg_anim || lv_indev_get_gesture_dir(in) != LV_DIR_NONE || lv_indev_get_scroll_obj(in)) return true;
+    int32_t dx, dy;
+    tg_delta(in, &dx, &dy);
+    return LV_ABS(dx) > TAP_SLOP || LV_ABS(dy) > TAP_SLOP;
+}
+
+/* branché sur le pointeur : voit passer chaque appui / relâché / clic
+ * avant l'objet visé, et peut l'arrêter */
+static void touch_guard_cb(lv_event_t *e)
+{
+    lv_indev_t *in = lv_event_get_current_target(e);
+    switch (lv_event_get_code(e)) {
+    case LV_EVENT_PRESSED:
+        lv_indev_get_point(in, &tg_p0);
+        tg_anim = scr_anim_running();
+        break;
+    case LV_EVENT_SHORT_CLICKED:
+    case LV_EVENT_CLICKED:
+    case LV_EVENT_LONG_PRESSED:
+    case LV_EVENT_LONG_PRESSED_REPEAT:
+        if (touch_moved(in)) lv_indev_stop_processing(in);
+        break;
+    case LV_EVENT_RELEASED: {
+        lv_obj_t *o = lv_event_get_param(e);
+        if (!o || !touch_moved(in)) break;
+        if (lv_obj_check_type(o, &lv_buttonmatrix_class)) {
+            /* boutons segmentés : rien de coché au relâché d'un glissé */
+            lv_buttonmatrix_set_selected_button(o, LV_BUTTONMATRIX_BUTTON_NONE);
+        } else if (lv_obj_has_flag(o, LV_OBJ_FLAG_CHECKABLE)) {
+            /* interrupteurs : pas de bascule (LVGL basculerait au relâché) */
+            lv_obj_remove_state(o, LV_STATE_PRESSED);
+            lv_indev_stop_processing(in);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void touch_guard_init(void)
+{
+    for (lv_indev_t *in = lv_indev_get_next(NULL); in; in = lv_indev_get_next(in))
+        if (lv_indev_get_type(in) == LV_INDEV_TYPE_POINTER) lv_indev_add_event_cb(in, touch_guard_cb, LV_EVENT_ALL, NULL);
+}
+
+/* Curseurs : un geste vertical parti d'un curseur (fermer le centre de
+ * contrôle, défiler, revenir) ne doit pas changer la valeur. LVGL règle
+ * la valeur au relâché là où est le doigt : tant que le glissé n'est pas
+ * franchement horizontal, on coupe les événements du curseur et on remet
+ * la valeur d'avant le toucher (VALUE_CHANGED pour que l'appli la
+ * réapplique). Passe avant le traitement du curseur (PREPROCESS). */
+static int32_t sg_v0;
+static bool sg_veto;
+
+static void slider_guard_cb(lv_event_t *e)
+{
+    lv_obj_t *sl = lv_event_get_current_target(e);
+    lv_event_code_t c = lv_event_get_code(e);
+    lv_indev_t *in = lv_indev_active();
+    if (!in || lv_indev_get_type(in) != LV_INDEV_TYPE_POINTER) return;
+    if (c == LV_EVENT_PRESSED) {
+        sg_v0 = lv_slider_get_value(sl);
+        sg_veto = tg_anim;
+        if (!sg_veto) return;
+    }
+    lv_slider_t *s = (lv_slider_t *)sl;
+    if (!sg_veto) {
+        int32_t dx, dy;
+        tg_delta(in, &dx, &dy);
+        lv_dir_t g = lv_indev_get_gesture_dir(in);
+        if (g == LV_DIR_TOP || g == LV_DIR_BOTTOM ||
+            (!s->dragging && LV_ABS(dy) > TAP_SLOP / 2 && LV_ABS(dy) > LV_ABS(dx))) {
+            sg_veto = true;
+            if (lv_slider_get_value(sl) != sg_v0) {
+                lv_slider_set_value(sl, sg_v0, LV_ANIM_OFF);
+                lv_obj_send_event(sl, LV_EVENT_VALUE_CHANGED, NULL);
+            }
+        } else return;
+    }
+    lv_event_stop_processing(e);
+    if (c == LV_EVENT_RELEASED || c == LV_EVENT_PRESS_LOST) {
+        /* ce que le curseur aurait fait de lui-même au relâché */
+        lv_obj_remove_state(sl, LV_STATE_PRESSED);
+        s->dragging = false;
+        s->value_to_set = NULL;
+        lv_obj_invalidate(sl);
+    }
+}
+
+void ui_slider_guard(lv_obj_t *sl)
+{
+    static const lv_event_code_t codes[] = { LV_EVENT_PRESSED, LV_EVENT_PRESSING, LV_EVENT_RELEASED, LV_EVENT_PRESS_LOST };
+    for (size_t i = 0; i < sizeof codes / sizeof codes[0]; i++)
+        lv_obj_add_event_cb(sl, slider_guard_cb, codes[i] | LV_EVENT_PREPROCESS, NULL);
 }
 
 static lv_obj_t *mk_screen(void)
@@ -1037,13 +1164,30 @@ static void menu_sd_share_cb(lv_event_t *ev)
     if (sd_share(true) == ESP_OK) toast(_("Partage avec le PC…"));
 }
 
-static void menu_ant_cb(lv_event_t *ev)
+static void ant_set(bool ext)
 {
-    bool ext = lv_obj_has_state(m_sw_ant, LV_STATE_CHECKED);
     settings_get()->lora_ext_ant = ext;
     settings_save();
     sx_set_antenna(ext);
+    if (m_sw_ant) lv_obj_set_state(m_sw_ant, LV_STATE_CHECKED, ext);
     toast(ext ? _("Antenne LoRa externe") : _("Antenne LoRa intégrée"));
+}
+
+static void menu_ant_confirm_cb(bool ok, void *ud)
+{
+    if (ok) ant_set(true);
+}
+
+/* passer sur l'antenne externe se confirme : émettre sans antenne
+ * branchée sur l'USB-C peut abîmer l'émetteur */
+static void menu_ant_cb(lv_event_t *ev)
+{
+    bool ext = lv_obj_has_state(m_sw_ant, LV_STATE_CHECKED);
+    if (ext == settings_get()->lora_ext_ant) return;
+    if (!ext) { ant_set(false); return; }
+    lv_obj_remove_state(m_sw_ant, LV_STATE_CHECKED);      /* reste coupé d'ici là */
+    ui_confirm(_("Passer sur l'antenne externe ?"), _("Une antenne doit être branchée sur l'USB-C, sinon l'émetteur risque d'être abîmé."),
+               _("Externe"), C_BAD, menu_ant_confirm_cb, NULL);
 }
 
 
@@ -1399,6 +1543,86 @@ static void confirm_cb(lv_event_t *ev)
     menu_bt_refresh();
 }
 
+/* Question oui / non générique, posée par-dessus l'écran courant (elle
+ * disparaît avec lui). Le voile bloque les touches et les gestes dessous. */
+typedef struct {
+    void (*cb)(bool ok, void *ud);
+    void *ud;
+} uc_ctx_t;
+
+static void uc_answer_cb(lv_event_t *ev)
+{
+    lv_obj_t *veil = lv_event_get_user_data(ev);
+    uc_ctx_t c = *(uc_ctx_t *)lv_obj_get_user_data(veil);
+    bool ok = lv_obj_get_user_data(lv_event_get_current_target(ev)) != NULL;
+    lv_obj_delete_async(veil);
+    lv_obj_add_flag(veil, LV_OBJ_FLAG_HIDDEN);
+    if (c.cb) c.cb(ok, c.ud);
+}
+
+static void uc_free_cb(lv_event_t *ev)
+{
+    lv_free(lv_obj_get_user_data(lv_event_get_current_target(ev)));
+}
+
+void ui_confirm(const char *question, const char *detail, const char *yes, lv_color_t yes_bg,
+                void (*cb)(bool ok, void *ud), void *ud)
+{
+    uc_ctx_t *c = lv_malloc(sizeof *c);
+    if (!c) return;
+    c->cb = cb;
+    c->ud = ud;
+    lv_obj_t *veil = lv_obj_create(lv_screen_active());
+    lv_obj_remove_style_all(veil);
+    lv_obj_add_flag(veil, LV_OBJ_FLAG_IGNORE_LAYOUT | LV_OBJ_FLAG_FLOATING);
+    lv_obj_set_size(veil, UI_W, UI_H);
+    lv_obj_set_pos(veil, -lv_obj_get_style_pad_left(lv_screen_active(), 0),
+                   -lv_obj_get_style_pad_top(lv_screen_active(), 0));
+    lv_obj_set_style_bg_color(veil, C_BG, 0);
+    lv_obj_set_style_bg_opa(veil, LV_OPA_80, 0);
+    lv_obj_add_flag(veil, LV_OBJ_FLAG_CLICKABLE);           /* bloque les touches dessous */
+    lv_obj_remove_flag(veil, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_user_data(veil, c);
+    lv_obj_add_event_cb(veil, uc_free_cb, LV_EVENT_DELETE, NULL);
+
+    lv_obj_t *card = lv_obj_create(veil);
+    lv_obj_set_size(card, S(224), LV_SIZE_CONTENT);
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, C_CARD, 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_radius(card, S(14), 0);
+    lv_obj_set_style_pad_all(card, S(10), 0);
+    lv_obj_set_style_pad_row(card, S(8), 0);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_t *q = mk_label(card, &font_text, C_FG, question);
+    lv_obj_set_width(q, lv_pct(100));
+    lv_label_set_long_mode(q, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(q, LV_TEXT_ALIGN_CENTER, 0);
+    if (detail && *detail) {
+        lv_obj_t *d = mk_label(card, &font_small, C_DIM, detail);
+        lv_obj_set_width(d, lv_pct(100));
+        lv_label_set_long_mode(d, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(d, LV_TEXT_ALIGN_CENTER, 0);
+    }
+    lv_obj_t *row = lv_obj_create(card);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), S(44));
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_t *no = mk_button(row, _("Annuler"), C_OFF, uc_answer_cb, veil);
+    lv_obj_set_size(no, S(98), S(44));
+    lv_obj_align(no, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_user_data(no, NULL);
+    lv_obj_t *ok = mk_button(row, yes, yes_bg, uc_answer_cb, veil);
+    lv_obj_set_size(ok, S(98), S(44));
+    lv_obj_align(ok, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_user_data(ok, (void *)1);
+    lv_obj_remove_flag(no, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_remove_flag(ok, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_move_foreground(veil);
+}
+
 static void forget_cb(lv_event_t *ev)
 {
     lv_obj_remove_flag(m_confirm, LV_OBJ_FLAG_HIDDEN);
@@ -1506,7 +1730,9 @@ static lv_obj_t *mk_segmented(lv_obj_t *col, const char *const *map, lv_event_cb
 {
     lv_obj_t *m = lv_buttonmatrix_create(col);
     lv_buttonmatrix_set_map(m, map);
-    lv_buttonmatrix_set_button_ctrl_all(m, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    /* choix validé au relâché (pas à l'appui) : un doigt qui glisse dessus
+     * pour défiler ou changer d'écran ne change rien */
+    lv_buttonmatrix_set_button_ctrl_all(m, UI_SEG_CTRL);
     lv_buttonmatrix_set_one_checked(m, true);
     lv_obj_set_size(m, lv_pct(100), S(38));
     lv_obj_set_style_pad_all(m, S(3), 0);
@@ -1831,6 +2057,7 @@ static void build_menu(void)
     m_bm_face = mk_segmented(col, face_map, menu_face_cb);
     mk_section(col, _("LUMINOSITÉ"));
     m_slider = lv_slider_create(col);
+    ui_slider_guard(m_slider);
     lv_obj_set_width(m_slider, lv_pct(90));
     lv_obj_set_style_margin_left(m_slider, S(8), 0);
     lv_obj_set_style_margin_top(m_slider, S(6), 0);
@@ -2890,6 +3117,7 @@ static void build_media(void)
     /* posée sur l'écran et non dans mu_box : LVGL ne cherche un objet touché
      * qu'à l'intérieur de son parent, et mu_box s'arrête à la marge du bas */
     mu_vol = lv_slider_create(s);
+    ui_slider_guard(mu_vol);
     lv_obj_set_size(mu_vol, MU_VOL_W, MU_VOL_H);
     lv_obj_align(mu_vol, LV_ALIGN_BOTTOM_MID, 0, MU_VOL_DY);
     /* LVGL fait remonter les gestes de tout objet au parent par défaut :
@@ -3032,7 +3260,7 @@ static int q_badge_n = -1;
 /* Curseurs : valeur au moment où le doigt s'est posé, et « geste ↑ pris
  * pendant le glissé » (le centre se referme : on rend la valeur d'avant) */
 static int q_from[2];
-static bool q_cancel;
+static bool q_sil0;              /* silencieux au moment du toucher */
 enum { QS_BRI, QS_VOL };
 
 /* Géométrie (unités S(), zone utile 240 × ~295). Tuiles 3 × 3, puis deux
@@ -3348,63 +3576,61 @@ static void quick_mesh_cb(lv_event_t *ev)
 
 /* Curseurs luminosité / volume : le doigt fixe la valeur (touché ou
  * glissé), appliquée tout de suite ; l'enregistrement (NVS) et le bip
- * témoin du volume attendent que le doigt se lève. */
+ * témoin du volume attendent que le doigt se lève. Un geste vertical
+ * parti d'un curseur ne le touche pas (ui_slider_guard). */
+static void q_level_apply(int k, int v)
+{
+    settings_t *st = settings_get();
+    if (k == QS_BRI) {
+        st->brightness = (uint8_t)v;
+        display_set_brightness((uint8_t)v);
+    } else {
+        /* toucher au volume sort du silencieux ; revenir à la valeur
+         * d'avant le toucher (geste annulé) remet l'état d'avant */
+        bool sil = v == q_from[k] ? q_sil0 : false;
+        st->volume = (uint8_t)v;
+        st->silent = sil;
+        sound_set_master(v, sil);
+        q_set_tile(Q_SILENT, sil);
+    }
+    q_level_labels();
+}
+
 static void quick_level_cb(lv_event_t *ev)
 {
     lv_obj_t *sl = lv_event_get_target(ev);
     int k = (int)(intptr_t)lv_event_get_user_data(ev);
     lv_event_code_t code = lv_event_get_code(ev);
     settings_t *st = settings_get();
-    if (code == LV_EVENT_PRESSED) {
-        q_cancel = false;
-        q_from[k] = lv_slider_get_value(sl);
-        return;
-    }
-    if (q_cancel) {                          /* centre refermé par ↑ : rien n'a changé */
-        if (lv_slider_get_value(sl) != q_from[k]) lv_slider_set_value(sl, q_from[k], LV_ANIM_OFF);
-        return;
-    }
     int v = lv_slider_get_value(sl);
-    if (code == LV_EVENT_VALUE_CHANGED) {
-        if (k == QS_BRI) {
-            st->brightness = (uint8_t)v;
-            display_set_brightness((uint8_t)v);
-        } else {
-            st->volume = (uint8_t)v;
-            st->silent = false;              /* toucher au volume sort du silencieux */
-            sound_set_master(v, false);
-            q_set_tile(Q_SILENT, false);
-        }
-        q_level_labels();
+    if (code == LV_EVENT_PRESSED) {
+        q_from[k] = v;
+        q_sil0 = st->silent;
         return;
     }
-    if (code != LV_EVENT_RELEASED) return;
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        q_level_apply(k, v);
+        return;
+    }
+    /* RELEASED / PRESS_LOST : rien à faire si rien n'a changé */
+    if (v == q_from[k] && (k == QS_BRI || st->silent == q_sil0)) return;
     if (k == QS_BRI) settings_save();
     else {
         sound_apply();
-        if (!st->silent) sound_beeps(1, 2000, 60, 0);   /* ignoré si un son joue déjà */
+        if (!st->silent && code == LV_EVENT_RELEASED) sound_beeps(1, 2000, 60, 0);   /* ignoré si un son joue déjà */
     }
     lv_display_trigger_activity(NULL);
 }
 
 /* Geste ↑ parti d'un curseur : le centre se referme, la valeur revient à
- * celle d'avant le toucher (le doigt a pu la bouger un peu en montant) */
+ * celle d'avant le toucher (le doigt a pu la bouger en glissant) */
 static void quick_level_cancel(void)
 {
     lv_obj_t *sl[2] = { q_bri, q_vol };
     for (int k = 0; k < 2; k++) {
         if (!sl[k] || !lv_obj_has_state(sl[k], LV_STATE_PRESSED)) continue;
-        q_cancel = true;
         lv_slider_set_value(sl[k], q_from[k], LV_ANIM_OFF);
-        settings_t *st = settings_get();
-        if (k == QS_BRI) {
-            st->brightness = (uint8_t)q_from[k];
-            display_set_brightness(st->brightness);
-        } else if (st->volume != q_from[k]) {
-            st->volume = (uint8_t)q_from[k];
-            sound_set_master(st->volume, st->silent);
-        }
-        settings_save();
+        q_level_apply(k, q_from[k]);
     }
 }
 
@@ -3459,6 +3685,7 @@ static lv_obj_t *q_mk_level(lv_obj_t *s, int k, int lo, int hi, const char *icon
     /* les gestes remontent à l'écran : ↑ referme le centre même parti d'un
      * curseur ; ← → n'y font rien, le glissé règle la valeur */
     bubble(sl);
+    ui_slider_guard(sl);
     lv_obj_add_event_cb(sl, quick_level_cb, LV_EVENT_PRESSED, (void *)(intptr_t)k);
     lv_obj_add_event_cb(sl, quick_level_cb, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)k);
     lv_obj_add_event_cb(sl, quick_level_cb, LV_EVENT_RELEASED, (void *)(intptr_t)k);
@@ -3757,6 +3984,7 @@ void ui_init(void)
     build_about();
     show(SCR_WATCH, LV_SCR_LOAD_ANIM_NONE);
     display_set_touch_hook(edge_touch);
+    touch_guard_init();
 }
 
 static void release_menu(void)

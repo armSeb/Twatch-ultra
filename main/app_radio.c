@@ -290,6 +290,7 @@ static void tone_cb(lv_event_t *e)
 static lv_obj_t *mk_slider(int lo, int hi, int val, lv_event_cb_t cb)
 {
     lv_obj_t *s = lv_slider_create(v_sheet_list);
+    ui_slider_guard(s);
     lv_obj_set_size(s, lv_pct(92), S(14));
     lv_obj_set_style_margin_top(s, S(10), 0);
     lv_obj_set_style_margin_bottom(s, S(10), 0);

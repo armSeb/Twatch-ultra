@@ -943,7 +943,7 @@ static void update_tabs(void)
     v_tab_map[TAB_N] = "";
     if (same) return;
     lv_buttonmatrix_set_map(v_tabs, v_tab_map);          /* recrée les boutons : état à remettre */
-    lv_buttonmatrix_set_button_ctrl_all(v_tabs, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(v_tabs, UI_SEG_CTRL);
     lv_buttonmatrix_set_button_ctrl(v_tabs, m_tab, LV_BUTTONMATRIX_CTRL_CHECKED);
 }
 
@@ -1063,16 +1063,32 @@ static void advert_cb(lv_event_t *e)
     else ui_toast(_("Envoi impossible pour l'instant"));
 }
 
+static void ant_apply(bool ext)
+{
+    settings_get()->lora_ext_ant = ext;
+    settings_save();
+    sx_set_antenna(ext);
+    if (v_ant) lv_buttonmatrix_set_button_ctrl(v_ant, ext ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
+    ui_toast(ext ? _("Antenne LoRa externe") : _("Antenne LoRa intégrée"));
+}
+
+static void ant_confirm_cb(bool ok, void *ud)
+{
+    if (ok) ant_apply(true);
+}
+
+/* passer sur l'antenne externe se confirme : émettre sans antenne
+ * branchée sur l'USB-C peut abîmer l'émetteur */
 static void ant_cb(lv_event_t *e)
 {
     uint32_t b = lv_buttonmatrix_get_selected_button(v_ant);
     if (b > 1) return;
     bool ext = b == 1;
     if (settings_get()->lora_ext_ant == ext) return;
-    settings_get()->lora_ext_ant = ext;
-    settings_save();
-    sx_set_antenna(ext);
-    ui_toast(ext ? _("Antenne LoRa externe") : _("Antenne LoRa intégrée"));
+    if (!ext) { ant_apply(false); return; }
+    lv_buttonmatrix_set_button_ctrl(v_ant, 0, LV_BUTTONMATRIX_CTRL_CHECKED);   /* reste sur « Intégrée » d'ici là */
+    ui_confirm(_("Passer sur l'antenne externe ?"), _("Une antenne doit être branchée sur l'USB-C, sinon l'émetteur risque d'être abîmé."),
+               _("Externe"), C_BAD, ant_confirm_cb, NULL);
 }
 
 static void tick_cb(lv_timer_t *t)
@@ -1140,7 +1156,7 @@ static void create(lv_obj_t *scr)
     ant_map[2] = "";
     v_ant = ui_segmented(v_radio, ant_map, ant_cb);
     lv_obj_set_size(v_ant, lv_pct(100), S(40));
-    lv_buttonmatrix_set_button_ctrl_all(v_ant, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(v_ant, UI_SEG_CTRL);
     lv_buttonmatrix_set_one_checked(v_ant, true);
     lv_buttonmatrix_set_button_ctrl(v_ant, settings_get()->lora_ext_ant ? 1 : 0, LV_BUTTONMATRIX_CTRL_CHECKED);
     /* annonces : la montre se fait connaître (flood : relayée par tout le réseau) */
