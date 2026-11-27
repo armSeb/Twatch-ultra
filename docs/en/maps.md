@@ -44,12 +44,13 @@ Same layout as MCLite and the MeshCore T-Deck firmware: maps prepared for them w
   not interlaced.
 - Zoom levels found on the card are detected automatically. For a city, 12 to 16 are enough
   (a few MB to a few tens); 17 and 18 for street detail, much bigger.
-- Suggested tool: [map-tiles-downloader](https://github.com/tekk/map-tiles-downloader)
-  (pick the area and levels, copy the `tiles` folder to the root of the card). Copy over USB
-  (Settings › SD card › share with PC) or with a card reader.
-- **Licence and use**: data © OpenStreetMap contributors (ODbL). The official
-  `tile.openstreetmap.org` server **forbids bulk downloading**: use a tile provider that
-  allows it, or render your own tiles.
+- **Making the tiles**: the `tools/tuiles/generer-tuiles.sh` script renders them on the PC
+  from a Geofabrik OpenStreetMap extract, with a style readable on the watch (see
+  [Offline maps — making the tiles](tiles.md)). Then copy the `tiles` folder to the root of
+  the SD card, over USB (Settings › SD card › Share with the PC) or with a card reader.
+- **Licence**: data © OpenStreetMap contributors (ODbL). The official
+  `tile.openstreetmap.org` server **forbids bulk downloading**, which is why you render
+  your own tiles.
 
 Without an SD card, without a `tiles` folder, or while the card is shared with the PC, the
 app says so on screen and reads the card again as soon as it is back.

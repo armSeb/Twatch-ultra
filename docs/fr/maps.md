@@ -47,12 +47,14 @@ eux servent telles quelles.
   PNG palette, gris, RGB ou RGBA, non entrelacés.
 - Les niveaux de zoom présents sont détectés tout seuls. Pour une ville, 12 à 16 suffisent
   (de quelques Mo à quelques dizaines) ; 17 et 18 pour les rues en détail, beaucoup plus gros.
-- Outil conseillé : [map-tiles-downloader](https://github.com/tekk/map-tiles-downloader)
-  (choisir la zone et les niveaux, copier le dossier `tiles` à la racine de la carte SD).
-  Copier par l'USB (Réglages › Carte SD › partager avec le PC) ou avec un lecteur de carte.
-- **Licence et usage** : les données sont © les contributeurs d'OpenStreetMap (ODbL). Le
-  serveur officiel `tile.openstreetmap.org` **interdit le téléchargement en masse** : utiliser
-  un fournisseur de tuiles qui le permet, ou générer ses tuiles soi-même.
+- **Fabriquer les tuiles** : le script `tools/tuiles/generer-tuiles.sh` les produit sur le
+  PC à partir d'un extrait OpenStreetMap de Geofabrik, avec un style lisible sur la montre
+  (voir [Cartes hors ligne — fabriquer les tuiles](tiles.md)). Copier ensuite le dossier `tiles`
+  à la racine de la carte SD, par l'USB (Réglages › Carte SD › Partager avec le PC) ou avec un
+  lecteur de carte.
+- **Licence** : les données sont © les contributeurs d'OpenStreetMap (ODbL). Le serveur
+  officiel `tile.openstreetmap.org` **interdit le téléchargement en masse** : c'est pourquoi
+  on fabrique ses tuiles soi-même.
 
 Sans carte SD, sans dossier `tiles` ou carte prêtée au PC, l'app le dit à l'écran ; elle
 relit la carte dès qu'elle revient.
