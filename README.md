@@ -35,8 +35,13 @@ corners)*
   1,949 colour emoji ([Twemoji](https://github.com/jdecked/twemoji)) with flags, keycaps and
   ZWJ sequences (👩‍💻, 👨‍👩‍👧, 🏳️‍🌈…), in notifications, the banner, calls and now playing.
 - **Incoming call** screen.
-- **Now playing** (Apple Media Service): title, artist, album, progress, volume, play/pause,
-  previous/next — works with any iOS audio app.
+- **Now playing** (Apple Media Service): title, artist, progress, big play/pause and
+  previous/next buttons, and the volume as a wide bar you touch or drag with a finger, with any
+  iOS audio app. While music plays (or was paused less than 10 min ago), Now playing stays
+  open when the screen goes off and comes straight back on wake; the button switches the
+  screen off there instead of going back to the watch face.
+
+  ![now playing](docs/img/now-playing.png)
 - **Time and time zone** (DST included) from the iPhone (Current Time Service); the PCF85063
   RTC keeps UTC.
 - **Three watch faces**: *Retro* (ivory dial, blued hands, battery as power reserve, date
@@ -62,8 +67,8 @@ corners)*
   sensor's power rail is cut.
 - **Notifications never pull you out of an app or menu**: they slide in as a banner on top.
 - **Control center**, pulled down from the top of the screen **from any app or menu**:
-  Bluetooth, **Do not disturb**, **Silent**, torch, now playing, settings, brightness and
-  **global volume**.
+  Bluetooth, Wi-Fi, **Do not disturb**, **Silent**, torch, now playing, **MeshCore** (with the
+  unread count), battery, settings, and two large sliders for brightness and **global volume**.
 - **French or English UI**, switched instantly without a restart.
 - **Over-the-air updates** from the iPhone over Wi-Fi (the watch becomes an access point),
   two firmware slots with automatic rollback, plus **going back to the previous version**
@@ -99,7 +104,7 @@ corners)*
 | Where | Gesture / button | Action |
 |---|---|---|
 | Watch face | swipe ↑ | Notifications (close: ↓ or →) |
-| Watch face | swipe ↓ | Control center (close: ↑, → or button) |
+| Watch face | swipe ↓ | Control center (close: ↑ or button) |
 | Anywhere else | pull down from the top edge | Control center over the screen or app, which keeps running |
 | Watch face | swipe ← | Apps and settings |
 | Watch face | long press | Choose the watch face |
@@ -121,24 +126,28 @@ calls still ring. A moon shows on the watch face.
   put your finger **at the very top of the screen** (a band about 1 cm high) and pull down
   at least 1.5 cm. A tap or a short drag in that band stays with the app, and so does a
   drag that starts lower.
-- **Close it**: swipe ↑ or →, or a short press on the button. The app is back as you left
+- **Close it**: push it back up (swipe ↑ anywhere, even starting on a slider: its value does
+  not change), or a short press on the button. The app is back as you left
   it: Radio and WebRX keep playing while you change the volume. One exception: a *Soar*
   game in progress goes back to the title screen.
 - **Wi-Fi**: a tap opens the **Off / Client / Hotspot** choice (three large buttons, state
   below: network and address, or the hotspot's name and password). The tile shows the
-  network. Long press, or the gear of the choice = Wi-Fi settings. The watch **settings** are
-  under the gear, top right.
-- **MeshCore** (full-width pill): a tap turns MeshCore on or off; when on it shows the number
-  of unread messages. Long press = opens the MeshCore app.
-- **Now playing**, **Settings** and **Torch** quit the app you came from (radio listening
-  stops), like the usual back gesture.
-- **Global volume** (− / +, steps of 10 %) applies to every sound of the watch: beeps,
-  timer alarm, Púca, game music, Radio and WebRX, with a short test beep. The own volume of
+  network. Long press, or the gear of the choice = Wi-Fi settings.
+- **MeshCore**: a tap opens the MeshCore app; long press = turns MeshCore on or off (blue tile
+  while it runs). A red badge shows the number of unread messages.
+- **Battery**: level in percent (green bolt while charging); a tap opens the Energy screen.
+  **Settings** opens the watch settings.
+- **Now playing**, **Settings**, **Battery**, **MeshCore** and **Torch** quit the app you came
+  from (radio listening stops), like the usual back gesture.
+- **Brightness** and **volume**: two large sliders, like in Now playing. Touch the level you
+  want or drag your finger; the value shows inside.
+- **Global volume** applies to every sound of the watch: beeps,
+  timer alarm, Púca, game music, Radio and WebRX, with a short test beep when you lift your finger. The own volume of
   Radio and WebRX sets their level *within* the global volume. 100 % matches the levels
   before this setting; the amplifier has no adjustable gain, it is all done in software.
   One exception: the *Tone* app's relay tone, played on demand, keeps its fixed level.
 - **Silent**: no sound at all (the amplifier stays off); vibrations still work. A crossed-out
-  bell shows on the digital face. − or + turns the sound back on.
+  bell shows on the digital face. Touching the volume slider turns the sound back on.
 
 ---
 

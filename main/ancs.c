@@ -23,6 +23,7 @@
 #include "ble.h"
 #include "media.h"
 #include <stdlib.h>
+#include <math.h>
 #include "esp_timer.h"
 #include "app_events.h"
 #include "esp_log.h"
@@ -135,7 +136,7 @@ static bool s_act_pending;
 static uint32_t s_act_uid;
 static uint8_t s_act_id;
 
-static struct ble_npl_callout s_co_cmd, s_co_setup, s_co_cts;
+static struct ble_npl_callout s_co_cmd, s_co_setup, s_co_cts, s_co_vol;
 static struct ble_npl_event s_ev_action;
 static bool s_host_inited;
 /* une seule écriture CP en vol : la suivante attend la réponse ATT */
@@ -873,6 +874,16 @@ static volatile bool s_media_ev_posted;
 #define MCMD_Q 4
 static uint8_t s_mcmd[MCMD_Q];
 static int s_mcmd_n;
+/* Volume visé par le curseur de l'écran Lecture. AMS ne connaît que
+ * « volume + » et « volume − » (un cran = 1/16 sur iOS) : on envoie un cran,
+ * on attend que l'iPhone annonce le nouveau volume, puis le suivant. Sans
+ * cette attente, on calculerait l'écart sur un volume périmé et on
+ * dépasserait la cible. */
+static float s_vol_target = -1;     /* sous s_amux ; <0 = aucune */
+static float s_vol_from;            /* volume au moment du dernier cran (tâche hôte) */
+static int64_t s_vol_sent_us;       /* 0 = aucun cran en attente */
+static uint8_t s_vol_stall;         /* crans sans effet d'affilée (butée, app muette) */
+#define VOL_WAIT_MS 400
 #define EA_Q 4
 static uint16_t s_ea_q[EA_Q];     /* (entité << 8) | attribut */
 static int s_ea_n;
@@ -922,6 +933,8 @@ static void store_attr(uint8_t ent, uint8_t attr, const uint8_t *v, int n)
         if (*e == ',') { rate = strtof(e + 1, &e); }
         if (*e == ',') { el = strtof(e + 1, &e); }
         portENTER_CRITICAL(&s_mmux);
+        if (st != MEDIA_PAUSED || s_media.state != MEDIA_PAUSED)
+            s_media.played_at_us = esp_timer_get_time();   /* en lecture, ou vient de s'arrêter */
         s_media.state = (int)st;
         s_media.rate = rate;
         s_media.elapsed_s = el;
@@ -934,6 +947,10 @@ static void store_attr(uint8_t ent, uint8_t attr, const uint8_t *v, int n)
         s_media.volume = vol;
         s_media.seq++;
         portEXIT_CRITICAL(&s_mmux);
+        if (s_vol_sent_us && s_host_inited) {      /* cran pris en compte : le suivant */
+            ble_npl_callout_stop(&s_co_vol);
+            ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_action);
+        }
     } else if (ent == AMS_ENT_TRACK && attr == 3) {    /* Duration en secondes */
         float d = n ? strtof(t, NULL) : 0;
         portENTER_CRITICAL(&s_mmux);
@@ -1003,6 +1020,43 @@ static void ams_done(bool ok)
     process_next();
 }
 
+static void vol_target_clear(float seen)
+{
+    portENTER_CRITICAL(&s_amux);
+    if (s_vol_target == seen) s_vol_target = -1;   /* sauf si l'UI a déjà visé ailleurs */
+    portEXIT_CRITICAL(&s_amux);
+    s_vol_sent_us = 0;
+    s_vol_stall = 0;
+}
+
+/* prochain cran vers le volume visé, 0 si rien à envoyer maintenant */
+static uint8_t vol_step(void)
+{
+    portENTER_CRITICAL(&s_amux);
+    float tgt = s_vol_target;
+    portEXIT_CRITICAL(&s_amux);
+    if (tgt < 0) { s_vol_sent_us = 0; return 0; }
+    portENTER_CRITICAL(&s_mmux);
+    float vol = s_media.volume;
+    portEXIT_CRITICAL(&s_mmux);
+    if (vol < 0) { vol_target_clear(tgt); return 0; }
+
+    int64_t now = esp_timer_get_time();
+    if (s_vol_sent_us) {
+        bool moved = fabsf(vol - s_vol_from) > 0.001f;
+        if (!moved && now - s_vol_sent_us < VOL_WAIT_MS * 1000LL) return 0;   /* s_co_vol relancera */
+        if (moved) s_vol_stall = 0;
+        else if (++s_vol_stall >= 3) { vol_target_clear(tgt); return 0; }    /* butée : abandon */
+        s_vol_sent_us = 0;
+    }
+    float d = tgt - vol;
+    if (fabsf(d) < 1.0f / 32) { vol_target_clear(tgt); return 0; }          /* à moins d'un demi-cran */
+    s_vol_from = vol;
+    s_vol_sent_us = now;
+    ble_npl_callout_reset(&s_co_vol, ble_npl_time_ms_to_ticks32(VOL_WAIT_MS));
+    return d > 0 ? MEDIA_CMD_VOL_UP : MEDIA_CMD_VOL_DOWN;
+}
+
 static bool send_media_cmd(void)
 {
     if (!c.rc.val) return false;
@@ -1014,7 +1068,7 @@ static bool send_media_cmd(void)
         memmove(s_mcmd, s_mcmd + 1, --s_mcmd_n);
     }
     portEXIT_CRITICAL(&s_amux);
-    if (!have) return false;
+    if (!have && !(cmd = vol_step())) return false;
     f.ph = PH_ACTION;                  /* même chemin qu'une action ANCS : réponse d'écriture */
     int rc = ble_gattc_write_flat(c.conn, c.rc.val, &cmd, 1, on_cp_write, GEN_ARG());
     if (rc) { f.ph = PH_NONE; return false; }
@@ -1091,6 +1145,25 @@ float media_position_s(const media_info_t *m)
     return p < 0 ? 0 : p;
 }
 
+void media_set_volume(float v)
+{
+    if (!ble_running()) return;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    portENTER_CRITICAL(&s_amux);
+    s_vol_target = v;
+    portEXIT_CRITICAL(&s_amux);
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_action);
+}
+
+float media_volume_target(void)
+{
+    portENTER_CRITICAL(&s_amux);
+    float v = s_vol_target;
+    portEXIT_CRITICAL(&s_amux);
+    return v;
+}
+
 void media_command(uint8_t cmd)
 {
     if (!ble_running()) return;
@@ -1115,6 +1188,7 @@ void ancs_host_init(void)
     ble_npl_callout_init(&s_co_cmd, q, co_cmd_cb, NULL);
     ble_npl_callout_init(&s_co_setup, q, co_setup_cb, NULL);
     ble_npl_callout_init(&s_co_cts, q, co_cts_cb, NULL);
+    ble_npl_callout_init(&s_co_vol, q, ev_action_cb, NULL);
     ble_npl_event_init(&s_ev_action, ev_action_cb, NULL);
     s_host_inited = true;
 }
@@ -1125,6 +1199,7 @@ void ancs_host_deinit(void)
     ble_npl_callout_deinit(&s_co_cmd);
     ble_npl_callout_deinit(&s_co_setup);
     ble_npl_callout_deinit(&s_co_cts);
+    ble_npl_callout_deinit(&s_co_vol);
     ble_npl_event_deinit(&s_ev_action);   /* pool libéré par nimble_port_deinit() */
     ancs_on_disconnect();
 }
@@ -1162,6 +1237,7 @@ void ancs_on_disconnect(void)
         ble_npl_callout_stop(&s_co_cmd);
         ble_npl_callout_stop(&s_co_setup);
         ble_npl_callout_stop(&s_co_cts);
+        ble_npl_callout_stop(&s_co_vol);
     }
     f.ph = PH_NONE;
     f.len = 0;
@@ -1172,7 +1248,10 @@ void ancs_on_disconnect(void)
     portENTER_CRITICAL(&s_amux);
     s_act_pending = false;
     s_mcmd_n = 0;
+    s_vol_target = -1;
     portEXIT_CRITICAL(&s_amux);
+    s_vol_sent_us = 0;
+    s_vol_stall = 0;
     media_reset(false);
 }
 

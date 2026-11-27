@@ -36,10 +36,15 @@ typedef struct {
     int64_t  elapsed_at_us;        /* esp_timer_get_time() de la mesure */
     float    duration_s;           /* 0 = inconnue */
     float    volume;               /* 0..1, <0 = inconnu */
+    int64_t  played_at_us;         /* dernière lecture vue (0 = jamais) */
     uint16_t cmds;                 /* bit n = RemoteCommandID n disponible */
     uint32_t seq;                  /* incrémenté à chaque changement */
 } media_info_t;
 
 void media_get(media_info_t *out);          /* copie cohérente */
 void media_command(uint8_t cmd);            /* MEDIA_CMD_*, envoyé dès que le lien est libre */
+/* volume visé 0..1 : la montre envoie les crans « volume +/− » un par un
+ * jusqu'à l'atteindre (AMS n'a pas de réglage direct) */
+void media_set_volume(float v);
+float media_volume_target(void);            /* cible en cours, <0 = aucune */
 float media_position_s(const media_info_t *m); /* position extrapolée maintenant */
