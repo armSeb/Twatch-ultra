@@ -47,19 +47,24 @@
 #define SW      BOARD_LCD_W
 #define SH      BOARD_LCD_H
 #define LW      ((float)SW / K)          /* largeur de la scène en pixels de dessin */
-#define GY      372                      /* ligne sous les pattes (écran) */
+#define GY      366                      /* ligne sous les pattes (écran) */
 #define FEET    (GY / K)                 /* même ligne en pixels de dessin */
 #define TICK_MS 40
 #define DT      (TICK_MS / 80.0f)        /* vitesses réglées pour un pas de 80 ms */
 #define NPART   28
 
-/* mise en page (pixels écran) */
-#define BTN_D   88                       /* diamètre des boutons ronds */
-#define BTN_CY  434                      /* centre de la rangée de boutons */
-#define TOP_CY  42                       /* centre de la barre du haut */
-#define GAUGE_Y 76
-#define CLOV_Y  130
-#define MSG_Y   182
+/* mise en page (pixels écran), en retrait des coins arrondis de la dalle
+ * (rayon visible d'environ 110 px sur la montre) */
+#define BTN_D   84                       /* diamètre des boutons ronds */
+#define BTN_STEP 88                      /* écart entre leurs centres */
+#define BTN_CY  420                      /* centre de la rangée de boutons */
+#define TOP_CY  58                       /* centre de la barre du haut */
+#define TOP_X   56                       /* bord des boutons retour et son */
+#define GAUGE_W 104
+#define GAUGE_X ((SW - 3 * GAUGE_W - 16) / 2)
+#define GAUGE_Y 92
+#define CLOV_Y  146
+#define MSG_Y   198
 
 /* ------------------------------------------------------------------ modèle */
 static puca_t m;
@@ -1221,6 +1226,30 @@ static void back_cb(lv_event_t *e) { app_close(); }
 
 static void feed_close_cb(lv_event_t *e) { hide(v_feed); }
 
+/* ------------------------------------------------------------------ zones à redessiner */
+/* Tant que l'app est affichée, toute zone à redessiner prend la largeur de
+ * l'écran : la dalle ne reçoit que des bandes pleine largeur (comme le
+ * reste de l'interface et les jeux), jamais de fenêtres étroites côte à
+ * côte, qui laissaient des traits noirs et des pixels parasites derrière le
+ * púca (0.3.10). Les grandes bandes partent aussi calées sur le TE. */
+static bool s_wide;
+
+static void wide_cb(lv_event_t *e)
+{
+    lv_area_t *a = lv_event_get_param(e);
+    a->x1 = 0;
+    a->x2 = SW - 1;
+}
+
+static void wide_inval(bool on)
+{
+    lv_display_t *d = lv_display_get_default();
+    if (!d || on == s_wide) return;
+    if (on) lv_display_add_event_cb(d, wide_cb, LV_EVENT_INVALIDATE_AREA, NULL);
+    else lv_display_remove_event_cb_with_user_data(d, wide_cb, NULL);
+    s_wide = on;
+}
+
 /* ------------------------------------------------------------------ interface */
 static const char *stage_name(void)
 {
@@ -1408,7 +1437,7 @@ static void create(lv_obj_t *scr)
 
     /* barre du haut : retour, stade et âge, son */
     lv_obj_t *bk = round_btn(v_root, 56, back_cb, 0);
-    lv_obj_set_pos(bk, 36, TOP_CY - 28);
+    lv_obj_set_pos(bk, TOP_X, TOP_CY - 28);
     lv_obj_set_ext_click_area(bk, 10);
     lv_obj_center(label(bk, &font_title, LV_SYMBOL_LEFT));
     v_stage = label(v_root, &font_text, "");
@@ -1419,7 +1448,7 @@ static void create(lv_obj_t *scr)
     lv_obj_set_style_pad_ver(v_stage, 9, 0);
     lv_obj_align(v_stage, LV_ALIGN_TOP_MID, 0, TOP_CY - 22);
     v_spk = round_btn(v_root, 56, spk_cb, 0);
-    lv_obj_set_pos(v_spk, SW - 36 - 56, TOP_CY - 28);
+    lv_obj_set_pos(v_spk, SW - TOP_X - 56, TOP_CY - 28);
     lv_obj_set_ext_click_area(v_spk, 10);
     v_spk_lbl = label(v_spk, &font_text, LV_SYMBOL_VOLUME_MAX);
     lv_obj_center(v_spk_lbl);
@@ -1428,13 +1457,13 @@ static void create(lv_obj_t *scr)
     static const puca_spr_t *const gi[3] = { &puca_it_potato, &puca_it_heart, &puca_it_bolt };
     static const uint32_t gc[3] = { 0xf0a860, 0xff5a7a, 0xffd84a };
     for (int i = 0; i < 3; i++) {
-        lv_obj_t *p = pill(v_root, 110, 44);
-        lv_obj_set_pos(p, 32 + i * 118, GAUGE_Y);
+        lv_obj_t *p = pill(v_root, GAUGE_W, 44);
+        lv_obj_set_pos(p, GAUGE_X + i * (GAUGE_W + 8), GAUGE_Y);
         lv_obj_t *im = lv_image_create(p);
         lv_image_set_src(im, icon(gi[i], 4));
         lv_obj_align(im, LV_ALIGN_LEFT_MID, 8, 0);
         v_bar[i] = lv_bar_create(p);
-        lv_obj_set_size(v_bar[i], 54, 14);
+        lv_obj_set_size(v_bar[i], GAUGE_W - 56, 14);
         lv_obj_align(v_bar[i], LV_ALIGN_LEFT_MID, 46, 0);
         lv_bar_set_range(v_bar[i], 0, 100);
         lv_obj_set_style_bg_color(v_bar[i], lv_color_hex(0x40444f), LV_PART_MAIN);
@@ -1448,7 +1477,7 @@ static void create(lv_obj_t *scr)
 
     /* trèfles */
     v_clov = pill(v_root, 86, 42);
-    lv_obj_set_pos(v_clov, 32, CLOV_Y);
+    lv_obj_set_pos(v_clov, GAUGE_X, CLOV_Y);
     lv_obj_t *ci = lv_image_create(v_clov);
     lv_image_set_src(ci, icon(&puca_it_clover, 3));
     lv_obj_align(ci, LV_ALIGN_LEFT_MID, 10, 0);
@@ -1488,7 +1517,7 @@ static void create(lv_obj_t *scr)
     static const puca_spr_t *const bi[4] = { &puca_it_b_feed, &puca_it_b_play, &puca_it_b_clean, &puca_it_b_moon };
     for (int i = 0; i < 4; i++) {
         v_btn[i] = round_btn(v_btnrow, BTN_D, act_cb, i);
-        lv_obj_set_pos(v_btn[i], SW / 2 + (i * 2 - 3) * 92 / 2 - BTN_D / 2, 4);
+        lv_obj_set_pos(v_btn[i], SW / 2 + (i * 2 - 3) * BTN_STEP / 2 - BTN_D / 2, 4);
         lv_obj_t *im = lv_image_create(v_btn[i]);
         lv_image_set_src(im, icon(bi[i], 4));
         lv_obj_center(im);
@@ -1504,11 +1533,11 @@ static void create(lv_obj_t *scr)
     ui_bubble(v_gamerow);
     for (int i = 0; i < 2; i++) {
         lv_obj_t *b = round_btn(v_gamerow, BTN_D, guess_cb, i ? 1 : -1);
-        lv_obj_set_size(b, 164, BTN_D);
-        lv_obj_set_style_transform_pivot_x(b, 82, 0);
+        lv_obj_set_size(b, 158, BTN_D);
+        lv_obj_set_style_transform_pivot_x(b, 79, 0);
         lv_obj_set_style_bg_color(b, C_ACC, 0);
         lv_obj_set_style_bg_opa(b, LV_OPA_90, 0);
-        lv_obj_set_pos(b, i ? SW / 2 + 6 : SW / 2 - 6 - 164, 4);
+        lv_obj_set_pos(b, i ? SW / 2 + 6 : SW / 2 - 6 - 158, 4);
         lv_obj_center(label(b, &font_title, i ? LV_SYMBOL_RIGHT : LV_SYMBOL_LEFT));
     }
     hide(v_gamerow);
@@ -1601,6 +1630,7 @@ static void create(lv_obj_t *scr)
 static void destroy(void)
 {
     if (v_tmr) { lv_timer_delete(v_tmr); v_tmr = NULL; }
+    wide_inval(false);
     save();
     heap_caps_free(s_base); heap_caps_free(s_cov); heap_caps_free(s_out);
     s_base = NULL; s_cov = NULL; s_out = NULL;
@@ -1622,6 +1652,7 @@ static void on_show(void)
     handle_events();
     if (!v_tmr) v_tmr = lv_timer_create(tick_cb, TICK_MS, NULL);
     else lv_timer_resume(v_tmr);
+    wide_inval(true);
     relight(false);
     refresh_ui();
 }
@@ -1629,6 +1660,7 @@ static void on_show(void)
 static void on_hide(void)
 {
     if (v_tmr) lv_timer_pause(v_tmr);
+    wide_inval(false);
     if (a_kind == A_GAME) {                   /* partie interrompue : comptée telle quelle */
         if (g_phase < 2) { puca_play_done(&m, g_wins, G_ROUNDS); }
         hide(v_gamerow);

@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.11 — 2026-11-27
+
+- Púca: no more black streaks or stray pixels behind the moving pet (the app now refreshes
+  full-width bands only, started on the panel's TE).
+- Púca: top buttons, gauges and the bottom row moved in from the rounded corners.
+
 ## 0.3.10 — 2026-11-27
 
 - Púca redrawn: full-screen scene (rounded corners included), scenery at full resolution
