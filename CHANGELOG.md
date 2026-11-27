@@ -2,6 +2,20 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.4.6 — 2026-11-27
+
+- No more ghost taps when swiping: a finger that slides (closing the control centre or an
+  app, scrolling, a slow drag) no longer clicks, long-presses, flips a switch or picks a
+  segmented button where it passed. A touch that starts while the screen is still sliding
+  in is ignored too.
+- Sliders (control centre brightness and volume, settings, Lecture, radio sheets): a
+  vertical swipe that starts on a slider no longer changes its value. Closing the control
+  centre from the volume bar no longer turns silent mode off.
+- Segmented buttons (MeshCore tabs and antenna, settings, Wi-Fi, Tone) now act when the
+  finger lifts, not when it touches.
+- Switching to the external LoRa antenna (MeshCore app and settings) asks for confirmation
+  first: transmitting with no antenna plugged into the USB-C port can damage the radio.
+
 ## 0.4.5 — 2026-11-27
 
 - About 18 KB more internal RAM, all the time: the Wi-Fi driver's code stays in flash instead
