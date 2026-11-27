@@ -2,8 +2,11 @@
 
 **Français** · [English](../en/tiles.md)
 
-L'app **Cartes** lit des tuiles PNG sur la carte micro-SD (`/tiles/<zoom>/<x>/<y>.png`).
-Le script `tools/tuiles/generer-tuiles.sh` les fabrique sur le PC à partir d'un extrait
+L'app **Cartes** lit les cartes rangées dans un seul fichier **`tiles.pmtiles`** à la racine
+de la carte micro-SD (format [PMTiles](https://github.com/protomaps/PMTiles), tuiles PNG
+256 × 256). Un seul gros fichier se copie vite, là où des dizaines de milliers de petites
+tuiles prennent des heures sur une carte SD.
+Le script `tools/tuiles/generer-tuiles.sh` le fabrique sur le PC à partir d'un extrait
 OpenStreetMap de [Geofabrik](https://download.geofabrik.de) (la France, une région, un pays),
 avec un style fait pour l'écran de la montre : gros libellés, routes larges et contrastées,
 peu de détails inutiles. Une seule commande, rien à installer à part Docker.
@@ -53,8 +56,15 @@ Ce qui se passe :
    Le premier lancement télécharge aussi le trait de côte et Natural Earth (≈ 1,3 Go, gardés).
 4. **Dessin** des tuiles PNG 256 × 256 dans `./tuiles-montre/tiles` (MapLibre Native, palette
    de 128 couleurs). La progression et le temps restant s'affichent. Compter de l'ordre d'une
-   heure pour la France jusqu'au niveau 12 avec une zone détaillée.
-5. Avec `--sd` : **copie** sur la carte, puis `sync`. Éjecter la carte avant de la retirer.
+   heure pour la France jusqu'au niveau 12 avec une zone détaillée sur un PC récent, plusieurs
+   heures sur un petit processeur (Atom, Celeron).
+5. **Rangement** de toutes les tuiles dans `./tuiles-montre/tiles.pmtiles` (quelques secondes).
+   Les tuiles identiques (mer, zones vides) n'y sont stockées qu'une fois.
+6. Avec `--sd` : **copie** de `tiles.pmtiles` à la racine de la carte, puis `sync`. Éjecter la
+   carte avant de la retirer. Sans `--sd`, copier ce fichier soi-même, par exemple d'une autre
+   machine : `rsync --info=progress2 serveur:tuiles-montre/tiles.pmtiles /media/$USER/MONTRE/`.
+
+Lancé à distance par SSH, utiliser `tmux` ou `screen` : une session coupée arrête le script.
 
 Interrompu (Ctrl+C, coupure), il suffit de relancer **la même commande** : le dessin reprend
 où il s'était arrêté. `--refaire` force à tout redessiner. Pour mettre la carte à jour plus
@@ -69,9 +79,9 @@ tard, relancer : un extrait plus récent est retéléchargé et tout est refait.
 | `-z, --zooms A-B` | niveaux pour tout l'extrait (défaut `0-12`) ; `aucun` pour ne faire que les zones |
 | `-d, --detail LAT,LON,RAYON_KM[,A-B]` | zone détaillée autour d'un point (niveaux `13-16` par défaut), répétable |
 | `-b, --bbox OUEST,SUD,EST,NORD[,A-B]` | zone détaillée en rectangle, répétable |
-| `-s, --sd DOSSIER` | carte SD montée : sa place libre et sa taille de blocs servent à l'estimation, copie à la fin |
-| `--taille T`, `--bloc B` | sans `--sd` : taille de la carte (défaut `2G`) et de ses blocs (défaut `32K`) |
-| `-o, --sortie DOSSIER` | où écrire le dossier `tiles` (défaut `./tuiles-montre`) |
+| `-s, --sd DOSSIER` | carte SD montée : sa place libre sert à l'estimation, `tiles.pmtiles` y est copié à la fin |
+| `--taille T` | sans `--sd` : taille de la carte (défaut `2G`) |
+| `-o, --sortie DOSSIER` | où écrire `tiles.pmtiles` et les tuiles de travail (défaut `./tuiles-montre`) |
 | `-n, --estimer` | estimation seulement |
 | `--forcer`, `--refaire` | dessiner même si c'est trop gros ; tout redessiner |
 | `-j, --jobs N` | dessins en parallèle (défaut : cœurs − 1) |
@@ -87,39 +97,26 @@ Les coordonnées s'obtiennent par un clic droit sur [openstreetmap.org](https://
 
 Chaque niveau compte **quatre fois plus** de tuiles que le précédent :
 
-| France entière | Tuiles | Place (blocs 32 Ko) | Place (blocs 4 Ko) |
-|---|---|---|---|
-| niveaux 0 à 11 | 9 400 | ≈ 300 Mo | ≈ 110 Mo |
-| niveaux 0 à 12 | 37 000 | ≈ 1,2 Go | ≈ 420 Mo |
-| niveau 13 en plus | + 110 000 | + 3,4 Go | + 1,3 Go |
+| France entière | Tuiles | Taille au plus |
+|---|---|---|
+| niveaux 0 à 11 | 9 400 | ≈ 85 Mo |
+| niveaux 0 à 12 | 37 000 | ≈ 320 Mo |
+| niveau 13 en plus | + 110 000 | + 950 Mo |
 
-| Zone détaillée, niveaux 13 à 16 | Tuiles | Place (blocs 32 Ko) | Place (blocs 4 Ko) |
-|---|---|---|---|
-| rayon 10 km | 3 300 | ≈ 100 Mo | ≈ 25 Mo |
-| rayon 25 km | 20 500 | ≈ 650 Mo | ≈ 170 Mo |
-| rayon 50 km | 80 000 | ≈ 2,5 Go | ≈ 650 Mo |
+| Zone détaillée, niveaux 13 à 16 | Tuiles | Taille au plus |
+|---|---|---|
+| rayon 10 km | 3 400 | ≈ 25 Mo |
+| rayon 25 km | 20 500 | ≈ 140 Mo |
+| rayon 50 km | 80 000 | ≈ 540 Mo |
 
-Ce sont des maximums : la mer et les pays voisins (vides, hors de l'extrait) ne sont pas écrits,
-la montre agrandit la tuile parente à la place. Le niveau 12 montre les villages et les routes
-principales, le 14 toutes les rues, le 16 les bâtiments et les sentiers. La montre zoome deux
-niveaux plus loin que le plus détaillé présent, en agrandissant.
+Ce sont des maximums : la mer et les pays voisins (vides, hors de l'extrait) ne prennent
+presque rien. Le niveau 12 montre les villages et les routes principales, le 14 toutes les
+rues, le 16 les bâtiments et les sentiers. La montre zoome deux niveaux plus loin que le plus
+détaillé présent, en agrandissant.
 
-**Conseil** : la France de 0 à 12 et une zone de 25 km autour de chez soi, de 13 à 16.
-
-### Formater la carte en FAT32 avec des petits blocs
-
-Une carte de 2 Go est souvent livrée en FAT16 avec des blocs de **32 Ko** : une tuile de 8 Ko
-en occupe alors 32. En **FAT32 avec des blocs de 4 Ko**, la même carte en contient trois fois
-plus. Pour la reformater (**tout son contenu est effacé**, sauvegarder les dossiers `logs` et
-l'historique MeshCore d'abord) :
-
-```sh
-lsblk -o NAME,SIZE,MODEL,MOUNTPOINT   # repérer la carte, ex. sdb (vérifier la taille !)
-sudo umount /dev/sdb1
-sudo mkfs.vfat -F 32 -s 8 -n MONTRE /dev/sdb1   # paquet dosfstools ; -s 8 = blocs de 4 Ko
-```
-
-Avec `--sd`, le script lit tout seul la taille des blocs de la carte.
+**Conseil** : la France de 0 à 12 et une zone de 25 km autour de chez soi, de 13 à 16, soit
+moins de 500 Mo. Avec un seul fichier, la taille des blocs de la carte (FAT16 ou FAT32) ne
+compte plus. Une carte en FAT16 limite un fichier à 2 Go.
 
 ## Le style
 
@@ -136,8 +133,8 @@ tuiles vectorielles non). `--style` permet aussi d'essayer un autre style sans t
 
 ## Détails techniques
 
-- `generer-tuiles.sh` : téléchargement, contrôle de la carte SD (`stat -f` : place libre,
-  taille des blocs), Planetiler dans son image officielle
+- `generer-tuiles.sh` : téléchargement, contrôle de la carte SD (`stat -f` : place libre),
+  Planetiler dans son image officielle
   (`ghcr.io/onthegomap/planetiler`, couches `poi` et `housenumber` exclues), puis le dessin.
 - `render.cjs` tourne dans une image bâtie sur `maptiler/tileserver-gl` (MapLibre Native,
   sharp et la police Noto Sans y sont déjà) :
@@ -147,8 +144,12 @@ tuiles vectorielles non). `--style` permet aussi d'essayer un autre style sans t
   - une tuile unie (mer, hors de l'extrait) dont la parente est unie de la même couleur n'est
     pas écrite, tant que la montre peut agrandir la parente (4 niveaux au plus,
     `MT_UPSCALE` dans `main/maptiles.h`) ;
-  - écrit des PNG palette (lus par `main/png_tile.c`), un journal `.journal-tuiles` pour la
-    reprise, et la place réelle sur la carte selon la taille de ses blocs.
+  - écrit des PNG palette (lus par `main/png_tile.c`) et un journal `.journal-tuiles` pour la
+    reprise ;
+  - range ensuite les tuiles dans `tiles.pmtiles` (PMTiles v3 : répertoires gzip, tuiles PNG
+    non recompressées, rangées par numéro de Hilbert, contenus identiques stockés une fois ;
+    vérifié avec la bibliothèque Python officielle `pmtiles`). La commande interne `paquet`
+    refait seulement ce fichier à partir du dossier `tiles`.
 - Tout tourne avec l'utilisateur courant : les fichiers créés lui appartiennent.
 
 ## Licences

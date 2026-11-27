@@ -6,8 +6,9 @@ All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
 - PC tool `tools/tuiles/generer-tuiles.sh` (Linux, Docker): offline map tiles for the Maps
   app from a Geofabrik OpenStreetMap extract (Planetiler + MapLibre Native), large-label
-  style for the watch screen, SD space estimate (cluster size aware) before drawing, resume,
-  optional copy to the SD card. See docs/fr/tiles.md.
+  style for the watch screen, SD space estimate before drawing, resume. Output is a single
+  `tiles.pmtiles` file (PMTiles v3, identical tiles stored once), quick to copy to the SD card;
+  optional copy with `--sd`. See docs/fr/tiles.md.
 
 ## 0.3.0 — 2026-11-26
 

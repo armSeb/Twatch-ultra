@@ -2,8 +2,10 @@
 
 [Français](../fr/tiles.md) · **English**
 
-The **Maps** app reads PNG tiles from the micro-SD card (`/tiles/<zoom>/<x>/<y>.png`).
-`tools/tuiles/generer-tuiles.sh` builds them on a Linux PC from an OpenStreetMap extract from
+The **Maps** app reads maps from a single **`tiles.pmtiles`** file at the micro-SD root
+([PMTiles](https://github.com/protomaps/PMTiles), 256 × 256 PNG tiles): one big file copies
+fast, where tens of thousands of small tiles take hours on an SD card.
+`tools/tuiles/generer-tuiles.sh` builds it on a Linux PC from an OpenStreetMap extract from
 [Geofabrik](https://download.geofabrik.de), with a style made for the watch screen: large
 labels, wide high-contrast roads, little clutter. One command; only Docker is needed.
 
@@ -36,19 +38,18 @@ Steps: download the extract (only when newer, MD5-checked, cached in `~/.cache/t
 **estimate** tiles and SD space, stopping if it doesn't fit (`--forcer` overrides); build
 vector tiles once with [Planetiler](https://github.com/onthegomap/planetiler) (OpenMapTiles
 schema, 30 min to over an hour for France depending on cores); **draw** 256 × 256 palette PNGs into `./tuiles-montre/tiles`
-(MapLibre Native); with `--sd`, copy and `sync`. Run the same command again to resume after an
+(MapLibre Native), then pack them into `./tuiles-montre/tiles.pmtiles` (identical tiles stored
+once); with `--sd`, copy that file to the card and `sync`. Run the same command again to resume after an
 interruption; `--refaire` redraws everything. `--help` lists every option.
 
 ## Sizing for a 2 GB card
 
 Each level has four times as many tiles as the previous one. Whole France levels 0–12:
-37,000 tiles, ≈ 1.2 GB with 32 KB clusters, ≈ 420 MB with 4 KB clusters; level 13 alone adds
-110,000 tiles. A 25 km detail zone at levels 13–16: 20,500 tiles, ≈ 650 MB / ≈ 170 MB.
-Sea and neighbouring countries (empty) are not written: the watch upscales the parent tile.
+37,000 tiles, ≈ 320 MB at most; level 13 alone adds 110,000 tiles (≈ 950 MB). A 25 km detail
+zone at levels 13–16: 20,500 tiles, ≈ 140 MB. Sea and empty areas take almost nothing.
 
-**Suggested**: France 0–12 plus 25 km around home at 13–16. A 2 GB card often comes as FAT16
-with 32 KB clusters; reformatting it as FAT32 with 4 KB clusters
-(`sudo mkfs.vfat -F 32 -s 8 -n WATCH /dev/sdX1`, **erases the card**) fits three times more.
+**Suggested**: France 0–12 plus 25 km around home at 13–16, under 500 MB. With a single file
+the card's cluster size no longer matters (FAT16 limits a file to 2 GB).
 
 ## Style
 

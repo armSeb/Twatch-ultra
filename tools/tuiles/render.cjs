@@ -7,7 +7,12 @@
  * le style « montre », sharp les découpe et les écrit en PNG palette.
  *
  *   node render.cjs estimer [options]   compte les tuiles, place sur la carte SD
- *   node render.cjs dessiner [options]  dessine dans <sortie>/tiles/<z>/<x>/<y>.png
+ *   node render.cjs paquet [options]    refait seulement tiles.pmtiles depuis tiles/
+ *   node render.cjs dessiner [options]  dessine dans <sortie>/tiles/<z>/<x>/<y>.png,
+ *                                       puis range tout dans <sortie>/tiles.pmtiles
+ *
+ * La montre lit tiles.pmtiles (PMTiles v3, un seul fichier : rapide à copier
+ * sur la carte SD) ; le dossier tiles/ sert d'étape et à la reprise.
  *
  * Les tuiles d'une seule couleur (mer, hors de l'extrait) dont la tuile
  * parente est de la même couleur ne sont pas écrites : la montre agrandit la
@@ -54,12 +59,12 @@ function parseZooms(s, what) {
 
 function parseArgs(argv) {
     const o = {
-        cmd: argv[0], zooms: '0-12', details: [], bboxes: [], taille: '2G', bloc: '32K',
+        cmd: argv[0], zooms: '0-12', details: [], bboxes: [], taille: '2G',
         libre: null, jobs: Math.max(1, os.cpus().length - 1), forcer: false, refaire: false,
         couleurs: 128, pbf: null, mbtiles: null, style: '/opt/twatch/style-montre.json',
         fonts: NM + 'tileserver-gl-styles/fonts', sortie: '/sortie',
     };
-    if (o.cmd !== 'estimer' && o.cmd !== 'dessiner') die('commande « estimer » ou « dessiner » attendue');
+    if (!['estimer', 'dessiner', 'paquet'].includes(o.cmd)) die('commande « estimer », « dessiner » ou « paquet » attendue');
     argv = argv.flatMap((a) => (/^--[a-z]+=/.test(a) ? [a.slice(0, a.indexOf('=')), a.slice(a.indexOf('=') + 1)] : [a]));
     for (let i = 1; i < argv.length; i++) {
         const a = argv[i];
@@ -72,7 +77,6 @@ function parseArgs(argv) {
         case '--detail': o.details.push(val()); break;
         case '--bbox': o.bboxes.push(val()); break;
         case '--taille': o.taille = val(); break;
-        case '--bloc': o.bloc = val(); break;
         case '--libre': o.libre = val(); break;
         case '--jobs': o.jobs = Math.max(1, parseInt(val(), 10) || 1); break;
         case '--couleurs': o.couleurs = Math.min(256, Math.max(2, parseInt(val(), 10) || 128)); break;
@@ -260,8 +264,6 @@ function avgTileBytes(z) {
     return 7000;
 }
 
-function onDisk(bytes, cluster) { return Math.max(1, Math.ceil(bytes / cluster)) * cluster; }
-
 function human(n) {
     if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(2).replace('.', ',') + ' Go';
     if (n >= 1024 ** 2) return Math.round(n / 1024 ** 2) + ' Mo';
@@ -272,30 +274,25 @@ function human(n) {
 function fmtInt(n) { return n.toLocaleString('fr-FR').replace(/ | /g, ' '); }
 
 function estimate(o, P) {
-    const cluster = parseSize(o.bloc, '--bloc');
     const budget = o.libre !== null ? parseSize(o.libre, '--libre') : Math.floor(parseSize(o.taille, '--taille') * 0.9);
     console.log('\nZones demandées :');
     for (const zn of P.zones) {
         const b = zn.bbox.map((v) => v.toFixed(3)).join(', ');
         console.log(`  - ${zn.nom} : niveaux ${zn.zooms[0]} à ${zn.zooms[1]}  [${b}]`);
     }
-    console.log(`\nEstimation (blocs de ${human(cluster)} sur la carte SD) :`);
-    console.log('  niveau      tuiles     place sur la carte');
+    console.log('\nEstimation (un seul fichier tiles.pmtiles) :');
+    console.log('  niveau      tuiles     taille');
     let tiles = 0, total = 0;
     for (const [z, rects] of P.plan) {
         const c = countZoom(rects);
-        const sz = c.tiles * onDisk(avgTileBytes(z), cluster) + (c.dirs + 1) * cluster;
+        const sz = c.tiles * avgTileBytes(z);
         tiles += c.tiles;
         total += sz;
-        console.log(`  ${String(z).padStart(6)}  ${fmtInt(c.tiles).padStart(10)}     ${human(sz).padStart(10)}`);
+        console.log(`  ${String(z).padStart(6)}  ${fmtInt(c.tiles).padStart(10)}     ${human(sz).padStart(8)}`);
     }
-    console.log(`  ${'total'.padStart(6)}  ${fmtInt(tiles).padStart(10)}     ${human(total).padStart(10)}`);
+    console.log(`  ${'total'.padStart(6)}  ${fmtInt(tiles).padStart(10)}     ${human(total).padStart(8)}`);
     console.log(`\nPlace disponible : ${human(budget)}` + (o.libre === null ? ` (90 % de ${o.taille}, le reste pour les logs et l'historique)` : ' (libre sur la carte SD)'));
-    console.log('La mer et les zones hors de l\'extrait (tuiles unies) ne sont pas écrites : la place réelle sera plus petite.');
-    if (cluster >= 16384) {
-        const small = [...P.plan].reduce((s, [z, r]) => s + countZoom(r).tiles * onDisk(avgTileBytes(z), 4096), 0);
-        console.log(`Astuce : formatée en FAT32 avec des blocs de 4 Ko, la même chose prendrait ≈ ${human(small)} (voir la doc).`);
-    }
+    console.log('Maximum : la mer et les zones vides ne prennent presque rien (tuiles identiques stockées une fois).');
     if (total > budget) {
         console.log(`\n⚠  Trop gros : ≈ ${human(total)} pour ${human(budget)} disponibles.`);
         console.log('   Réduire --zooms (ex. 0-11), le rayon ou les niveaux des --detail, ou ajouter --forcer.');
@@ -437,31 +434,13 @@ async function draw(o, P) {
     db.close();
     for (const m of maps) m.release();
 
-    const cluster = parseSize(o.bloc, '--bloc');
-    const du = diskUsage(out, cluster);
-    console.log(`\nTerminé en ${fmtDur(Math.round((Date.now() - t0) / 1000))} : ${fmtInt(stats.written)} tuiles écrites, ${fmtInt(stats.skipped)} tuiles unies sautées.`);
-    console.log(`Dossier tiles : ${fmtInt(du.files)} fichiers, ${human(du.bytes)} de données, ≈ ${human(du.disk)} sur une carte SD à blocs de ${human(cluster)}.`);
+    console.log(`\nDessin terminé en ${fmtDur(Math.round((Date.now() - t0) / 1000))} : ${fmtInt(stats.written)} tuiles écrites, ${fmtInt(stats.skipped)} tuiles unies sautées.`);
 }
 
 function fmtDur(s) {
     if (s < 60) return s + ' s';
     if (s < 3600) return Math.floor(s / 60) + ' min ' + String(s % 60).padStart(2, '0');
     return Math.floor(s / 3600) + ' h ' + String(Math.floor(s / 60) % 60).padStart(2, '0');
-}
-
-function diskUsage(dir, cluster) {
-    let files = 0, bytes = 0, disk = cluster;
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) {
-            const s = diskUsage(p, cluster);
-            files += s.files; bytes += s.bytes; disk += s.disk;
-        } else {
-            const n = fs.statSync(p).size;
-            files++; bytes += n; disk += onDisk(n, cluster);
-        }
-    }
-    return { files, bytes, disk };
 }
 
 async function drawMeta(map, sharp, o, z, mx, my, rects, uni, out, stats, journal) {
@@ -534,6 +513,155 @@ function uniformColor(t) {
     return ((t[0] << 16) | (t[1] << 8) | t[2]) >>> 0;
 }
 
+/* ------------------------------------------------------- PMTiles v3 */
+/* Un seul fichier pour la carte SD (des milliers de petits fichiers s'y
+ * copient très lentement). Spécification : github.com/protomaps/PMTiles,
+ * même disposition que l'écrivain Python officiel : en-tête, répertoire
+ * racine, métadonnées, répertoires feuilles, tuiles (rangées par numéro de
+ * tuile, les tuiles identiques une seule fois). */
+
+function zxyToTileId(z, x, y) {
+    let acc = (4 ** z - 1) / 3;
+    for (let a = z - 1; a >= 0; a--) {
+        const s = 1 << a;
+        const rx = (s & x) ? 1 : 0, ry = (s & y) ? 1 : 0;
+        acc += s * s * ((3 * rx) ^ ry);
+        if (!ry) {
+            if (rx) { x = s - 1 - x; y = s - 1 - y; }
+            const t = x; x = y; y = t;
+        }
+    }
+    return acc;
+}
+
+function varint(arr, n) {
+    while (n >= 128) { arr.push((n % 128) | 128); n = Math.floor(n / 128); }
+    arr.push(n);
+}
+
+function serializeDir(ents) {
+    const b = [];
+    varint(b, ents.length);
+    let last = 0;
+    for (const e of ents) { varint(b, e.id - last); last = e.id; }
+    for (const e of ents) varint(b, e.run);
+    for (const e of ents) varint(b, e.len);
+    ents.forEach((e, i) => {
+        if (i > 0 && e.off === ents[i - 1].off + ents[i - 1].len) varint(b, 0);
+        else varint(b, e.off + 1);
+    });
+    return zlib.gzipSync(Buffer.from(b), { level: 9 });
+}
+
+function buildDirs(ents, maxRoot) {
+    const root = serializeDir(ents);
+    if (root.length < maxRoot) return { root, leaves: Buffer.alloc(0) };
+    for (let leaf = 4096; ; leaf *= 2) {
+        const rootEnts = [], parts = [];
+        let off = 0;
+        for (let i = 0; i < ents.length; i += leaf) {
+            const d = serializeDir(ents.slice(i, i + leaf));
+            rootEnts.push({ id: ents[i].id, off, len: d.length, run: 0 });
+            parts.push(d);
+            off += d.length;
+        }
+        const r = serializeDir(rootEnts);
+        if (r.length < maxRoot) return { root: r, leaves: Buffer.concat(parts) };
+    }
+}
+
+function writePmtiles(o, P, file) {
+    const dir = path.join(o.sortie, 'tiles');
+    const list = [];
+    for (const [z, rects] of P.plan) {
+        const zd = path.join(dir, String(z));
+        if (!fs.existsSync(zd)) continue;
+        for (const xs of fs.readdirSync(zd)) {
+            const x = parseInt(xs, 10);
+            if (!(x >= 0)) continue;
+            for (const ys of fs.readdirSync(path.join(zd, xs))) {
+                const m = /^(\d+)\.png$/.exec(ys);
+                if (!m || !inRects(rects, x, +m[1])) continue;
+                list.push({ z, x, y: +m[1], id: zxyToTileId(z, x, +m[1]) });
+            }
+        }
+    }
+    if (!list.length) die('aucune tuile à mettre dans le fichier');
+    list.sort((a, b) => a.id - b.id);
+
+    const tmp = file + '.donnees';
+    const fd = fs.openSync(tmp, 'w');
+    const seen = new Map(), ents = [];
+    let off = 0;
+    for (const t of list) {
+        const data = fs.readFileSync(path.join(dir, String(t.z), String(t.x), t.y + '.png'));
+        const h = crypto.createHash('sha1').update(data).digest('hex');
+        let at = seen.get(h);
+        if (at === undefined) {
+            fs.writeSync(fd, data, 0, data.length, off);
+            at = off;
+            seen.set(h, at);
+            off += data.length;
+        }
+        const prev = ents[ents.length - 1];
+        if (prev && prev.off === at && prev.id + prev.run === t.id) prev.run++;
+        else ents.push({ id: t.id, off: at, len: data.length, run: 1 });
+    }
+    fs.closeSync(fd);
+
+    const HEADER = 127;
+    const { root, leaves } = buildDirs(ents, 16384 - HEADER);
+    const meta = zlib.gzipSync(Buffer.from(JSON.stringify({
+        name: 'T-Watch Ultra', format: 'png', type: 'baselayer',
+        attribution: '© contributeurs OpenStreetMap, © OpenMapTiles',
+        generator: 'tools/tuiles/generer-tuiles.sh',
+    })), { level: 9 });
+
+    let bb = null;
+    for (const zn of P.zones) {
+        const b = zn.bbox;
+        bb = bb ? [Math.min(bb[0], b[0]), Math.min(bb[1], b[1]), Math.max(bb[2], b[2]), Math.max(bb[3], b[3])] : b.slice();
+    }
+    const det = P.zones.find((zn) => zn.nom !== 'extrait entier') || P.zones[0];
+    const zs = [...P.plan.keys()];
+    const e7 = (v) => Math.round(Math.max(-180, Math.min(180, v)) * 1e7);
+
+    const h = Buffer.alloc(HEADER);
+    h.write('PMTiles', 0, 'ascii');
+    h[7] = 3;
+    let p = 8;
+    const u64 = (v) => { h.writeBigUInt64LE(BigInt(v), p); p += 8; };
+    const rootOff = HEADER, metaOff = rootOff + root.length, leafOff = metaOff + meta.length, dataOff = leafOff + leaves.length;
+    u64(rootOff); u64(root.length);
+    u64(metaOff); u64(meta.length);
+    u64(leafOff); u64(leaves.length);
+    u64(dataOff); u64(off);
+    u64(list.length);                     /* tuiles adressées */
+    u64(ents.length);                     /* entrées */
+    u64(seen.size);                       /* contenus différents */
+    h[p++] = 1;                           /* rangées par numéro */
+    h[p++] = 2;                           /* répertoires : gzip */
+    h[p++] = 1;                           /* tuiles : sans compression (PNG) */
+    h[p++] = 2;                           /* PNG */
+    h[p++] = Math.min(...zs);
+    h[p++] = Math.max(...zs);
+    for (const v of [e7(bb[0]), e7(bb[1]), e7(bb[2]), e7(bb[3])]) { h.writeInt32LE(v, p); p += 4; }
+    h[p++] = det.zooms[0];
+    h.writeInt32LE(e7((det.bbox[0] + det.bbox[2]) / 2), p); p += 4;
+    h.writeInt32LE(e7((det.bbox[1] + det.bbox[3]) / 2), p); p += 4;
+
+    const part = file + '.part';
+    const out = fs.openSync(part, 'w');
+    fs.writeSync(out, Buffer.concat([h, root, meta, leaves]));
+    const src = fs.openSync(tmp, 'r'), buf = Buffer.alloc(4 << 20);
+    for (let n; (n = fs.readSync(src, buf, 0, buf.length, null)) > 0;) fs.writeSync(out, buf, 0, n);
+    fs.closeSync(src);
+    fs.closeSync(out);
+    fs.unlinkSync(tmp);
+    fs.renameSync(part, file);
+    return { tiles: list.length, contents: seen.size, size: fs.statSync(file).size };
+}
+
 /* -------------------------------------------------------------- main */
 
 (async () => {
@@ -547,10 +675,16 @@ function uniformColor(t) {
     const P = makePlan(o, ext);
     const est = estimate(o, P);
     if (o.cmd === 'estimer') process.exit(est.ok ? 0 : 3);
-    if (!est.ok) process.exit(3);
-    if (!o.mbtiles || !fs.existsSync(o.mbtiles)) die('fichier .mbtiles manquant');
-    console.log('');
-    await draw(o, P);
+    if (o.cmd === 'dessiner') {
+        if (!est.ok) process.exit(3);
+        if (!o.mbtiles || !fs.existsSync(o.mbtiles)) die('fichier .mbtiles manquant');
+        console.log('');
+        await draw(o, P);
+    }
+    const file = path.join(o.sortie, 'tiles.pmtiles');
+    process.stdout.write('\nÉcriture du fichier unique tiles.pmtiles… ');
+    const r = writePmtiles(o, P, file);
+    console.log(`${fmtInt(r.tiles)} tuiles (${fmtInt(r.contents)} différentes), ${human(r.size)}.`);
 })().catch((e) => {
     console.error('\nErreur : ' + (e && e.stack || e));
     process.exit(1);

@@ -3,8 +3,8 @@
 #
 # Part d'un extrait OpenStreetMap (.osm.pbf de Geofabrik), fabrique les tuiles
 # vectorielles avec Planetiler, puis les dessine en PNG 256 × 256 avec un style
-# lisible sur la montre : <sortie>/tiles/<z>/<x>/<y>.png, à copier à la racine
-# de la carte SD. Tout tourne dans Docker. Doc : docs/fr/tiles.md
+# lisible sur la montre, rangées dans un seul fichier <sortie>/tiles.pmtiles à
+# copier à la racine de la carte SD. Tout tourne dans Docker. Doc : docs/fr/tiles.md
 set -euo pipefail
 
 PLANETILER_IMAGE="ghcr.io/onthegomap/planetiler:0.10.2"
@@ -30,11 +30,10 @@ Ce qu'on dessine
       (--detail et --bbox peuvent être répétés)
 
 Carte SD et sortie
-  -s, --sd DOSSIER        carte SD montée : lit sa place libre et sa taille de blocs,
-                          puis y copie le dossier tiles à la fin
+  -s, --sd DOSSIER        carte SD montée : lit sa place libre, puis y copie
+                          tiles.pmtiles à la fin
       --taille T          taille de la carte SD sans --sd (défaut : 2G)
-      --bloc B            taille des blocs (clusters) sans --sd (défaut : 32K)
-  -o, --sortie DOSSIER    où écrire le dossier tiles (défaut : ./tuiles-montre)
+  -o, --sortie DOSSIER    où écrire tiles.pmtiles (défaut : ./tuiles-montre)
   -n, --estimer           compter les tuiles et la place, sans rien dessiner
       --forcer            dessiner même si ça ne rentre pas
       --refaire           tout redessiner (sinon on reprend où on s'était arrêté)
@@ -64,7 +63,6 @@ MEMOIRE=""
 STYLE=""
 TRAVAIL="${XDG_CACHE_HOME:-$HOME/.cache}/twatch-tuiles"
 ARGS=()      # options passées telles quelles au dessin
-BLOC_DONNE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -81,7 +79,6 @@ while [ $# -gt 0 ]; do
     -d|--detail) ARGS+=(--detail "${2:?}"); shift ;;
     -b|--bbox) ARGS+=(--bbox "${2:?}"); shift ;;
     --taille) ARGS+=(--taille "${2:?}"); shift ;;
-    --bloc) ARGS+=(--bloc "${2:?}"); BLOC_DONNE=1; shift ;;
     -j|--jobs) ARGS+=(--jobs "${2:?}"); shift ;;
     --couleurs) ARGS+=(--couleurs "${2:?}"); shift ;;
     --forcer) ARGS+=(--forcer) ;;
@@ -109,14 +106,12 @@ if [ -n "$SD" ]; then
     SD="$(cd "$SD" && pwd)"
     [ -w "$SD" ] || die "$SD n'est pas accessible en écriture"
     FS="$(stat -f -c %T "$SD")"
-    CLUSTER="$(stat -f -c %S "$SD")"
-    LIBRE=$(( $(stat -f -c %a "$SD") * CLUSTER ))
-    if [ -d "$SD/tiles" ]; then                 # les anciennes tuiles seront remplacées
-        LIBRE=$(( LIBRE + $(du -s -B1 "$SD/tiles" | cut -f1) ))
+    LIBRE=$(( $(stat -f -c %a "$SD") * $(stat -f -c %S "$SD") ))
+    if [ -f "$SD/tiles.pmtiles" ]; then         # l'ancien fichier sera remplacé
+        LIBRE=$(( LIBRE + $(stat -c %s "$SD/tiles.pmtiles") ))
     fi
-    echo "Carte SD : $SD ($FS, blocs de $(( CLUSTER / 1024 )) Ko, $(( LIBRE / 1048576 )) Mo utilisables)"
+    echo "Carte SD : $SD ($FS, $(( LIBRE / 1048576 )) Mo utilisables)"
     case "$FS" in msdos|vfat|fat*|exfat) ;; *) echo "Attention : la montre lit des cartes FAT, pas $FS." ;; esac
-    [ "$BLOC_DONNE" = 1 ] || ARGS+=(--bloc "$CLUSTER")
     ARGS+=(--libre "$LIBRE")
 fi
 
@@ -200,20 +195,23 @@ fi
 # ------------------------------------------------------------------- dessin
 echo
 dessin dessiner --mbtiles "/travail/$NOM.mbtiles"
-echo "Tuiles prêtes : $SORTIE/tiles"
+echo "Fichier prêt : $SORTIE/tiles.pmtiles"
 
 # ------------------------------------------------------- copie sur la carte
 if [ -n "$SD" ]; then
     echo
-    echo "Copie sur la carte SD ($SD/tiles)…"
+    echo "Copie sur la carte SD ($SD/tiles.pmtiles)…"
+    rm -f "$SD/tiles.pmtiles"          # place libérée avant la copie
     if command -v rsync >/dev/null; then
-        rsync -rt --modify-window=2 --info=progress2 "$SORTIE/tiles/" "$SD/tiles/"
+        rsync --info=progress2 "$SORTIE/tiles.pmtiles" "$SD/tiles.pmtiles.part"
     else
-        mkdir -p "$SD/tiles" && cp -r "$SORTIE/tiles/." "$SD/tiles/"
+        cp "$SORTIE/tiles.pmtiles" "$SD/tiles.pmtiles.part"
     fi
-    echo "Écriture des derniers fichiers…"
+    mv "$SD/tiles.pmtiles.part" "$SD/tiles.pmtiles"
+    echo "Écriture sur la carte…"
     sync
+    [ -d "$SD/tiles" ] && echo "Un ancien dossier tiles/ est sur la carte : la montre préfère tiles.pmtiles, il peut être effacé."
     echo "Fini. Éjecter la carte (umount $SD) avant de la retirer."
 else
-    echo "Copier le dossier tiles à la racine de la carte SD (Réglages › Carte SD › partager avec le PC, ou un lecteur)."
+    echo "Copier tiles.pmtiles à la racine de la carte SD (Réglages › Carte SD › partager avec le PC, ou un lecteur)."
 fi
