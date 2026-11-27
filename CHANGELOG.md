@@ -2,6 +2,16 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.10 — 2026-11-27
+
+- Púca redrawn: full-screen scene (rounded corners included), scenery at full resolution
+  (dithered gradient sky, sun or moon crossing the sky with a halo, stars, soft drifting
+  clouds, mountains, hills, flowery meadow), pixel art scaled ×6 with smoothed, anti-aliased
+  outlines, soft shadow under the pet, 25 frames/s with only moving areas redrawn.
+- Púca ergonomics: four big round buttons (88 px) instead of five small ones (*clean* and
+  *heal* merged into *care*), larger gauges and texts, round back and sound buttons, big
+  left/right buttons in the game, large meal cards.
+
 ## 0.3.0 — 2026-11-26
 
 - Version scheme: the minor number goes up with each new app or major feature, the patch

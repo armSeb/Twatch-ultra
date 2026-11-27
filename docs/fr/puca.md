@@ -12,10 +12,18 @@ et soigner. Sa forme adulte dépend de la façon dont tu t'en occupes.
 
 | Où | Quoi |
 |---|---|
-| En haut | stade et âge (*Bébé · 5 h*, *Cheval · 4 j*), son des effets (toucher le haut-parleur) |
-| Scène | ciel qui suit l'heure et la saison (aube et crépuscule aux vrais lever et coucher du soleil, nuit étoilée), le púca qui se promène, ses crottes ; trèfles en haut à gauche |
+La scène occupe tout l'écran, coins arrondis compris. Le décor est dessiné en pleine
+résolution (ciel en dégradé, montagnes, collines, pré fleuri) et le púca est agrandi ×6 avec
+des contours lissés ; il projette une ombre douce sur l'herbe.
+
+| Où | Quoi |
+|---|---|
+| En haut | bouton retour, stade et âge (*Bébé · 5 h*, *Cheval · 4 j*), son des effets (bouton haut-parleur) |
 | Jauges | satiété (pomme de terre), humeur (cœur), énergie (éclair) |
-| Boutons | **nourrir**, **jouer**, **laver**, **soigner**, **lumière** |
+| Scène | ciel qui suit l'heure et la saison (aube et crépuscule aux vrais lever et coucher du soleil, soleil ou lune qui traversent le ciel, nuit étoilée, nuages), le púca qui se promène, ses crottes ; trèfles en haut à gauche |
+| En bas | quatre gros boutons ronds : **nourrir**, **jouer**, **soins**, **lumière** |
+
+![Œuf, choix du repas, malade](../img/puca-soins.png)
 
 ## Sa vie
 
@@ -40,8 +48,7 @@ calculée d'un coup, par pas de 5 minutes (au plus 7 jours). Aucun coût sur la 
 | **Nourrir › Repas** (pomme de terre) | satiété +35 % ; refusé s'il n'a pas faim. Trois heures plus tard… une crotte |
 | **Nourrir › Gâteau** | humeur +25 %, coûte un **trèfle** ; pas plus de trois en deux heures |
 | **Jouer** : *gauche ou droite ?* | cinq manches : devine de quel côté il va regarder. 3 réussies ou plus : humeur +30 % et **un trèfle**. Fatigue un peu ; impossible s'il est malade ou épuisé |
-| **Laver** | enlève les crottes (le bouton se colore quand il y en a au moins deux) |
-| **Soigner** (potion) | guérit ; le bouton devient violet quand il est malade |
+| **Soins** (eau ou potion) | malade, il le guérit (le bouton devient violet, avec une potion) ; sinon il enlève les crottes (le bouton se colore en brun dès deux crottes) |
 | **Lumière** (lune) | le soir : le coucher ; endormi : éteindre ou rallumer |
 | **Le caresser** (toucher le púca) | petit bond et un cœur |
 

@@ -12,10 +12,18 @@ adult form depends on how you look after it.
 
 | Where | What |
 |---|---|
-| Top | stage and age (*Baby · 5 h*, *Horse · 4 d*), sound effects on/off (tap the speaker) |
-| Scene | sky following the time and season (dawn and dusk at the real sunrise and sunset, starry night), the púca wandering about, its droppings; shamrocks top left |
+The scene fills the whole screen, rounded corners included. The scenery is drawn at full
+resolution (gradient sky, mountains, hills, flowery meadow) and the púca is scaled ×6 with
+smoothed outlines; it casts a soft shadow on the grass.
+
+| Where | What |
+|---|---|
+| Top | back button, stage and age (*Baby · 5 h*, *Horse · 4 d*), sound effects on/off (speaker button) |
 | Gauges | fullness (potato), mood (heart), energy (bolt) |
-| Buttons | **feed**, **play**, **clean**, **heal**, **light** |
+| Scene | sky following the time and season (dawn and dusk at the real sunrise and sunset, sun or moon crossing the sky, starry night, clouds), the púca wandering about, its droppings; shamrocks top left |
+| Bottom | four big round buttons: **feed**, **play**, **care**, **light** |
+
+![Egg, choosing a meal, sick](../img/puca-soins.png)
 
 ## Its life
 
@@ -41,8 +49,7 @@ computed in one go, in 5-minute steps (up to 7 days). No battery cost.
 | **Feed › Meal** (potato) | fullness +35 %; refused when not hungry. Three hours later… a dropping |
 | **Feed › Cake** | mood +25 %, costs one **shamrock**; no more than three in two hours |
 | **Play**: *left or right?* | five rounds: guess which way it will look. 3 or more right: mood +30 % and **one shamrock**. A bit tiring; not when sick or exhausted |
-| **Clean** | removes droppings (the button lights up from two) |
-| **Heal** (potion) | cures it; the button turns purple when it is sick |
+| **Care** (water or potion) | if it is sick, cures it (the button turns purple, with a potion); otherwise removes the droppings (the button turns brown from two) |
 | **Light** (moon) | in the evening: put it to bed; asleep: light off or on |
 | **Pet it** (tap the púca) | little hop and a heart |
 
