@@ -18,6 +18,34 @@ All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 - Bluetooth tile reads "iPhone" when the phone is connected. Wi-Fi tile keeps the network
   name on one line.
 
+## 0.3.13 — 2026-11-27
+
+- Merge of the Púca redesign (0.3.10–0.3.12) with the Now playing work (0.3.1–0.3.3).
+- Púca: the PSRAM cache (scenery, clouds, smoothed sprites, about 1 MB) is freed 5 minutes
+  after leaving the app; reopening within that time stays immediate.
+
+## 0.3.12 — 2026-11-27
+
+- Púca: the eyes and mouth follow the head when the pet breathes.
+- Púca opens faster: the scenery is computed with integer colour mixing, and the scenery,
+  clouds and smoothed sprites stay in PSRAM after the first opening (about 1 MB), so the
+  next openings are immediate.
+
+## 0.3.11 — 2026-11-27
+
+- Púca: no more black streaks or stray pixels behind the moving pet (the app now refreshes
+  full-width bands only, started on the panel's TE).
+- Púca: top buttons, gauges and the bottom row moved in from the rounded corners.
+
+## 0.3.10 — 2026-11-27
+
+- Púca redrawn: full-screen scene (rounded corners included), scenery at full resolution
+  (dithered gradient sky, sun or moon crossing the sky with a halo, stars, soft drifting
+  clouds, mountains, hills, flowery meadow), pixel art scaled ×6 with smoothed, anti-aliased
+  outlines, soft shadow under the pet, 25 frames/s with only moving areas redrawn.
+- Púca ergonomics: four big round buttons (88 px) instead of five small ones (*clean* and
+  *heal* merged into *care*), larger gauges and texts, round back and sound buttons, big
+  left/right buttons in the game, large meal cards.
 ## 0.3.3 — 2026-11-27
 
 - Now playing: the volume bar's touch area reaches 30 px around it (down to the screen's
