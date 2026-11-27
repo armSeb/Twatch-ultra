@@ -2,6 +2,22 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.20 — 2026-11-27
+
+- Control center redesigned: the status line at the top (battery, Bluetooth, gear) is gone,
+  the tiles move up and are slightly shorter, and a third row adds **MeshCore** (red badge
+  with the unread count, refreshed every 2 s while shown; tap opens the app, long press turns
+  it on or off), **Battery** (level icon with the percentage below, tap opens Energy) and
+  **Settings**. The full-width MeshCore pill is removed.
+- Control center: brightness and volume are large sliders like Now playing's volume bar
+  (touch or drag, value shown inside), instead of − / + buttons. Brightness is saved and the
+  volume test beep plays when the finger lifts. Swiping up from a slider closes the center
+  and puts its value back.
+- Control center: it closes only by pushing it back up (or the button); swiping right no
+  longer closes it.
+- Bluetooth tile reads "iPhone" when the phone is connected. Wi-Fi tile keeps the network
+  name on one line.
+
 ## 0.3.3 — 2026-11-27
 
 - Now playing: the volume bar's touch area reaches 30 px around it (down to the screen's
