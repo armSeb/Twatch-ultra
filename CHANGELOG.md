@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.12 — 2026-11-27
+
+- Púca: the eyes and mouth follow the head when the pet breathes.
+- Púca opens faster: the scenery is computed with integer colour mixing, and the scenery,
+  clouds and smoothed sprites stay in PSRAM after the first opening (about 1 MB), so the
+  next openings are immediate.
+
 ## 0.3.11 — 2026-11-27
 
 - Púca: no more black streaks or stray pixels behind the moving pet (the app now refreshes

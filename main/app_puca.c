@@ -364,22 +364,20 @@ static uint32_t s_light_key = 0xFFFFFFFFu;
 static inline uint32_t rgb(uint16_t c) { return (uint32_t)((c >> 11) * 255 / 31) << 16 | ((c >> 5 & 63) * 255 / 63) << 8 | (c & 31) * 255 / 31; }
 static inline uint16_t c565(uint32_t c) { return (uint16_t)((c >> 8 & 0xF800) | (c >> 5 & 0x07E0) | (c >> 3 & 0x001F)); }
 
-static uint32_t mix(uint32_t a, uint32_t b, float t)
-{
-    if (t <= 0) return a;
-    if (t >= 1) return b;
-    int r = (int)(((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t);
-    int g = (int)(((a >> 8) & 255) * (1 - t) + ((b >> 8) & 255) * t);
-    int bl = (int)((a & 255) * (1 - t) + (b & 255) * t);
-    return (uint32_t)(r << 16 | g << 8 | bl);
-}
-
 static inline uint32_t mixi(uint32_t a, uint32_t b, int t /* 0..256 */)
 {
     int r = ((a >> 16 & 255) * (256 - t) + (b >> 16 & 255) * t) >> 8;
     int g = ((a >> 8 & 255) * (256 - t) + (b >> 8 & 255) * t) >> 8;
     int bl = ((a & 255) * (256 - t) + (b & 255) * t) >> 8;
     return (uint32_t)(r << 16 | g << 8 | bl);
+}
+
+/* mélange a → b (t de 0 à 1), en entiers : appelé pour chaque pixel du décor */
+static inline uint32_t mix(uint32_t a, uint32_t b, float t)
+{
+    if (t <= 0) return a;
+    if (t >= 1) return b;
+    return mixi(a, b, (int)(t * 256));
 }
 
 static uint32_t hash(uint32_t x)
@@ -416,8 +414,12 @@ static void base_sprite(const puca_spr_t *s, int sc, int x0, int y0, bool flip)
     }
 }
 
+/* Le relief de jour (et le décor éclairé) est calculé à la première
+ * ouverture puis gardé en PSRAM (~1 Mo, elle en a 8) : les ouvertures
+ * suivantes sont immédiates. */
 static bool make_base(void)
 {
+    if (s_base && s_cov && s_out) return true;
     s_base = ps_alloc((size_t)SW * SH * 2);
     s_cov = ps_alloc((size_t)SW * SH);
     s_out = ps_alloc((size_t)SW * SH * 2);
@@ -709,6 +711,7 @@ static float s_cloud_x[2] = { 30, 230 };
 
 static void make_cloud(int k, int w, int h, uint32_t seed)
 {
+    if (s_cloud_px[k]) return;                 /* gardés d'une ouverture à l'autre */
     uint32_t *px = ps_alloc((size_t)w * h * 4);
     if (!px) return;
     typedef struct { float x, y, r; } blob_t;
@@ -761,12 +764,26 @@ static const puca_body_t *body_of(int stage, int form)
 
 static int body_w(void) { return body_of(m.stage, m.form)->frames[0]->w; }
 
+/* décalage vertical de la tête d'une image de respiration par rapport à la
+ * première : premier pixel plein de la colonne de l'œil (les ancres des
+ * yeux et de la bouche sont données pour la première image) */
+static int head_dy(const puca_body_t *b, int frame)
+{
+    const puca_spr_t *f0 = b->frames[0], *f = b->frames[frame % b->nframes];
+    if (f == f0) return 0;
+    int x = b->ex1 + 1, t0 = 0, t1 = 0;
+    while (t0 < f0->h && !f0->px[t0 * f0->w + x]) t0++;
+    while (t1 < f->h && !f->px[t1 * f->w + x]) t1++;
+    return t1 - t0;
+}
+
 static void put_puca(const puca_body_t *b, int frame, const puca_spr_t *eye, const puca_spr_t *mouth,
                      float x, float y, bool flip, bool white)
 {
     const puca_spr_t *f = b->frames[frame % b->nframes];
     put(SL_BODY, f, x, y, flip, white);
     if (white) return;
+    y += head_dy(b, frame);                    /* yeux et bouche suivent la tête */
     int w = f->w;
 #define FX(px, gw) (flip ? w - (px) - (gw) : (px))
     if (eye) {
@@ -1387,7 +1404,6 @@ static void create(lv_obj_t *scr)
     a_kind = A_IDLE;
     memset(s_part, 0, sizeof s_part);
     memset(s_so, 0, sizeof s_so);
-    s_light_key = 0xFFFFFFFFu;
     s_sh_x = -1000;
 
     /* tout l'écran, coins compris */
@@ -1622,7 +1638,12 @@ static void create(lv_obj_t *scr)
     hide(v_flash);
 
     p_x = p_tx = (LW - (alive() ? body_w() : 14)) / 2; p_dir = 1; p_jump = 0;
-    relight(true);
+    relight(false);                            /* décor gardé : recalculé seulement si l'heure l'exige */
+    for (int i = 0; i < 2; i++) if (v_cloud[i]) {    /* nuages : teinte et visibilité du moment */
+        lv_obj_set_style_image_recolor(v_cloud[i], s_tint, 0);
+        lv_obj_set_style_image_recolor_opa(v_cloud[i], s_tint_opa, 0);
+        show(v_cloud[i], !s_li.night);
+    }
     refresh_ui();
     render();
 }
@@ -1632,11 +1653,9 @@ static void destroy(void)
     if (v_tmr) { lv_timer_delete(v_tmr); v_tmr = NULL; }
     wide_inval(false);
     save();
-    heap_caps_free(s_base); heap_caps_free(s_cov); heap_caps_free(s_out);
-    s_base = NULL; s_cov = NULL; s_out = NULL;
-    for (int i = 0; i < 2; i++) { heap_caps_free(s_cloud_px[i]); s_cloud_px[i] = NULL; v_cloud[i] = NULL; }
-    for (int i = 0; i < s_nimg; i++) heap_caps_free(s_img[i].px);
-    s_nimg = 0;
+    /* décor, nuages et dessins lissés restent en PSRAM pour la prochaine
+     * ouverture (calculés une seule fois par démarrage) */
+    for (int i = 0; i < 2; i++) v_cloud[i] = NULL;
     memset(s_so, 0, sizeof s_so);
     v_root = v_bg = v_msg = v_hint = v_stage = v_spk = v_spk_lbl = v_clov = v_clov_lbl = NULL;
     v_btnrow = v_gamerow = v_feed = v_gone = v_noclock = v_light_img = v_care_img = NULL;
