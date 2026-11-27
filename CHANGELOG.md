@@ -2,6 +2,13 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.4.5 — 2026-11-27
+
+- About 18 KB more internal RAM, all the time: the Wi-Fi driver's code stays in flash instead
+  of IRAM (on the ESP32-S3, IRAM and internal data RAM are the same memory). Wi-Fi
+  throughput is a little lower.
+- Wi-Fi receive buffers capped at 16 (each takes 1.6 KB of internal RAM while in use).
+
 ## 0.4.4 — 2026-11-27
 
 - Maps: ➤ centres on the last known position and no longer turns the GPS on (the GPS app

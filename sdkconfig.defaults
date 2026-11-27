@@ -141,7 +141,13 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 # ---------- Wi-Fi (mise à jour, WebRX, Radio, analyseur) ----------
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
-CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=24
+# 16 au plus : chaque tampon reçu (1,6 Ko) est pris en RAM interne
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+# Code Wi-Fi en flash plutôt qu'en IRAM : sur l'ESP32-S3, l'IRAM et la RAM
+# interne sont la même mémoire. ~27 Ko de tas interne rendus en permanence,
+# pour un débit Wi-Fi un peu plus bas (sans gêne pour WebRX, Radio, OTA).
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
 # TX : tampons statiques, placés en PSRAM (SPIRAM_TRY_ALLOCATE_WIFI_LWIP)
 CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
 CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
