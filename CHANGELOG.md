@@ -2,6 +2,16 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.1 — 2026-11-27
+
+- Now playing: the volume is a wide bar you touch or drag with a finger (like the iPhone)
+  instead of the small − / + buttons; the watch sends the iPhone's volume steps one by one
+  until the bar's level is reached (AMS has no direct volume setting). Bigger previous /
+  play / next buttons, larger title and artist, album line removed.
+- Now playing stays open while music plays (or was paused less than 10 minutes ago): the
+  screen timing out or the button switches the screen off on it, and waking the watch comes
+  straight back to it. A notification opened from it returns to it.
+
 ## 0.3.0 — 2026-11-26
 
 - Version scheme: the minor number goes up with each new app or major feature, the patch

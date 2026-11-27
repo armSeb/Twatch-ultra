@@ -2696,10 +2696,22 @@ static void build_about(void)
 /* ------------------------------------------------------------------ */
 /* Lecture en cours (AMS)                                               */
 /* ------------------------------------------------------------------ */
-static lv_obj_t *mu_box, *mu_empty, *mu_player, *mu_title, *mu_artist, *mu_album;
+static lv_obj_t *mu_box, *mu_empty, *mu_player, *mu_title, *mu_artist;
 static lv_obj_t *mu_bar, *mu_pos, *mu_dur, *mu_play_lbl, *mu_vol;
-static lv_obj_t *mu_btn[5];          /* prev, play, next, vol-, vol+ */
+static lv_obj_t *mu_btn[3];          /* prev, play, next */
 static uint32_t mu_seq = UINT32_MAX;
+
+/* Lecture « active » : en cours, ou mise en pause il y a moins de 10 min.
+ * L'écran Lecture reste alors ouvert à l'extinction et revient au réveil. */
+#define MEDIA_KEEP_US (10LL * 60 * 1000000)
+static bool media_keep(void)
+{
+    media_info_t m;
+    media_get(&m);
+    if (!m.available || !(m.title[0] || m.player[0])) return false;
+    if (m.state == MEDIA_PLAYING || m.state == MEDIA_FFWD || m.state == MEDIA_REWINDING) return true;
+    return m.played_at_us && esp_timer_get_time() - m.played_at_us < MEDIA_KEEP_US;
+}
 
 static void fmt_mmss(char *b, size_t n, float sec)
 {
@@ -2719,6 +2731,14 @@ static void set_clean_text(lv_obj_t *l, const char *src)
 static void media_btn_cb(lv_event_t *ev)
 {
     media_command((uint8_t)(uintptr_t)lv_event_get_user_data(ev));
+}
+
+/* curseur de volume : le doigt fixe la cible, la montre envoie les crans
+ * à l'iPhone pendant le glissement (media_set_volume) */
+static void media_vol_cb(lv_event_t *ev)
+{
+    media_set_volume(lv_slider_get_value(mu_vol) / 100.0f);
+    if (lv_event_get_code(ev) == LV_EVENT_RELEASED) lv_display_trigger_activity(NULL);
 }
 
 static void media_refresh(bool full)
@@ -2745,29 +2765,31 @@ static void media_refresh(bool full)
         snprintf(pl2, sizeof(pl2), LV_SYMBOL_AUDIO "  %s", pl);
         emoji_label_set_text(mu_player, pl2);
         set_clean_text(mu_title, m.title[0] ? m.title : "—");
-        set_clean_text(mu_artist, m.artist);
-        set_clean_text(mu_album, m.album);
+        set_clean_text(mu_artist, m.artist[0] ? m.artist : m.album);
         bool playing = m.state == MEDIA_PLAYING || m.state == MEDIA_FFWD || m.state == MEDIA_REWINDING;
         lv_label_set_text(mu_play_lbl, playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
         if (m.duration_s > 0) fmt_mmss(b, sizeof(b), m.duration_s);
         else b[0] = 0;
         lv_label_set_text(mu_dur, b);
-        if (m.volume >= 0) {
-            lv_obj_remove_flag(mu_vol, LV_OBJ_FLAG_HIDDEN);
-            lv_bar_set_value(mu_vol, (int32_t)(m.volume * 100 + 0.5f), LV_ANIM_OFF);
-        } else {
-            lv_obj_add_flag(mu_vol, LV_OBJ_FLAG_HIDDEN);
-        }
         /* commandes annoncées par l'app (liste vide = inconnue : tout permis) */
-        static const uint8_t ids[5] = { MEDIA_CMD_PREV, MEDIA_CMD_TOGGLE, MEDIA_CMD_NEXT,
-                                        MEDIA_CMD_VOL_DOWN, MEDIA_CMD_VOL_UP };
-        for (int i = 0; i < 5; i++) {
+        static const uint8_t ids[3] = { MEDIA_CMD_PREV, MEDIA_CMD_TOGGLE, MEDIA_CMD_NEXT };
+        for (int i = 0; i < 3; i++) {
             bool ok = !m.cmds || (m.cmds & (1u << ids[i])) ||
                       (ids[i] == MEDIA_CMD_TOGGLE && (m.cmds & ((1u << MEDIA_CMD_PLAY) | (1u << MEDIA_CMD_PAUSE))));
             if (ok) lv_obj_remove_state(mu_btn[i], LV_STATE_DISABLED);
             else lv_obj_add_state(mu_btn[i], LV_STATE_DISABLED);
         }
+        bool vol_ok = !m.cmds || (m.cmds & ((1u << MEDIA_CMD_VOL_UP) | (1u << MEDIA_CMD_VOL_DOWN)));
+        if (m.volume >= 0 && vol_ok) lv_obj_remove_flag(mu_vol, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(mu_vol, LV_OBJ_FLAG_HIDDEN);
         mu_seq = m.seq;
+    }
+    /* le curseur suit l'iPhone, sauf sous le doigt ou pendant qu'il rattrape
+     * la cible (sinon il reculerait cran par cran) */
+    if (m.volume >= 0 && !lv_obj_has_state(mu_vol, LV_STATE_PRESSED)) {
+        float t = media_volume_target();
+        int32_t v = (int32_t)((t >= 0 ? t : m.volume) * 100 + 0.5f);
+        if (v != lv_slider_get_value(mu_vol)) lv_slider_set_value(mu_vol, v, LV_ANIM_ON);
     }
     float pos = media_position_s(&m);
     fmt_mmss(b, sizeof(b), pos);
@@ -2778,7 +2800,7 @@ static void media_refresh(bool full)
 static void media_timer_cb(lv_timer_t *t) { media_refresh(false); }
 
 static lv_obj_t *media_button(lv_obj_t *p, const char *sym, int size, lv_color_t bg, uint8_t cmd,
-                              const lv_font_t *font, lv_obj_t **lbl_out)
+                              lv_obj_t **lbl_out)
 {
     lv_obj_t *b = lv_button_create(p);
     lv_obj_set_size(b, size, size);
@@ -2787,14 +2809,18 @@ static lv_obj_t *media_button(lv_obj_t *p, const char *sym, int size, lv_color_t
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_40, LV_STATE_DISABLED);
     lv_obj_add_event_cb(b, media_btn_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)cmd);
-    lv_obj_set_ext_click_area(b, S(6));
+    lv_obj_set_ext_click_area(b, S(8));
     bubble(b);
-    lv_obj_t *l = mk_label(b, font, C_FG, sym);
+    lv_obj_t *l = mk_label(b, &font_title, C_FG, sym);
     lv_obj_center(l);
     if (lbl_out) *lbl_out = l;
     return b;
 }
 
+/* Disposition (zone utile 360 × 442) : appli, titre sur 2 lignes, artiste,
+ * progression, 3 grosses touches, puis le volume en large barre à glisser
+ * comme sur l'iPhone. Plus d'album ni de petits boutons − / +. */
+#define MU_VOL_H S(46)
 static void build_media(void)
 {
     lv_obj_t *s = s_scr[SCR_MEDIA] = mk_screen();
@@ -2813,60 +2839,66 @@ static void build_media(void)
     lv_label_set_long_mode(mu_player, LV_LABEL_LONG_DOT);
     lv_obj_set_width(mu_player, S(200));
     lv_obj_set_style_text_align(mu_player, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(mu_player, LV_ALIGN_TOP_MID, 0, S(6));
+    lv_obj_align(mu_player, LV_ALIGN_TOP_MID, 0, 0);
 
     mu_title = mk_label(mu_box, &font_title, C_FG, "");
     lv_label_set_long_mode(mu_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_size(mu_title, S(216), 2 * lv_font_get_line_height(&font_title));
+    lv_obj_set_size(mu_title, UI_W, 2 * lv_font_get_line_height(&font_title));
     lv_obj_set_style_text_align(mu_title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(mu_title, LV_ALIGN_TOP_MID, 0, S(28));
+    lv_obj_align(mu_title, LV_ALIGN_TOP_MID, 0, S(24));
 
     mu_artist = mk_label(mu_box, &font_text, C_ACC, "");
     lv_label_set_long_mode(mu_artist, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(mu_artist, S(216));
+    lv_obj_set_width(mu_artist, UI_W);
     lv_obj_set_style_text_align(mu_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(mu_artist, LV_ALIGN_TOP_MID, 0, S(80));
 
-    mu_album = mk_label(mu_box, &font_small, C_DIM, "");
-    lv_label_set_long_mode(mu_album, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(mu_album, S(216));
-    lv_obj_set_style_text_align(mu_album, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(mu_album, LV_ALIGN_TOP_MID, 0, S(101));
-
     mu_bar = lv_bar_create(mu_box);
-    lv_obj_set_size(mu_bar, S(200), S(5));
-    lv_obj_align(mu_bar, LV_ALIGN_TOP_MID, 0, S(122));
+    lv_obj_set_size(mu_bar, S(210), S(5));
+    lv_obj_align(mu_bar, LV_ALIGN_TOP_MID, 0, S(111));
     lv_bar_set_range(mu_bar, 0, 1000);
     lv_obj_set_style_bg_color(mu_bar, C_OFF, LV_PART_MAIN);
     lv_obj_set_style_bg_color(mu_bar, C_FG, LV_PART_INDICATOR);
     bubble(mu_bar);
     mu_pos = mk_label(mu_box, &font_small, C_DIM, "");
-    lv_obj_align(mu_pos, LV_ALIGN_TOP_LEFT, S(20), S(130));
+    lv_obj_align(mu_pos, LV_ALIGN_TOP_LEFT, S(15), S(118));
     mu_dur = mk_label(mu_box, &font_small, C_DIM, "");
-    lv_obj_align(mu_dur, LV_ALIGN_TOP_RIGHT, -S(20), S(130));
+    lv_obj_align(mu_dur, LV_ALIGN_TOP_RIGHT, -S(15), S(118));
 
-    mu_btn[1] = media_button(mu_box, LV_SYMBOL_PLAY, S(62), C_ACC, MEDIA_CMD_TOGGLE, &font_title, &mu_play_lbl);
-    lv_obj_align(mu_btn[1], LV_ALIGN_TOP_MID, 0, S(148));
-    mu_btn[0] = media_button(mu_box, LV_SYMBOL_PREV, S(48), C_CARD, MEDIA_CMD_PREV, &font_text, NULL);
-    lv_obj_align(mu_btn[0], LV_ALIGN_TOP_MID, -S(70), S(155));
-    mu_btn[2] = media_button(mu_box, LV_SYMBOL_NEXT, S(48), C_CARD, MEDIA_CMD_NEXT, &font_text, NULL);
-    lv_obj_align(mu_btn[2], LV_ALIGN_TOP_MID, S(70), S(155));
+    mu_btn[1] = media_button(mu_box, LV_SYMBOL_PLAY, S(68), C_ACC, MEDIA_CMD_TOGGLE, &mu_play_lbl);
+    lv_obj_align(mu_btn[1], LV_ALIGN_TOP_MID, 0, S(142));
+    mu_btn[0] = media_button(mu_box, LV_SYMBOL_PREV, S(54), C_CARD, MEDIA_CMD_PREV, NULL);
+    lv_obj_align(mu_btn[0], LV_ALIGN_TOP_MID, -S(80), S(149));
+    mu_btn[2] = media_button(mu_box, LV_SYMBOL_NEXT, S(54), C_CARD, MEDIA_CMD_NEXT, NULL);
+    lv_obj_align(mu_btn[2], LV_ALIGN_TOP_MID, S(80), S(149));
 
-    mu_btn[3] = media_button(mu_box, LV_SYMBOL_VOLUME_MID, S(30), C_CARD, MEDIA_CMD_VOL_DOWN, &font_small, NULL);
-    lv_obj_align(mu_btn[3], LV_ALIGN_BOTTOM_LEFT, S(22), -S(4));
-    lv_obj_t *l3 = lv_obj_get_child(mu_btn[3], 0);
-    lv_obj_set_style_text_font(l3, &font_text, 0);
-    lv_label_set_text(l3, "-");
-    mu_btn[4] = media_button(mu_box, LV_SYMBOL_VOLUME_MAX, S(30), C_CARD, MEDIA_CMD_VOL_UP, &font_text, NULL);
-    lv_obj_align(mu_btn[4], LV_ALIGN_BOTTOM_RIGHT, -S(22), -S(4));
-    lv_label_set_text(lv_obj_get_child(mu_btn[4], 0), "+");
-    mu_vol = lv_bar_create(mu_box);
-    lv_obj_set_size(mu_vol, S(110), S(4));
-    lv_obj_align(mu_vol, LV_ALIGN_BOTTOM_MID, 0, -S(17));
-    lv_bar_set_range(mu_vol, 0, 100);
-    lv_obj_set_style_bg_color(mu_vol, C_OFF, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(mu_vol, C_DIM, LV_PART_INDICATOR);
-    bubble(mu_vol);
+    /* Volume : barre épaisse sans bouton rond, remplie jusqu'au niveau ; on
+     * la touche ou on y glisse le doigt n'importe où. Pas de « bubble » :
+     * le glissement horizontal reste au curseur, pas au geste « retour ». */
+    mu_vol = lv_slider_create(mu_box);
+    lv_obj_set_size(mu_vol, UI_W, MU_VOL_H);
+    lv_obj_align(mu_vol, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_slider_set_range(mu_vol, 0, 100);
+    lv_obj_set_style_radius(mu_vol, MU_VOL_H / 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(mu_vol, MU_VOL_H / 2, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(mu_vol, C_CARD, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(mu_vol, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(mu_vol, C_ACC, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(mu_vol, lv_color_hex(0x60A5FA), LV_PART_INDICATOR | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(mu_vol, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(mu_vol, 0, LV_PART_KNOB);
+    lv_obj_set_style_shadow_width(mu_vol, 0, LV_PART_KNOB);
+    lv_obj_set_style_outline_width(mu_vol, 0, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_anim_duration(mu_vol, 150, 0);
+    lv_obj_set_ext_click_area(mu_vol, S(10));
+    lv_obj_add_event_cb(mu_vol, media_vol_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(mu_vol, media_vol_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_t *vl = mk_label(mu_vol, &font_text, C_FG, LV_SYMBOL_VOLUME_MID);
+    lv_obj_remove_flag(vl, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(vl, LV_ALIGN_LEFT_MID, S(14), 0);
+    lv_obj_t *vr = mk_label(mu_vol, &font_text, C_FG, LV_SYMBOL_VOLUME_MAX);
+    lv_obj_remove_flag(vr, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(vr, LV_ALIGN_RIGHT_MID, -S(14), 0);
 
     mu_timer = lv_timer_create(media_timer_cb, 1000, NULL);
     lv_timer_pause(mu_timer);
@@ -3520,6 +3552,7 @@ void app_open_settings_page(const app_t *a, int page)
  * l'écran au lieu de revenir au cadran, et l'app continue */
 bool ui_button_sleeps(void)
 {
+    if (s_cur == SCR_MEDIA) return media_keep();       /* musique en cours : on garde Lecture */
     if (s_cur != SCR_APP || !s_app_cur) return false;
     if (s_app_cur->background && s_app_cur->background()) return true;
     return s_app_cur->keep_screen_on && s_app_cur->keep_screen_on();
@@ -3625,7 +3658,7 @@ static void release_media(void)
     if (mu_timer) { lv_timer_delete(mu_timer); mu_timer = NULL; }
     scr_delete(s_scr[SCR_MEDIA]);
     s_scr[SCR_MEDIA] = NULL;
-    mu_box = mu_empty = mu_player = mu_title = mu_artist = mu_album = NULL;
+    mu_box = mu_empty = mu_player = mu_title = mu_artist = NULL;
     mu_bar = mu_pos = mu_dur = mu_play_lbl = mu_vol = NULL;
     memset(mu_btn, 0, sizeof(mu_btn));
     mu_seq = UINT32_MAX;
@@ -3663,6 +3696,14 @@ void ui_go_home_or_app(void)
 {
     q_sheet_close();
     if (s_cur == SCR_APP) return;
+    /* musique en cours (ou en pause depuis peu) : l'écran Lecture reste
+     * ouvert pour régler le volume ou changer de morceau dès le réveil */
+    if (s_cur == SCR_MEDIA && media_keep()) return;
+    if (s_scr[SCR_MEDIA] && ((s_cur == SCR_DETAIL && d_return == SCR_MEDIA) ||
+                             (s_cur == SCR_CALL && c_return == SCR_MEDIA)) && media_keep()) {
+        show(SCR_MEDIA, LV_SCR_LOAD_ANIM_NONE);
+        return;
+    }
     if (s_cur == SCR_QUICK && menu_parent(SCR_QUICK) == SCR_APP && s_scr[SCR_APP] && s_app_cur) {
         show(SCR_APP, LV_SCR_LOAD_ANIM_NONE);         /* centre de contrôle tiré depuis l'app */
         return;
@@ -3722,6 +3763,7 @@ void ui_on_wake(void)
         face_bake_flush();               /* aiguilles à l'heure dès la première image */
     }
     if (s_cur == SCR_POWER) power_refresh();
+    if (s_cur == SCR_MEDIA && s_scr[SCR_MEDIA]) media_refresh(true);
 }
 
 bool ui_on_notif(notif_entry_t *e, bool alert)
@@ -3784,7 +3826,7 @@ bool ui_open_pending(void)
     notif_entry_t *e = ns_find_hash(s_pending_hash);
     s_pending_hash = 0;
     if (!e) return false;              /* supprimée entre-temps sur l'iPhone */
-    d_return = s_cur == SCR_APP ? SCR_APP : SCR_WATCH;   /* puis retour à l'app en cours */
+    d_return = (s_cur == SCR_APP || (s_cur == SCR_MEDIA && s_scr[SCR_MEDIA])) ? s_cur : SCR_WATCH;   /* puis retour à l'app ou à Lecture */
     detail_fill(e);
     show(SCR_DETAIL, LV_SCR_LOAD_ANIM_NONE);
     return true;
