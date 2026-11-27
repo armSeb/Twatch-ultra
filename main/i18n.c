@@ -442,7 +442,6 @@ static const tr_t EN[] = {
     { "Trop fatigué pour jouer", "Too tired to play" },
     { "Malade : soigne-le d'abord", "Sick: heal it first" },
     { "Gauche ou droite ?", "Left or right?" },
-    { "Tout est propre", "All clean" },
     { "Il va très bien", "It's perfectly fine" },
     { "Trop tôt pour dormir", "Too early for bed" },
     { "Œuf", "Egg" },
