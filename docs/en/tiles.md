@@ -35,7 +35,7 @@ tools/tuiles/generer-tuiles.sh --region europe/belgium --zooms 0-14
 Steps: download the extract (only when newer, MD5-checked, cached in `~/.cache/twatch-tuiles`);
 **estimate** tiles and SD space, stopping if it doesn't fit (`--forcer` overrides); build
 vector tiles once with [Planetiler](https://github.com/onthegomap/planetiler) (OpenMapTiles
-schema, 15–30 min for France); **draw** 256 × 256 palette PNGs into `./tuiles-montre/tiles`
+schema, 30 min to over an hour for France depending on cores); **draw** 256 × 256 palette PNGs into `./tuiles-montre/tiles`
 (MapLibre Native); with `--sd`, copy and `sync`. Run the same command again to resume after an
 interruption; `--refaire` redraws everything. `--help` lists every option.
 

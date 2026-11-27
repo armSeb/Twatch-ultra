@@ -49,7 +49,7 @@ Ce qui se passe :
 2. **Estimation** : nombre de tuiles par niveau et place sur la carte SD. Si ça ne rentre pas,
    le script s'arrête là et dit quoi réduire (`--forcer` pour passer outre).
 3. **Tuiles vectorielles** avec [Planetiler](https://github.com/onthegomap/planetiler) (schéma
-   OpenMapTiles), une seule fois par extrait : 15 à 30 min pour la France sur un PC récent.
+   OpenMapTiles), une seule fois par extrait : de 30 min (8 cœurs) à plus d'une heure (4 cœurs) pour la France.
    Le premier lancement télécharge aussi le trait de côte et Natural Earth (≈ 1,3 Go, gardés).
 4. **Dessin** des tuiles PNG 256 × 256 dans `./tuiles-montre/tiles` (MapLibre Native, palette
    de 128 couleurs). La progression et le temps restant s'affichent. Compter de l'ordre d'une
