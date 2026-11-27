@@ -2,6 +2,16 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.2 — 2026-11-27
+
+- Now playing: dragging along the volume bar no longer triggers the "back" swipe (LVGL passes
+  gestures up to the screen by default).
+- Now playing: while it is on screen, the Bluetooth link switches to its fast setting
+  (15-30 ms, like with the MeshCore app) so volume steps follow the finger; it goes back to
+  the economical link when the screen goes off or another screen opens.
+- Now playing: the volume bar is narrower and higher (340 × 64 px) so its rounded ends stay
+  inside the screen's rounded corners.
+
 ## 0.3.1 — 2026-11-27
 
 - Now playing: the volume is a wide bar you touch or drag with a finger (like the iPhone)

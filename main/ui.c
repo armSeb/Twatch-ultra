@@ -354,6 +354,7 @@ static void show(scr_id_t id, lv_screen_load_anim_t anim)
     else lv_timer_pause(p_timer);
     if (id == SCR_MEDIA) { media_refresh(true); lv_timer_resume(mu_timer); }
     else if (mu_timer) lv_timer_pause(mu_timer);
+    ble_set_ui_fast(id == SCR_MEDIA);   /* Lecture affichée : lien rapide, le volume suit le doigt */
     if (id == SCR_ABOUT) about_refresh();
     if (id == SCR_MENU) menu_refresh_summaries();
     if (id == SCR_SET_BT) { menu_bt_refresh(); lv_obj_add_flag(m_confirm, LV_OBJ_FLAG_HIDDEN); }
@@ -2820,7 +2821,12 @@ static lv_obj_t *media_button(lv_obj_t *p, const char *sym, int size, lv_color_t
 /* Disposition (zone utile 360 × 442) : appli, titre sur 2 lignes, artiste,
  * progression, 3 grosses touches, puis le volume en large barre à glisser
  * comme sur l'iPhone. Plus d'album ni de petits boutons − / +. */
-#define MU_VOL_H S(46)
+/* barre de volume : 340 × 64 px, bas à 460 px. Ses bouts arrondis restent
+ * à ~14 px du bord visible de la dalle (coins de rayon 118, comme le filet
+ * du cadran pub) ; plus large ou plus basse, elle mordait sur l'arrondi. */
+#define MU_VOL_H 64
+#define MU_VOL_W 340
+#define MU_VOL_DY (-12)
 static void build_media(void)
 {
     lv_obj_t *s = s_scr[SCR_MEDIA] = mk_screen();
@@ -2873,11 +2879,13 @@ static void build_media(void)
     lv_obj_align(mu_btn[2], LV_ALIGN_TOP_MID, S(80), S(149));
 
     /* Volume : barre épaisse sans bouton rond, remplie jusqu'au niveau ; on
-     * la touche ou on y glisse le doigt n'importe où. Pas de « bubble » :
-     * le glissement horizontal reste au curseur, pas au geste « retour ». */
+     * la touche ou on y glisse le doigt n'importe où. */
     mu_vol = lv_slider_create(mu_box);
-    lv_obj_set_size(mu_vol, UI_W, MU_VOL_H);
-    lv_obj_align(mu_vol, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(mu_vol, MU_VOL_W, MU_VOL_H);
+    lv_obj_align(mu_vol, LV_ALIGN_BOTTOM_MID, 0, MU_VOL_DY);
+    /* LVGL fait remonter les gestes de tout objet au parent par défaut :
+     * glisser sur la barre déclenchait le « retour » de l'écran */
+    lv_obj_remove_flag(mu_vol, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_slider_set_range(mu_vol, 0, 100);
     lv_obj_set_style_radius(mu_vol, MU_VOL_H / 2, LV_PART_MAIN);
     lv_obj_set_style_radius(mu_vol, MU_VOL_H / 2, LV_PART_INDICATOR);
@@ -3679,6 +3687,7 @@ static void release_group(int g)
 void ui_release_idle(void)
 {
     banner_hide(false);
+    ble_set_ui_fast(false);              /* écran éteint : retour au lien économe */
     /* l'app reste construite écran éteint : on lui dit qu'elle n'est plus
      * visible (Wi-Fi, timers d'affichage…) ; ui_on_wake() la réveille */
     if (s_cur == SCR_APP && s_app_cur && s_app_cur->on_hide) s_app_cur->on_hide();
@@ -3763,7 +3772,7 @@ void ui_on_wake(void)
         face_bake_flush();               /* aiguilles à l'heure dès la première image */
     }
     if (s_cur == SCR_POWER) power_refresh();
-    if (s_cur == SCR_MEDIA && s_scr[SCR_MEDIA]) media_refresh(true);
+    if (s_cur == SCR_MEDIA && s_scr[SCR_MEDIA]) { media_refresh(true); ble_set_ui_fast(true); }
 }
 
 bool ui_on_notif(notif_entry_t *e, bool alert)
