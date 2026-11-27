@@ -14,10 +14,10 @@ position (arrow pointing where you walk) and the MeshCore nodes that advertise t
 
 | Where | Action |
 |---|---|
-| Drag | moves the map (with momentum); stops following your position |
+| Drag | moves the map, which stops as soon as you let go; stops following your position |
 | Pinch, or double tap | zoom in / out around the fingers |
 | **−** / **+** | zoom out / in (greyed at the limit) |
-| **➤** (bottom centre) | centres on you and follows your position (blue: following). Turns the GPS on if it is off |
+| **➤** (bottom centre) | centres on your last known position and follows it (blue: following). It does not turn the GPS on: the position is updated from the GPS app |
 | Tap a node | its name, distance and age of its advert |
 | **‹** or the watch button | back (swiping right moves the map) |
 
@@ -28,8 +28,8 @@ position (arrow pointing where you walk) and the MeshCore nodes that advertise t
 - **Scale** at the top centre.
 - On first open the map centres on your position, else MeshCore's, else the middle of the
   tiles found. It then keeps its view until a reboot.
-- You can zoom **two levels past** the most detailed one on the card: the tile is enlarged.
-  A missing tile is replaced by an enlarged piece of a wider level (up to 4 levels), so an
+- You can zoom **three levels past** the most detailed one on the card: the tile is enlarged.
+  A missing tile is replaced by an enlarged piece of a wider level (up to 8 levels), so an
   incomplete map stays readable.
 
 ## Preparing the SD card

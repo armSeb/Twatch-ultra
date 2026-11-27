@@ -21,7 +21,7 @@
 
 #define MT_TILE      256
 #define MT_ZMAX      20
-#define MT_UPSCALE   4                 /* niveaux d'agrandissement au plus */
+#define MT_UPSCALE   8                 /* niveaux d'agrandissement au plus */
 
 typedef enum {
     MT_SCANNING,        /* recherche des niveaux sur la carte SD */

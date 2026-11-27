@@ -32,6 +32,7 @@
 #include "app.h"
 #include "ui_kit.h"
 #include "src/misc/lv_area_private.h"
+#include "src/draw/lv_draw_private.h"    /* état des tâches de dessin */
 #include "i18n.h"
 #include "gnss.h"
 #include "maptiles.h"
@@ -49,7 +50,7 @@
 #define LBL_MAX     40                 /* étiquettes posées sans chevauchement */
 #define BTN         S(50)
 #define DEF_ZOOM    15
-#define OVERZOOM    2                  /* niveaux au-delà du plus détaillé présent */
+#define OVERZOOM    3                  /* niveaux au-delà du plus détaillé présent */
 #define C_MAPBG     lv_color_hex(0x15171B)
 #define C_HOLE      lv_color_hex(0x24272D)
 #define C_ME        lv_color_hex(0x2F7BF6)
@@ -74,7 +75,7 @@ static bool s_follow = true;
 
 /* ---- vue ---- */
 static lv_obj_t *v_map, *v_msg, *v_loc, *v_zin, *v_zout, *v_attr;
-static lv_timer_t *v_tick, *v_poll, *v_fling;
+static lv_timer_t *v_tick, *v_poll;
 EXT_RAM_BSS_ATTR static node_t s_node[NODE_MAX];
 EXT_RAM_BSS_ATTR static mc_node_pos_t s_npos[NODE_MAX];
 EXT_RAM_BSS_ATTR static gnss_info_t s_gi;
@@ -91,7 +92,6 @@ static float s_me_acc_m, s_me_course;
 static bool s_down, s_moved, s_pinch;
 static int s_pinch_d0;
 static int32_t s_drag;
-static float s_vx, s_vy;
 static int64_t s_t_down, s_t_tap;
 static lv_point_t s_p_tap;
 
@@ -339,8 +339,107 @@ static bool draw_stand_in(lv_layer_t *layer, const lv_area_t *cell, int z, int t
     return false;
 }
 
+static inline void fill16(uint16_t *d, uint16_t c, int n)
+{
+    if (n > 0 && ((uintptr_t)d & 2)) { *d++ = c; n--; }
+    uint32_t c2 = c | ((uint32_t)c << 16);
+    uint32_t *d32 = (uint32_t *)d;
+    for (int i = n >> 1; i > 0; i--) *d32++ = c2;
+    if (n & 1) d[n - 1] = c;
+}
+
+#define STAND_UP    3                  /* niveaux plus larges essayés en attendant */
+
+/* Écriture directe dans la bande en cours : une copie de lignes par tuile au
+ * lieu d'une tâche de dessin LVGL par tuile et par bande (avec mise à
+ * l'échelle pixel par pixel pour les remplaçantes). Possible quand tout ce
+ * qui est déjà demandé dans la bande est dessiné ; false sinon. */
+static bool draw_tiles_direct(lv_layer_t *layer, const lv_area_t *co)
+{
+    lv_draw_buf_t *db = layer->draw_buf;
+    if (!db || layer->color_format != LV_COLOR_FORMAT_RGB565 || db->header.cf != LV_COLOR_FORMAT_RGB565) return false;
+    for (lv_draw_task_t *t = layer->draw_task_head; t; t = t->next)
+        if (t->state != LV_DRAW_TASK_STATE_READY) return false;
+    lv_area_t a, c0;
+    if (!lv_area_intersect(&c0, &layer->_clip_area, co) || !lv_area_intersect(&a, &c0, &layer->buf_area)) return true;
+
+    const uint16_t c_hole = lv_color_to_u16(C_HOLE), c_bg = lv_color_to_u16(C_MAPBG);
+    uint32_t dstride = db->header.stride;
+#define DROW(y) ((uint16_t *)(db->data + (size_t)((y) - layer->buf_area.y1) * dstride) - layer->buf_area.x1)
+    double ws = world(s_z);
+    int n = 1 << s_z;
+    int ox = (int)floor(s_mx * ws - MAP_W / 2.0), oy = (int)floor(s_my * ws - MAP_H / 2.0);
+    /* coordonnées monde des bords de la zone */
+    int wx1 = ox + (a.x1 - co->x1), wx2 = ox + (a.x2 - co->x1);
+    int wy1 = oy + (a.y1 - co->y1), wy2 = oy + (a.y2 - co->y1);
+    int tx0 = (int)floor(wx1 / (double)MT_TILE), tx1 = (int)floor(wx2 / (double)MT_TILE);
+    int ty0 = (int)floor(wy1 / (double)MT_TILE), ty1 = (int)floor(wy2 / (double)MT_TILE);
+    for (int ty = ty0; ty <= ty1; ty++) {
+        int cy = co->y1 + ty * MT_TILE - oy;                 /* haut de la case à l'écran */
+        int y1 = LV_MAX(cy, a.y1), y2 = LV_MIN(cy + MT_TILE - 1, a.y2);
+        if (ty < 0 || ty >= n) {                             /* au-delà des pôles */
+            for (int y = y1; y <= y2; y++) fill16(DROW(y) + a.x1, c_bg, a.x2 - a.x1 + 1);
+            continue;
+        }
+        for (int tx = tx0; tx <= tx1; tx++) {
+            int cx = co->x1 + tx * MT_TILE - ox;
+            int x1 = LV_MAX(cx, a.x1), x2 = LV_MIN(cx + MT_TILE - 1, a.x2), w = x2 - x1 + 1;
+            int wx = ((tx % n) + n) % n;
+            const lv_image_dsc_t *img = mt_peek(s_z, wx, ty, NULL);
+            if (img) {
+                const uint16_t *src = (const uint16_t *)img->data;
+                for (int y = y1; y <= y2; y++)
+                    memcpy(DROW(y) + x1, src + (y - cy) * MT_TILE + (x1 - cx), (size_t)w * 2);
+                continue;
+            }
+            /* plus large, agrandie (plus proche voisin) */
+            const uint16_t *par = NULL;
+            int k = 1;
+            for (; k <= STAND_UP && s_z - k >= 0; k++) {
+                const lv_image_dsc_t *p = mt_peek(s_z - k, wx >> k, ty >> k, NULL);
+                if (p) { par = (const uint16_t *)p->data; break; }
+            }
+            if (par) {
+                int m = (1 << k) - 1, sx0 = (wx & m) * (MT_TILE >> k), sy0 = (ty & m) * (MT_TILE >> k);
+                for (int y = y1; y <= y2; y++) {
+                    const uint16_t *row = par + (sy0 + ((y - cy) >> k)) * MT_TILE + sx0;
+                    uint16_t *d = DROW(y);
+                    for (int x = x1; x <= x2; x++) d[x] = row[(x - cx) >> k];
+                }
+                continue;
+            }
+            /* plus détaillée : les quatre filles, un pixel sur deux */
+            const uint16_t *kid[4] = { NULL };
+            bool any = false;
+            if (s_z + 1 <= MT_ZMAX) {
+                int n2 = n * 2;
+                for (int q = 0; q < 4; q++) {
+                    const lv_image_dsc_t *ch = mt_peek(s_z + 1, ((2 * wx + (q & 1)) % n2), 2 * ty + (q >> 1), NULL);
+                    if (ch) { kid[q] = (const uint16_t *)ch->data; any = true; }
+                }
+            }
+            for (int y = y1; y <= y2; y++) {
+                uint16_t *d = DROW(y);
+                if (!any) { fill16(d + x1, c_hole, w); continue; }
+                int py = y - cy, qy = py >= MT_TILE / 2;
+                for (int h = 0; h < 2; h++) {
+                    int hx1 = LV_MAX(x1, cx + h * MT_TILE / 2), hx2 = LV_MIN(x2, cx + h * MT_TILE / 2 + MT_TILE / 2 - 1);
+                    if (hx1 > hx2) continue;
+                    const uint16_t *k2 = kid[qy * 2 + h];
+                    if (!k2) { fill16(d + hx1, c_hole, hx2 - hx1 + 1); continue; }
+                    const uint16_t *row = k2 + (2 * py - qy * MT_TILE) * MT_TILE - h * MT_TILE;
+                    for (int x = hx1; x <= hx2; x++) d[x] = row[2 * (x - cx)];
+                }
+            }
+        }
+    }
+#undef DROW
+    return true;
+}
+
 static void draw_tiles(lv_layer_t *layer, const lv_area_t *co)
 {
+    if (draw_tiles_direct(layer, co)) return;
     const lv_area_t *clip = &layer->_clip_area;
     double ws = world(s_z);
     int n = 1 << s_z;
@@ -613,22 +712,21 @@ static bool update_me(void)
     return s_me_ok != was || s_me_mx != omx || s_me_my != omy;
 }
 
+/* dernière position connue, sans allumer le GPS (c'est l'appli GPS qui
+ * l'allume et la met à jour) */
 static void loc_cb(lv_event_t *e)
 {
+    update_me();
+    if (!s_me_ok) {
+        ui_toast(_("Position inconnue : ouvrez l'appli GPS"));
+        return;
+    }
     s_follow = true;
     update_loc_btn();
-    if (!gnss_is_on()) {
-        gnss_set(true);
-        gnss_live(true);
-        ui_toast(_("GPS allumé : recherche de la position"));
-    } else if (!s_me_fresh) {
-        ui_toast(_("Recherche de la position…"));
-    }
-    if (s_me_ok) {
-        s_mx = s_me_mx;
-        s_my = s_me_my;
-        view_changed();
-    }
+    if (!s_me_fresh) ui_toast(_("Dernière position connue"));
+    s_mx = s_me_mx;
+    s_my = s_me_my;
+    view_changed();
 }
 
 /* ------------------------------------------------------------------ toucher */
@@ -669,20 +767,6 @@ static void tap(int x, int y)
     ui_toast(b);
 }
 
-static void fling_cb(lv_timer_t *t)
-{
-    if (fabsf(s_vx) < 0.6f && fabsf(s_vy) < 0.6f) {
-        lv_timer_pause(t);
-        return;
-    }
-    double ws = world(s_z);
-    s_mx -= s_vx / ws;
-    s_my -= s_vy / ws;
-    s_vx *= 0.9f;
-    s_vy *= 0.9f;
-    view_changed();
-}
-
 static void map_ev(lv_event_t *e)
 {
     lv_event_code_t c = lv_event_get_code(e);
@@ -699,9 +783,7 @@ static void map_ev(lv_event_t *e)
         s_down = true;
         s_moved = s_pinch = false;
         s_drag = 0;
-        s_vx = s_vy = 0;
         s_t_down = now;
-        if (v_fling) lv_timer_pause(v_fling);
     } else if (c == LV_EVENT_PRESSING) {
         int x2, y2;
         if (display_touch_second(&x2, &y2)) {
@@ -734,17 +816,12 @@ static void map_ev(lv_event_t *e)
         double ws = world(s_z);
         s_mx -= v.x / ws;
         s_my -= v.y / ws;
-        s_vx = 0.5f * s_vx + 0.5f * v.x;
-        s_vy = 0.5f * s_vy + 0.5f * v.y;
         view_changed();
     } else if (c == LV_EVENT_RELEASED || c == LV_EVENT_PRESS_LOST) {
         if (!s_down) return;
         s_down = false;
         if (s_pinch) return;
-        if (s_moved) {
-            if (v_fling && (fabsf(s_vx) > 3 || fabsf(s_vy) > 3)) lv_timer_resume(v_fling);
-            return;
-        }
+        if (s_moved) return;                   /* pas d'élan : la carte reste où on la lâche */
         if (now - s_t_down > 500000 || c == LV_EVENT_PRESS_LOST) return;
         if (now - s_t_tap < 350000 && abs(p.x - s_p_tap.x) < S(30) && abs(p.y - s_p_tap.y) < S(30)) {
             s_t_tap = 0;                       /* double toucher : zoom sur le point */
@@ -934,8 +1011,6 @@ static void create(lv_obj_t *scr)
     update_loc_btn();
     v_poll = lv_timer_create(poll_cb, 50, NULL);
     v_tick = lv_timer_create(tick_cb, 1000, NULL);
-    v_fling = lv_timer_create(fling_cb, 16, NULL);
-    lv_timer_pause(v_fling);
     gnss_live(true);
     poll_cb(v_poll);
 }
@@ -944,8 +1019,7 @@ static void destroy(void)
 {
     if (v_poll) lv_timer_delete(v_poll);
     if (v_tick) lv_timer_delete(v_tick);
-    if (v_fling) lv_timer_delete(v_fling);
-    v_poll = v_tick = v_fling = NULL;
+    v_poll = v_tick = NULL;
     gnss_live(false);
     mt_close();
     v_map = v_msg = v_loc = v_zin = v_zout = v_attr = NULL;
@@ -969,7 +1043,6 @@ static void on_hide(void)
     gnss_live(false);
     if (v_poll) lv_timer_pause(v_poll);
     if (v_tick) lv_timer_pause(v_tick);
-    if (v_fling) lv_timer_pause(v_fling);
 }
 
 const app_t app_map = {

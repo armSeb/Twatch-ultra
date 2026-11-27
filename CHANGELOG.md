@@ -2,6 +2,17 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.4.4 — 2026-11-27
+
+- Maps: ➤ centres on the last known position and no longer turns the GPS on (the GPS app
+  updates it).
+- Maps: no more momentum after a drag; the map stops where you let go.
+- Maps: smoother panning. Tiles are copied straight into the screen strip being drawn (one
+  row copy per tile) instead of one LVGL image task per tile and strip; tiles still loading
+  are filled from a cached wider or finer level the same way, without LVGL scaling.
+- Maps: three levels of over-zoom (was two); a missing tile is enlarged from up to 8 wider
+  levels, so zooming past the detailed area shows no hole.
+
 ## 0.4.3 — 2026-11-27
 
 - Maps: reads a single **PMTiles** file (`/tiles.pmtiles`, or `*.pmtiles` in `/tiles`): fast

@@ -662,8 +662,8 @@ static const tr_t EN[] = {
     { "Complet", "Full" },
     /* Cartes (app_map.c) */
     { "Cartes", "Maps" },
-    { "GPS allumé : recherche de la position", "GPS on: looking for a fix" },
-    { "Recherche de la position…", "Looking for a fix…" },
+    { "Position inconnue : ouvrez l'appli GPS", "Position unknown: open the GPS app" },
+    { "Dernière position connue", "Last known position" },
     { "il y a %lu min", "%lu min ago" },
     { "il y a %lu h", "%lu h ago" },
     { "il y a %lu j", "%lu d ago" },

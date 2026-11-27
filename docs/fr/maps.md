@@ -14,10 +14,10 @@ leur (contacts, répéteurs, salons, capteurs).
 
 | Où | Action |
 |---|---|
-| Glisser | déplace la carte (avec élan) ; le suivi de la position s'arrête |
+| Glisser | déplace la carte, qui s'arrête dès qu'on la lâche ; le suivi de la position s'arrête |
 | Pincer, ou toucher deux fois | zoom avant / arrière autour des doigts |
 | **−** / **+** | zoom arrière / avant (grisé au bout) |
-| **➤** (en bas au centre) | recentre sur vous et suit la position (bleu : suivi actif). GPS coupé, il l'allume |
+| **➤** (en bas au centre) | recentre sur votre dernière position connue et la suit (bleu : suivi actif). Il n'allume pas le GPS : la position se met à jour depuis l'appli GPS |
 | Toucher un nœud | son nom, sa distance et l'âge de son annonce |
 | **‹** ou bouton de la montre | retour (glisser vers la droite déplace la carte) |
 
@@ -30,9 +30,9 @@ leur (contacts, répéteurs, salons, capteurs).
 - **Échelle** en haut, au centre.
 - À la première ouverture, la carte se centre sur votre position, sinon sur celle de MeshCore,
   sinon au milieu des tuiles présentes. Elle garde ensuite sa vue jusqu'au redémarrage.
-- On peut zoomer **deux niveaux au-delà** du plus détaillé présent sur la carte : la tuile est
+- On peut zoomer **trois niveaux au-delà** du plus détaillé présent sur la carte : la tuile est
   agrandie. Une tuile absente est remplacée par un morceau agrandi d'un niveau plus large
-  (jusqu'à 4 niveaux) : la carte reste lisible même incomplète.
+  (jusqu'à 8 niveaux) : la carte reste lisible même incomplète.
 
 ## Préparer la carte SD
 
