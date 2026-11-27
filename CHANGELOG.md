@@ -2,6 +2,11 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.21 — 2026-11-27
+
+- Build of main with the control center redesign (0.3.20), the Púca redesign (0.3.13) and
+  Now playing (0.3.3).
+
 ## 0.3.20 — 2026-11-27
 
 - Control center redesigned: the status line at the top (battery, Bluetooth, gear) is gone,
