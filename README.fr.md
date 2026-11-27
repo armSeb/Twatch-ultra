@@ -191,6 +191,7 @@ Plus de détails : [compilation, flashage et tests](docs/fr/building.md).
 | Notes matérielles (broches, rails, écran) | [docs/fr/hardware.md](docs/fr/hardware.md) | [docs/en/hardware.md](docs/en/hardware.md) |
 | MeshCore (messages LoRa) | [docs/fr/meshcore.md](docs/fr/meshcore.md) | [docs/en/meshcore.md](docs/en/meshcore.md) |
 | GPS | [docs/fr/gps.md](docs/fr/gps.md) | [docs/en/gps.md](docs/en/gps.md) |
+| Cartes hors ligne (outil PC) | [docs/fr/tiles.md](docs/fr/tiles.md) | [docs/en/tiles.md](docs/en/tiles.md) |
 | Wi-Fi, serveur web, MeshCore en TCP | [docs/fr/wifi.md](docs/fr/wifi.md) | [docs/en/wifi.md](docs/en/wifi.md) |
 | WebRX (client OpenWebRX) | [docs/fr/webrx.md](docs/fr/webrx.md) | [docs/en/webrx.md](docs/en/webrx.md) |
 | Radio (webradios) | [docs/fr/radio.md](docs/fr/radio.md) | [docs/en/radio.md](docs/en/radio.md) |
