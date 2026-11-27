@@ -249,6 +249,7 @@ static lv_obj_t *v_root, *v_bg, *v_msg, *v_hint, *v_stage, *v_spk, *v_spk_lbl, *
 static lv_obj_t *v_bar[3], *v_btn[4], *v_light_img, *v_care_img, *v_btnrow, *v_gamerow, *v_feed, *v_gone, *v_noclock;
 static lv_obj_t *v_shadow, *v_flash, *v_cloud[2];
 static lv_timer_t *v_tmr;
+static lv_timer_t *s_free_tmr;             /* libération différée du cache */
 static uint32_t v_ms;                    /* horloge de l'animation */
 static uint32_t v_msg_until;
 
@@ -416,7 +417,7 @@ static void base_sprite(const puca_spr_t *s, int sc, int x0, int y0, bool flip)
 
 /* Le relief de jour (et le décor éclairé) est calculé à la première
  * ouverture puis gardé en PSRAM (~1 Mo, elle en a 8) : les ouvertures
- * suivantes sont immédiates. */
+ * suivantes sont immédiates. Libéré 5 minutes après avoir quitté l'app. */
 static bool make_base(void)
 {
     if (s_base && s_cov && s_out) return true;
@@ -1400,6 +1401,7 @@ static lv_obj_t *label(lv_obj_t *par, const lv_font_t *f, const char *txt)
 static void create(lv_obj_t *scr)
 {
     load();
+    if (s_free_tmr) { lv_timer_delete(s_free_tmr); s_free_tmr = NULL; }
     v_ms = 0;
     a_kind = A_IDLE;
     memset(s_part, 0, sizeof s_part);
@@ -1648,14 +1650,34 @@ static void create(lv_obj_t *scr)
     render();
 }
 
+/* Libère le cache PSRAM (tâche app : jamais pendant que l'app l'utilise,
+ * le minuteur est annulé à l'ouverture) */
+
+static void free_cache_cb(lv_timer_t *t)
+{
+    s_free_tmr = NULL;                         /* supprimé par LVGL après ce passage */
+    if (v_root) return;
+    heap_caps_free(s_base); heap_caps_free(s_cov); heap_caps_free(s_out);
+    s_base = NULL; s_cov = NULL; s_out = NULL;
+    for (int i = 0; i < 2; i++) { heap_caps_free(s_cloud_px[i]); s_cloud_px[i] = NULL; }
+    for (int i = 0; i < s_nimg; i++) heap_caps_free(s_img[i].px);
+    s_nimg = 0;
+    s_light_key = 0xFFFFFFFFu;
+}
+
 static void destroy(void)
 {
     if (v_tmr) { lv_timer_delete(v_tmr); v_tmr = NULL; }
     wide_inval(false);
     save();
-    /* décor, nuages et dessins lissés restent en PSRAM pour la prochaine
-     * ouverture (calculés une seule fois par démarrage) */
+    /* décor, nuages et dessins lissés restent en PSRAM pour une
+     * réouverture rapide, puis sont libérés après 5 minutes hors de l'app */
     for (int i = 0; i < 2; i++) v_cloud[i] = NULL;
+    if (!s_free_tmr) {
+        s_free_tmr = lv_timer_create(free_cache_cb, 5 * 60 * 1000, NULL);
+        lv_timer_set_repeat_count(s_free_tmr, 1);
+        lv_timer_set_auto_delete(s_free_tmr, true);
+    }
     memset(s_so, 0, sizeof s_so);
     v_root = v_bg = v_msg = v_hint = v_stage = v_spk = v_spk_lbl = v_clov = v_clov_lbl = NULL;
     v_btnrow = v_gamerow = v_feed = v_gone = v_noclock = v_light_img = v_care_img = NULL;
