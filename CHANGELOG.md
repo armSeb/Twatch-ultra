@@ -2,6 +2,12 @@
 
 All notable changes. Versions follow `PROJECT_VER` in `CMakeLists.txt`.
 
+## 0.3.3 — 2026-11-27
+
+- Now playing: the volume bar's touch area reaches 30 px around it (down to the screen's
+  bottom edge, almost up to the buttons), so a finger slightly off the bar sets the volume
+  instead of swiping back.
+
 ## 0.3.2 — 2026-11-27
 
 - Now playing: dragging along the volume bar no longer triggers the "back" swipe (LVGL passes

@@ -2749,6 +2749,7 @@ static void media_refresh(bool full)
     bool has = m.available && (m.title[0] || m.player[0]);
     if (!has) {
         lv_obj_add_flag(mu_box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(mu_vol, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(mu_empty, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text_fmt(mu_empty, LV_SYMBOL_AUDIO "\n\n%s",
                               m.available ? _("Aucune lecture en cours") : _("iPhone non connecté"));
@@ -2827,6 +2828,7 @@ static lv_obj_t *media_button(lv_obj_t *p, const char *sym, int size, lv_color_t
 #define MU_VOL_H 64
 #define MU_VOL_W 340
 #define MU_VOL_DY (-12)
+#define MU_VOL_TOUCH 30
 static void build_media(void)
 {
     lv_obj_t *s = s_scr[SCR_MEDIA] = mk_screen();
@@ -2880,7 +2882,9 @@ static void build_media(void)
 
     /* Volume : barre épaisse sans bouton rond, remplie jusqu'au niveau ; on
      * la touche ou on y glisse le doigt n'importe où. */
-    mu_vol = lv_slider_create(mu_box);
+    /* posée sur l'écran et non dans mu_box : LVGL ne cherche un objet touché
+     * qu'à l'intérieur de son parent, et mu_box s'arrête à la marge du bas */
+    mu_vol = lv_slider_create(s);
     lv_obj_set_size(mu_vol, MU_VOL_W, MU_VOL_H);
     lv_obj_align(mu_vol, LV_ALIGN_BOTTOM_MID, 0, MU_VOL_DY);
     /* LVGL fait remonter les gestes de tout objet au parent par défaut :
@@ -2898,7 +2902,10 @@ static void build_media(void)
     lv_obj_set_style_shadow_width(mu_vol, 0, LV_PART_KNOB);
     lv_obj_set_style_outline_width(mu_vol, 0, LV_STATE_FOCUS_KEY);
     lv_obj_set_style_anim_duration(mu_vol, 150, 0);
-    lv_obj_set_ext_click_area(mu_vol, S(10));
+    /* zone tactile élargie (invisible) : 30 px tout autour, donc jusqu'au
+     * bas de l'écran et presque jusqu'aux touches ; un doigt un peu à côté
+     * règle le volume au lieu de déclencher le geste « retour » */
+    lv_obj_set_ext_click_area(mu_vol, MU_VOL_TOUCH);
     lv_obj_add_event_cb(mu_vol, media_vol_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(mu_vol, media_vol_cb, LV_EVENT_RELEASED, NULL);
     lv_obj_t *vl = mk_label(mu_vol, &font_text, C_FG, LV_SYMBOL_VOLUME_MID);
