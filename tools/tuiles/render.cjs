@@ -34,6 +34,7 @@ const META = 8;            /* bloc de 8 × 8 tuiles dessiné d'un coup */
 const MARGIN = 128;        /* marge autour du bloc : libellés entiers */
 const UPSCALE_MAX = 4;     /* MT_UPSCALE du firmware (main/maptiles.h) */
 const DETAIL_ZOOMS = [13, 16];
+const PACK_MAX = 2 ** 31 - 1;  /* la montre lit un fichier de 2 Go au plus */
 
 /* ------------------------------------------------------------ options */
 
@@ -274,7 +275,8 @@ function human(n) {
 function fmtInt(n) { return n.toLocaleString('fr-FR').replace(/ | /g, ' '); }
 
 function estimate(o, P) {
-    const budget = o.libre !== null ? parseSize(o.libre, '--libre') : Math.floor(parseSize(o.taille, '--taille') * 0.9);
+    const card = o.libre !== null ? parseSize(o.libre, '--libre') : Math.floor(parseSize(o.taille, '--taille') * 0.9);
+    const budget = Math.min(card, PACK_MAX);
     console.log('\nZones demandées :');
     for (const zn of P.zones) {
         const b = zn.bbox.map((v) => v.toFixed(3)).join(', ');
@@ -291,7 +293,8 @@ function estimate(o, P) {
         console.log(`  ${String(z).padStart(6)}  ${fmtInt(c.tiles).padStart(10)}     ${human(sz).padStart(8)}`);
     }
     console.log(`  ${'total'.padStart(6)}  ${fmtInt(tiles).padStart(10)}     ${human(total).padStart(8)}`);
-    console.log(`\nPlace disponible : ${human(budget)}` + (o.libre === null ? ` (90 % de ${o.taille}, le reste pour les logs et l'historique)` : ' (libre sur la carte SD)'));
+    console.log(`\nPlace disponible : ${human(card)}` + (o.libre === null ? ` (90 % de ${o.taille}, le reste pour les logs et l'historique)` : ' (libre sur la carte SD)')
+        + (budget < card ? `, mais la montre lit un fichier de ${human(PACK_MAX)} au plus` : ''));
     console.log('Maximum : la mer et les zones vides ne prennent presque rien (tuiles identiques stockées une fois).');
     if (total > budget) {
         console.log(`\n⚠  Trop gros : ≈ ${human(total)} pour ${human(budget)} disponibles.`);
@@ -685,6 +688,7 @@ function writePmtiles(o, P, file) {
     process.stdout.write('\nÉcriture du fichier unique tiles.pmtiles… ');
     const r = writePmtiles(o, P, file);
     console.log(`${fmtInt(r.tiles)} tuiles (${fmtInt(r.contents)} différentes), ${human(r.size)}.`);
+    if (r.size > PACK_MAX) console.log(`⚠  Plus de ${human(PACK_MAX)} : la montre ne pourra pas le lire. Réduire les niveaux ou les zones.`);
 })().catch((e) => {
     console.error('\nErreur : ' + (e && e.stack || e));
     process.exit(1);

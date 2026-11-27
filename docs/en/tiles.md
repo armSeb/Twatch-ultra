@@ -49,7 +49,7 @@ Each level has four times as many tiles as the previous one. Whole France levels
 zone at levels 13–16: 20,500 tiles, ≈ 140 MB. Sea and empty areas take almost nothing.
 
 **Suggested**: France 0–12 plus 25 km around home at 13–16, under 500 MB. With a single file
-the card's cluster size no longer matters (FAT16 limits a file to 2 GB).
+the card's cluster size no longer matters. The watch reads files up to 2 GB; the script checks this before drawing.
 
 ## Style
 

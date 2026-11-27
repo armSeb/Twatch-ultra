@@ -116,7 +116,7 @@ détaillé présent, en agrandissant.
 
 **Conseil** : la France de 0 à 12 et une zone de 25 km autour de chez soi, de 13 à 16, soit
 moins de 500 Mo. Avec un seul fichier, la taille des blocs de la carte (FAT16 ou FAT32) ne
-compte plus. Une carte en FAT16 limite un fichier à 2 Go.
+compte plus. La montre lit un fichier de **2 Go au plus** : le script le vérifie avant de dessiner.
 
 ## Le style
 
